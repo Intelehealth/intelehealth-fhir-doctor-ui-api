@@ -23,18 +23,18 @@
   		    http://www.springframework.org/schema/util
   		    http://www.springframework.org/schema/util/spring-util-3.0.xsd">
 
-    <context:component-scan base-package="org.openmrs.module.doctor.ui.api" />
+    <context:component-scan base-package="org.openmrs.module.ihmodule" />
 
     <!-- Wraps APIfordoctorUIService methods in DB transactions and OpenMRS interceptors,
     which set audit info like dateCreated, changedBy, etc.-->
-   <!--  <bean id="doctor.ui.api.APIfordoctorUIService"
+   <!--  <bean id="ihmodule.APIfordoctorUIService"
             class="org.springframework.transaction.interceptor.TransactionProxyFactoryBean">
         <property name="transactionManager">
             <ref bean="transactionManager" />
         </property>
         <property name="target">
-            <bean class="org.openmrs.module.doctor.ui.api.api.impl.APIfordoctorUIServiceImpl">
-                <property name="dao" ref="doctor.ui.api.APIfordoctorUIDao" />
+            <bean class="org.openmrs.module.ihmodule.api.impl.APIfordoctorUIServiceImpl">
+                <property name="dao" ref="ihmodule.APIfordoctorUIDao" />
             </bean>
         </property>
         <property name="preInterceptors">
@@ -49,8 +49,8 @@
     <bean parent="serviceContext">
         <property name="moduleService">
             <list>
-                <value>org.openmrs.module.doctor.ui.api.api.APIfordoctorUIService</value>
-                <ref bean="doctor.ui.api.APIfordoctorUIService" />
+                <value>org.openmrs.module.ihmodule.api.APIfordoctorUIService</value>
+                <ref bean="ihmodule.APIfordoctorUIService" />
             </list>
         </property>
     </bean> -->
@@ -87,14 +87,14 @@
 	</bean>
 	
     
-     <!-- <bean id="doctor.ui.api.TestResultService"
+     <!-- <bean id="ihmodule.TestResultService"
             class="org.springframework.transaction.interceptor.TransactionProxyFactoryBean">
         <property name="transactionManager">
             <ref bean="transactionManager" />
         </property>
         <property name="target">
             <bean class="${project.parent.groupId}.${project.parent.artifactId}.api.impl.TestResultServiceImpl">
-                <property name="dao" ref="doctor.ui.api.TestResultDao" />
+                <property name="dao" ref="ihmodule.TestResultDao" />
             </bean>
         </property>
         <property name="preInterceptors">
@@ -110,20 +110,20 @@
         <property name="moduleService">
             <list>
                 <value>${project.parent.groupId}.${project.parent.artifactId}.api.TestResultService</value>
-                <ref bean="doctor.ui.api.TestResultService" />
+                <ref bean="ihmodule.TestResultService" />
             </list>
         </property>
     </bean>
      -->
     
-    <!-- <bean id="doctor.ui.api.DataMigrationService"
+    <!-- <bean id="ihmodule.DataMigrationService"
             class="org.springframework.transaction.interceptor.TransactionProxyFactoryBean">
         <property name="transactionManager">
             <ref bean="transactionManager" />
         </property>
         <property name="target">
             <bean class="${project.parent.groupId}.${project.parent.artifactId}.api.impl.DataMigrationServiceImpl">
-                <property name="dao" ref="doctor.ui.api.DataMigrationDao" />
+                <property name="dao" ref="ihmodule.DataMigrationDao" />
             </bean>
         </property>
         <property name="preInterceptors">
@@ -139,7 +139,7 @@
         <property name="moduleService">
             <list>
                 <value>${project.parent.groupId}.${project.parent.artifactId}.api.DataMigrationService</value>
-                <ref bean="doctor.ui.api.DataMigrationService" />
+                <ref bean="ihmodule.DataMigrationService" />
             </list>
         </property>
     </bean> -->
