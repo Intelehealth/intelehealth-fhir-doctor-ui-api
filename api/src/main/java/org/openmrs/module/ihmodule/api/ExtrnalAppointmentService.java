@@ -30,7 +30,9 @@ public interface ExtrnalAppointmentService extends OpenmrsService {
 	
 	ExternalAppointment update(ExternalAppointment appointment) throws APIException;
 	
-	List<ExternalAppointmentDTO> findAllByPatient(String uuid) throws APIException;
+	List<ExternalAppointmentDTO> findAllByPatient(String patientId) throws APIException;
+	
+	List<ExternalAppointmentDTO> findAppointmentByPatientAndVisitId(String patientId, String visitId) throws APIException;
 	
 	List<ExternalAppointment> findAllByRequestId(String uuid) throws APIException;
 	
@@ -42,4 +44,5 @@ public interface ExtrnalAppointmentService extends OpenmrsService {
 	
 	HttpResponse getAvailableSlot(Map<String, String> reqParam) throws Exception;
 	
+	void deleteAppointment(String extAppointmentId);
 }

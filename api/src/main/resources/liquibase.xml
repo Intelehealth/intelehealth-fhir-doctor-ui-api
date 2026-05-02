@@ -293,5 +293,68 @@
 			CREATE UNIQUE INDEX config_fcility_facility_uuid_idx ON openmrs.config_fcility (facility_uuid);
 		</sql>
 	</changeSet>
+	
+	<changeSet author="Biswajit" id="config_data_sync_module-1.0.3">
+		<addColumn tableName="config_data_sync_module">
+			<column name="container_port" type="int(11)" />
+			<column name="api_port" type="int(11)" />
+			<column name="image_name" type="varchar(255)" />
+			<column name="server_docker_daemon_url" type="varchar(255)" />
+			<column name="run_on_remote" type="tinyint(1)" />
+		</addColumn>
+	</changeSet>
+
+
+	<changeSet author="Biswajit" id="external_appointment-1.0.3">
+		<addColumn tableName="external_appointment">
+			<column name="visit_id" type="varchar(255)" />
+		</addColumn>
+	</changeSet>
+
+	<changeSet id="external_appointment-1.0.4" author="Biswajit">
+		<sql>
+			CREATE UNIQUE INDEX external_appointment_patient_visit_idx ON openmrs.external_appointment (patient_uuid, visit_id);
+		</sql>
+	</changeSet>
+
+	<changeSet id="external-referral-1.0.0" author="Biswajit">
+		<createTable tableName="external_referral">
+			<column name="id" type="int(11)" autoIncrement="true">
+				<constraints primaryKey="true" nullable="false" />
+			</column>
+
+			<column name="facility_name" type="varchar(255)" />
+			<column name="facility_uuid" type="varchar(255)" />
+			<column name="refer_to" type="varchar(255)" />
+			<column name="patient_name" type="varchar(255)" />
+			<column name="patient_id" type="varchar(255)" />
+			<column name="referred_by" type="varchar(255)" />
+			<column name="priority_of_referral" type="varchar(255)" />
+			<column name="reason" type="varchar(255)" />
+			<column name="visit_id" type="varchar(255)" />
+
+			<column name="date_created" type="datetime">
+				<constraints nullable="false" />
+			</column>
+			<column name="creator" type="int(11)">
+				<constraints nullable="false" />
+			</column>
+			<column name="changed_by" type="int(11)" />
+			<column name="date_changed" type="datetime" />
+			<column name="voided" type="tinyint(1)">
+				<constraints nullable="false" />
+			</column>
+			<column name="voided_by" type="int(11)" />
+			<column name="date_voided" type="datetime" />
+			<column name="void_reason" type="varchar(255)" />
+			<column name="uuid" type="varchar(255)" />
+		</createTable>
+	</changeSet>
+
+	<changeSet author="Biswajit" id="external-referral-1.0.4">
+		<addColumn tableName="external_referral">
+			<column name="referrer_id" type="varchar(255)" />
+		</addColumn>
+	</changeSet>
 
 </databaseChangeLog>

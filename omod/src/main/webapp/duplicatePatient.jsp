@@ -13,6 +13,7 @@
 
 <div class="container-fluid py-3">
 	<h3 class="fw-bold mb-3">MPI duplicate review  pending source patients</h3>
+	<%--
 	<p class="text-muted">
 		List from patient exchange API (<code>PENDING</code> cases).
 		Use <strong>Force sync &amp; review</strong> to push the source patient through MCI (skips duplicate deferral), then open candidates.
@@ -23,7 +24,7 @@
 		Proxy base (same-origin, CSRFGuard-exempt <code>/ws/rest/v1/...</code>): <code><c:out value="${patientExchangeProxyBase}" /></code>/{pending|candidates|force-sync|mpi-local}<br/>
 		Upstream URL: edit <code>ihmodule.properties</code> (<code>patientexchange.baseUrl</code>) in the ihmodule API jar, or override at runtime via Administration → Settings → <code><c:out value="${patientExchangeGpKey}" /></code>.
 	</p>
-
+--%>
 	<div class="mb-3">
 		<button type="button" id="btnRefreshPending" class="btn btn-outline-secondary btn-sm">Refresh list</button>
 		<span id="pendingStatus" class="ms-2 text-muted"></span>

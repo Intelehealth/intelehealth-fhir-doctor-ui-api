@@ -13,11 +13,12 @@
 
 <div class="container-fluid py-3">
 	<h3 class="fw-bold mb-3">Patient import &amp; export</h3>
+	 <%--
 	<p class="text-muted">
 		Uses the patient data exchange API: multipart upload to <code>POST /patient/import/upload</code>
 		(FHIR R4 <strong>Patient</strong> or <strong>Bundle</strong> JSON), and date-range export from
 		<code>GET …/patient/export/created</code> (<code>startDate</code> / <code>endDate</code> as <code>yyyy-MM-dd</code>).
-	</p>
+	</p>--%>
 	<p class="small text-muted">
 		
 		Upstream base URL: Administration → Settings → <code><c:out value="${patientExchangeGpKey}" /></code>

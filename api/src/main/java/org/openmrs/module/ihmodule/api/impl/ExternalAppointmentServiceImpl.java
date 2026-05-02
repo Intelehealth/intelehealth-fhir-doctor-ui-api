@@ -9,11 +9,6 @@
  */
 package org.openmrs.module.ihmodule.api.impl;
 
-import java.security.InvalidParameterException;
-import java.util.Date;
-import java.util.List;
-import java.util.Map;
-
 import org.apache.http.client.utils.DateUtils;
 import org.openmrs.User;
 import org.openmrs.api.APIException;
@@ -22,12 +17,26 @@ import org.openmrs.api.impl.BaseOpenmrsService;
 import org.openmrs.module.ihmodule.ExternalAppointment;
 import org.openmrs.module.ihmodule.api.ExtrnalAppointmentService;
 import org.openmrs.module.ihmodule.api.dao.ExternalAppointmentDao;
+import org.openmrs.module.ihmodule.api.impl.exp.BeanValidationException;
+import org.openmrs.module.ihmodule.api.impl.exp.DuplicateEntryException;
 import org.openmrs.module.ihmodule.dto.ExternalAppointmentDTO;
 import org.openmrs.module.ihmodule.utils.DeploymentConfProperties;
 import org.openmrs.module.ihmodule.utils.HttpResponse;
 import org.openmrs.module.ihmodule.utils.HttpService;
 import org.openmrs.module.ihmodule.utils.ReqParam;
+import org.hibernate.validator.HibernateValidator;
+import org.hibernate.validator.messageinterpolation.ParameterMessageInterpolator;
 import org.springframework.beans.factory.annotation.Autowired;
+
+import javax.validation.ConstraintViolation;
+import javax.validation.Validation;
+import javax.validation.Validator;
+import javax.validation.ValidatorFactory;
+import java.security.InvalidParameterException;
+import java.util.Date;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 public class ExternalAppointmentServiceImpl extends BaseOpenmrsService implements ExtrnalAppointmentService {
 	
@@ -43,8 +52,32 @@ public class ExternalAppointmentServiceImpl extends BaseOpenmrsService implement
 		this.dao = dao;
 	}
 	
+	/**
+	 * EL-free interpolator: default Hibernate Validator factory pulls in javax.el.ELManager
+	 * (missing on Tomcat 7 / OpenMRS API CP).
+	 */
+	private static final ValidatorFactory VALIDATOR_FACTORY = Validation.byProvider(HibernateValidator.class).configure()
+	        .messageInterpolator(new ParameterMessageInterpolator()).buildValidatorFactory();
+	
+	private static final Validator validator = VALIDATOR_FACTORY.getValidator();
+	
+	public void validateAppointment(ExternalAppointment appointment) throws BeanValidationException {
+		Set<ConstraintViolation<ExternalAppointment>> violations = validator.validate(appointment);
+		if (!violations.isEmpty()) {
+			for (ConstraintViolation<ExternalAppointment> violation : violations) {
+				System.out.println("Validation error: " + violation.getMessage());
+				
+				throw new BeanValidationException(violation.getMessage());
+			}
+			throw new BeanValidationException("Validation failed");
+		}
+	}
+	
 	@Override
-	public ExternalAppointmentDTO save(ExternalAppointment appointment) throws APIException {
+	public ExternalAppointmentDTO save(ExternalAppointment appointment) throws APIException, BeanValidationException,
+	        DuplicateEntryException {
+		validateAppointment(appointment);
+		
 		User user = userDao.getUserByUsername("admin");
 		appointment.setCreator(user);
 		appointment.setDateCreated(new Date());
@@ -71,6 +104,7 @@ public class ExternalAppointmentServiceImpl extends BaseOpenmrsService implement
 		dto.setRequesterId(entity.getRequesterId());
 		dto.setRequestId(entity.getRequestId());
 		dto.setStatus(entity.getStatus());
+		dto.setVisitId(entity.getVisitId());
 		return dto;
 		
 	}
@@ -84,7 +118,12 @@ public class ExternalAppointmentServiceImpl extends BaseOpenmrsService implement
 	@Override
 	public List<ExternalAppointmentDTO> findAllByPatient(String uuid) throws APIException {
 		return dao.findAllByPatient(uuid);
-		
+	}
+	
+	@Override
+	public List<ExternalAppointmentDTO> findAppointmentByPatientAndVisitId(String patientId, String visitId)
+	        throws APIException {
+		return dao.findAppointmentByPatientAndVisitId(patientId, visitId);
 	}
 	
 	@Override
@@ -115,6 +154,11 @@ public class ExternalAppointmentServiceImpl extends BaseOpenmrsService implement
 	public HttpResponse getAvailableSlot(Map<String, String> reqParam) throws Exception {
 		String param = ReqParam.toQueryParam(reqParam);
 		return new HttpService().get(deployConf.APPOINTMENTS_URL + "/available/slot", param);
+	}
+	
+	@Override
+	public void deleteAppointment(String extAppointmentId) {
+		dao.deleteAppointmentById(extAppointmentId);
 	}
 	
 	@Override

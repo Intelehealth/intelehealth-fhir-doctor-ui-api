@@ -68,12 +68,7 @@
           </a>
         </li>
         <%-- Wrap with openmrs hasPrivilege privilege="view tdh report" when enforcing Reports access --%>
-        <li class="nav-item">
-          <a class="nav-link${fn:contains(ihNavUri, 'report.form') ? ' active' : ''}"
-             href="${pageContext.request.contextPath}/module/ihmodule/report.form">
-            Reports
-          </a>
-        </li>
+       
 
       </ul>
     </div>

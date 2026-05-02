@@ -14,7 +14,14 @@
 	
 	
 	<dependencies>
-        
+		<!-- Compile-only: ParameterMessageInterpolator + HibernateValidator SPI (runtime comes from OpenMRS platform). -->
+		<dependency>
+			<groupId>org.hibernate.validator</groupId>
+			<artifactId>hibernate-validator</artifactId>
+			<version>6.1.2.Final</version>
+			<scope>provided</scope>
+		</dependency>
+
 		<dependency>
 		    <groupId>ca.uhn.hapi.fhir</groupId>
 		    <artifactId>hapi-fhir-client</artifactId>

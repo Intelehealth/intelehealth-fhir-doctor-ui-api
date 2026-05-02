@@ -21,8 +21,8 @@ public class BundleServiceImpl extends BaseOpenmrsService implements BundleServi
 		
 		System.out.println(param);
 		
-		HttpResponse response = new HttpService().get(
-		    deployConf.HEALTH_RECORD_EXCHANGE_BASE_URL + "/bundle/" + resourceType, param);
+		HttpResponse response = new HttpService().get(deployConf.HEALTH_RECORD_EXCHANGE_BASE_URL + "/shr/bundle/"
+		        + resourceType, param);
 		
 		return response;
 	}
