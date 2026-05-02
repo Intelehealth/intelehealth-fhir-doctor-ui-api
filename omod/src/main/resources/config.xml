@@ -39,7 +39,7 @@
 		dataExchangeAuditLog.hbm.xml
 		externalAppointment.hbm.xml
 		diagnosticReport.hbm.xml
-		
+		externalReferral.hbm.xml
 	</mappingFiles>
 	<!-- AOP
 	<advice>

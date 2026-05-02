@@ -28,6 +28,8 @@ public class ExternalAppointmentDTO {
 	
 	private String appointmentTime;
 	
+	private String visitId;
+	
 	public Integer getId() {
 		return id;
 	}
@@ -132,13 +134,21 @@ public class ExternalAppointmentDTO {
 		this.appointmentTime = appointmentTime;
 	}
 	
-	@Override
-	public String toString() {
-		return "ExternalAppointmentDTO [id=" + id + ", facilityName=" + facilityName + ", facilityUuid=" + facilityUuid
-		        + ", status=" + status + ", requestId=" + requestId + ", requesterId=" + requesterId + ", patientUuid="
-		        + patientUuid + ", patientName=" + patientName + ", patientIdentifier=" + patientIdentifier
-		        + ", requestDate=" + requestDate + ", practitionerName=" + practitionerName + ", appointmentDate="
-		        + appointmentDate + ", appointmentTime=" + appointmentTime + "]";
+	public String getVisitId() {
+		return visitId;
 	}
 	
+	public void setVisitId(String visitId) {
+		this.visitId = visitId;
+	}
+	
+	@Override
+	public String toString() {
+		return "ExternalAppointmentDTO{" + "id=" + id + ", facilityName='" + facilityName + '\'' + ", facilityUuid='"
+		        + facilityUuid + '\'' + ", status='" + status + '\'' + ", requestId='" + requestId + '\''
+		        + ", requesterId='" + requesterId + '\'' + ", patientUuid='" + patientUuid + '\'' + ", patientName='"
+		        + patientName + '\'' + ", patientIdentifier='" + patientIdentifier + '\'' + ", requestDate='" + requestDate
+		        + '\'' + ", practitionerName='" + practitionerName + '\'' + ", appointmentDate='" + appointmentDate + '\''
+		        + ", appointmentTime='" + appointmentTime + '\'' + ", visitId='" + visitId + '\'' + '}';
+	}
 }

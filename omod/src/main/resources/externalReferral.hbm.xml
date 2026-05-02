@@ -3,35 +3,25 @@
 
 <hibernate-mapping package="org.openmrs.module.doctor.ui.api">
 
-	<class name="ExternalAppointment" table="external_appointment"
+	<class name="ExternalReferral" table="external_referral"
 		abstract="true">
 
 		<id name="id" type="int" column="id" unsaved-value="0">
 			<generator class="native">
-				<param name="sequence">external_appointment_id_seq</param>
+				<param name="sequence">external_referral_id_seq</param>
 			</generator>
 		</id>
 
 		<property name="facilityName" column="facility_name" type="string" />
 		<property name="facilityUuid" column="facility_uuid" type="string" />
-		<property name="status" column="status" type="string" />
-		<property name="requestId" column="request_id" type="string" />
-		<property name="requesterId" column="requester_id" type="string" />
-		<property name="patientUuid" column="patient_uuid" type="string" />
+		<property name="referTo" column="refer_to" type="string" />
 		<property name="patientName" column="patient_name" type="string" />
-		<property name="patientIdentifier" column="patient_identifier"
-			type="string" />
-		<property name="serviceCategory" column="service_category"
-			type="string" />
-		<property name="serviceType" column="service_type" type="string" />
-		<property name="specialty" column="specialty" type="string" />
-		<property name="slot" column="slot" type="string" />
-		<property name="duration" column="duration" type="int" />
-		<property name="practitionerName" column="practitioner_name" type="string" />
-		<property name="appointmentDate" column="appointment_date" type="string" />
-		<property name="appointmentTime" column="appointment_time" type="string" />
+		<property name="patientId" column="patient_id" type="string" />
+		<property name="referredBy" column="referred_by" type="string" />
+		<property name="referrerId" column="referrer_id" type="string" />
+		<property name="priorityOfReferral" column="priority_of_referral" type="string" />
+		<property name="reason" column="reason" type="string" />
 		<property name="visitId" column="visit_id" type="string" />
-
 
 		<property name="dateCreated" column="date_created" type="java.util.Date"
 			not-null="true" />
@@ -46,7 +36,6 @@
 		<property name="voidReason" column="void_reason" type="java.lang.String" />
 		<property name="uuid" column="uuid" type="java.lang.String"
 			not-null="true" />
-
 	</class>
 
 

@@ -2,7 +2,10 @@ package org.openmrs.module.doctor.ui.api;
 
 import java.util.UUID;
 
+import org.hibernate.validator.constraints.NotEmpty;
 import org.openmrs.BaseOpenmrsData;
+
+import javax.validation.constraints.NotNull;
 
 public class ExternalAppointment extends BaseOpenmrsData {
 	
@@ -10,18 +13,30 @@ public class ExternalAppointment extends BaseOpenmrsData {
 	
 	private String facilityName;
 	
+	@NotNull(message = "Facility UUID can't be empty")
+	@NotEmpty(message = "Facility UUID can't be empty")
 	private String facilityUuid;
 	
+	@NotNull(message = "Status can't be empty")
+	@NotEmpty(message = "Status can't be empty")
 	private String status;
 	
 	private String requestId = UUID.randomUUID().toString();
 	
+	@NotNull(message = "Requester ID can't be empty")
+	@NotEmpty(message = "Requester ID can't be empty")
 	private String requesterId;;
 	
+	@NotNull(message = "Patient ID (MPI) can't be empty")
+	@NotEmpty(message = "Patient ID (MPI) can't be empty")
 	private String patientUuid;
 	
+	@NotNull(message = "Patient Name can't be empty")
+	@NotEmpty(message = "Patient Name can't be empty")
 	private String patientName;
 	
+	@NotNull(message = "Patient Identifier can't be empty")
+	@NotEmpty(message = "Patient Identifier can't be empty")
 	private String patientIdentifier;
 	
 	private String serviceCategory;
@@ -30,15 +45,23 @@ public class ExternalAppointment extends BaseOpenmrsData {
 	
 	private String specialty;
 	
+	@NotNull(message = "Slot can't be empty")
+	@NotEmpty(message = "Slot can't be empty")
 	private String slot;
 	
 	private int duration;
 	
+	@NotNull(message = "Practitioner name can't be empty")
+	@NotEmpty(message = "Practitioner name can't be empty")
 	private String practitionerName;
 	
 	private String appointmentDate;
 	
 	private String appointmentTime;
+	
+	@NotNull(message = "Visit ID can't be empty")
+	@NotEmpty(message = "Visit ID can't be empty")
+	private String visitId;
 	
 	public String getFacilityName() {
 		return facilityName;
@@ -180,14 +203,23 @@ public class ExternalAppointment extends BaseOpenmrsData {
 		this.appointmentTime = appointmentTime;
 	}
 	
-	@Override
-	public String toString() {
-		return "ExternalAppointment [id=" + id + ", facilityName=" + facilityName + ", facilityUuid=" + facilityUuid
-		        + ", status=" + status + ", requestId=" + requestId + ", requesterId=" + requesterId + ", patientUuid="
-		        + patientUuid + ", patientName=" + patientName + ", patientIdentifier=" + patientIdentifier
-		        + ", serviceCategory=" + serviceCategory + ", serviceType=" + serviceType + ", specialty=" + specialty
-		        + ", slot=" + slot + ", duration=" + duration + ", practitionerName=" + practitionerName
-		        + ", appointmentDate=" + appointmentDate + ", appointmentTime=" + appointmentTime + "]";
+	public String getVisitId() {
+		return visitId;
 	}
 	
+	public void setVisitId(String visitId) {
+		this.visitId = visitId;
+	}
+	
+	@Override
+	public String toString() {
+		return "ExternalAppointment{" + "id=" + id + ", facilityName='" + facilityName + '\'' + ", facilityUuid='"
+		        + facilityUuid + '\'' + ", status='" + status + '\'' + ", requestId='" + requestId + '\''
+		        + ", requesterId='" + requesterId + '\'' + ", patientUuid='" + patientUuid + '\'' + ", patientName='"
+		        + patientName + '\'' + ", patientIdentifier='" + patientIdentifier + '\'' + ", serviceCategory='"
+		        + serviceCategory + '\'' + ", serviceType='" + serviceType + '\'' + ", specialty='" + specialty + '\''
+		        + ", slot='" + slot + '\'' + ", duration=" + duration + ", practitionerName='" + practitionerName + '\''
+		        + ", appointmentDate='" + appointmentDate + '\'' + ", appointmentTime='" + appointmentTime + '\''
+		        + ", visitId='" + visitId + '\'' + '}';
+	}
 }

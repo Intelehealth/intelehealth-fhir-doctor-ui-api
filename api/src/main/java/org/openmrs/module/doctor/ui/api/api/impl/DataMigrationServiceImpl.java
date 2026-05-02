@@ -10,6 +10,8 @@
 package org.openmrs.module.doctor.ui.api.api.impl;
 
 import java.math.BigDecimal;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -139,9 +141,15 @@ public class DataMigrationServiceImpl extends BaseOpenmrsService implements Data
 	public String getMember(String resourceType, Map<String, String> reqParam) throws Exception {
 		StringBuilder queryParam = new StringBuilder();
 		for (Map.Entry<String, String> entry : reqParam.entrySet()) {
-			queryParam.append("&" + entry.getKey() + "=" + entry.getValue());
+			queryParam.append("&" + entry.getKey() + "=" + URLEncoder.encode(entry.getValue()));
 		}
-		String theSearchParamString = queryParam.substring(1);
+		
+		String theSearchParamString = "";
+		
+		if (queryParam.length() > 1) {
+			theSearchParamString = queryParam.substring(1);
+		}
+		
 		// openCR url
 		String url = "http://192.168.19.152:5001/shr/rest/v1/bundle/" + resourceType + "?" + theSearchParamString;
 		System.err.println("URL::::" + url);
