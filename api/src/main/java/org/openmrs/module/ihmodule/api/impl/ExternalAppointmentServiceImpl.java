@@ -12,6 +12,7 @@ package org.openmrs.module.ihmodule.api.impl;
 import org.apache.http.client.utils.DateUtils;
 import org.openmrs.User;
 import org.openmrs.api.APIException;
+import org.openmrs.api.context.Context;
 import org.openmrs.api.db.UserDAO;
 import org.openmrs.api.impl.BaseOpenmrsService;
 import org.openmrs.module.ihmodule.ExternalAppointment;
@@ -26,7 +27,6 @@ import org.openmrs.module.ihmodule.utils.HttpService;
 import org.openmrs.module.ihmodule.utils.ReqParam;
 import org.hibernate.validator.HibernateValidator;
 import org.hibernate.validator.messageinterpolation.ParameterMessageInterpolator;
-import org.springframework.beans.factory.annotation.Autowired;
 
 import javax.validation.ConstraintViolation;
 import javax.validation.Validation;
@@ -42,11 +42,10 @@ public class ExternalAppointmentServiceImpl extends BaseOpenmrsService implement
 	
 	ExternalAppointmentDao dao;
 	
-	@Autowired
-	UserDAO userDao;
+	UserDAO userDao = Context.getRegisteredComponent("userDAO", UserDAO.class);
 	
-	@Autowired
-	DeploymentConfProperties deployConf;
+	DeploymentConfProperties deployConf = Context.getRegisteredComponent("ihmodule.DeploymentConfProperties",
+	    DeploymentConfProperties.class);
 	
 	public void setDao(ExternalAppointmentDao dao) {
 		this.dao = dao;

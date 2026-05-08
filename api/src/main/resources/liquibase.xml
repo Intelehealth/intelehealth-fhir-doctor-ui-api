@@ -357,4 +357,94 @@
 		</addColumn>
 	</changeSet>
 
+	<changeSet id="ih-marker-1.0.0" author="codex">
+		<preConditions onFail="MARK_RAN">
+			<not><tableExists tableName="ih_marker"/></not>
+		</preConditions>
+		<createTable tableName="ih_marker">
+			<column name="id" type="int(11)" autoIncrement="true">
+				<constraints primaryKey="true" nullable="false"/>
+			</column>
+			<column name="name" type="varchar(255)"/>
+			<column name="last_sync_time" type="varchar(255)"/>
+		</createTable>
+	</changeSet>
+
+	<changeSet id="mpi-duplicate-review-case-1.0.0" author="codex">
+		<preConditions onFail="MARK_RAN">
+			<not><tableExists tableName="mpi_patient_duplicate_review_case"/></not>
+		</preConditions>
+		<createTable tableName="mpi_patient_duplicate_review_case">
+			<column name="id" type="bigint(20)" autoIncrement="true"><constraints primaryKey="true" nullable="false"/></column>
+			<column name="case_uuid" type="varchar(64)"><constraints nullable="false" unique="true"/></column>
+			<column name="local_patient_uuid" type="varchar(128)"><constraints nullable="false"/></column>
+			<column name="source_birthdate" type="varchar(32)"/>
+			<column name="source_family" type="varchar(512)"/>
+			<column name="source_given" type="varchar(512)"/>
+			<column name="source_gender_code" type="varchar(16)"/>
+			<column name="source_telecom" type="varchar(256)"/>
+			<column name="source_address_lines" type="longtext"/>
+			<column name="source_address_city" type="varchar(256)"/>
+			<column name="source_address_district" type="varchar(256)"/>
+			<column name="source_address_state" type="varchar(256)"/>
+			<column name="source_address_postal_code" type="varchar(64)"/>
+			<column name="source_address_country" type="varchar(128)"/>
+			<column name="source_address_snapshot" type="longtext"/>
+			<column name="candidate_count" type="int(11)"><constraints nullable="false"/></column>
+			<column name="review_status" type="varchar(32)"><constraints nullable="false"/></column>
+			<column name="chosen_fhir_patient_logical_id" type="varchar(128)"/>
+			<column name="chosen_mpi_identifier_value" type="varchar(256)"/>
+			<column name="resolution_notes" type="longtext"/>
+			<column name="resolved_by" type="varchar(128)"/>
+			<column name="date_created" type="varchar(32)"/>
+			<column name="date_resolved" type="varchar(32)"/>
+			<column name="outbound_bundle_json" type="longtext"/>
+			<column name="search_bundle_json" type="longtext"/>
+		</createTable>
+	</changeSet>
+
+	<changeSet id="mpi-duplicate-review-candidate-1.0.0" author="codex">
+		<preConditions onFail="MARK_RAN">
+			<not><tableExists tableName="mpi_patient_duplicate_review_candidate"/></not>
+		</preConditions>
+		<createTable tableName="mpi_patient_duplicate_review_candidate">
+			<column name="id" type="bigint(20)" autoIncrement="true"><constraints primaryKey="true" nullable="false"/></column>
+			<column name="review_case_id" type="bigint(20)"><constraints nullable="false"/></column>
+			<column name="fhir_patient_logical_id" type="varchar(128)"><constraints nullable="false"/></column>
+			<column name="mpi_identifier_value" type="varchar(256)"/>
+			<column name="candidate_birthdate" type="varchar(32)"/>
+			<column name="candidate_family" type="varchar(512)"/>
+			<column name="candidate_given" type="varchar(512)"/>
+			<column name="candidate_gender_code" type="varchar(16)"/>
+			<column name="candidate_telecom" type="varchar(256)"/>
+			<column name="candidate_address_lines" type="longtext"/>
+			<column name="candidate_address_city" type="varchar(256)"/>
+			<column name="candidate_address_district" type="varchar(256)"/>
+			<column name="candidate_address_state" type="varchar(256)"/>
+			<column name="candidate_address_postal_code" type="varchar(64)"/>
+			<column name="candidate_address_country" type="varchar(128)"/>
+			<column name="candidate_address_snapshot" type="longtext"/>
+			<column name="patient_resource_json" type="longtext"/>
+		</createTable>
+		<addForeignKeyConstraint baseTableName="mpi_patient_duplicate_review_candidate" baseColumnNames="review_case_id"
+			constraintName="fk_mpi_dup_candidate_case" referencedTableName="mpi_patient_duplicate_review_case"
+			referencedColumnNames="id"/>
+	</changeSet>
+
+	<changeSet id="fhir-resource-validation-record-1.0.0" author="codex">
+		<preConditions onFail="MARK_RAN">
+			<not><tableExists tableName="fhir_resource_validation_record"/></not>
+		</preConditions>
+		<createTable tableName="fhir_resource_validation_record">
+			<column name="id" type="bigint(20)" autoIncrement="true"><constraints primaryKey="true" nullable="false"/></column>
+			<column name="resource_type" type="varchar(64)"><constraints nullable="false"/></column>
+			<column name="resource_logical_id" type="varchar(256)"/>
+			<column name="outcome" type="varchar(32)"><constraints nullable="false"/></column>
+			<column name="message" type="text"/>
+			<column name="payload_json" type="longtext"/>
+			<column name="date_created" type="varchar(32)"/>
+			<column name="record_uuid" type="varchar(64)"><constraints nullable="false"/></column>
+		</createTable>
+	</changeSet>
+
 </databaseChangeLog>

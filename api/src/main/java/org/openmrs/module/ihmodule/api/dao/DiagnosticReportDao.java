@@ -8,21 +8,19 @@ import org.hibernate.transform.AliasToBeanResultTransformer;
 import org.hibernate.type.StandardBasicTypes;
 import org.openmrs.User;
 import org.openmrs.api.APIException;
+import org.openmrs.api.context.Context;
 import org.openmrs.api.db.UserDAO;
 import org.openmrs.api.db.hibernate.DbSessionFactory;
 import org.openmrs.module.ihmodule.DiagnosticReport;
 import org.openmrs.module.ihmodule.dto.DiagnosticReportDTO;
 import org.openmrs.module.ihmodule.dto.ExternalAppointmentDTO;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 public class DiagnosticReportDao {
 	
-	@Autowired
-	DbSessionFactory sessionFactory;
+	DbSessionFactory sessionFactory = Context.getRegisteredComponent("dbSessionFactory", DbSessionFactory.class);
 	
-	@Autowired
-	UserDAO userDao;
+	UserDAO userDao = Context.getRegisteredComponent("userDAO", UserDAO.class);
 	
 	@Transactional
 	public void save(DiagnosticReport dreport) throws APIException {

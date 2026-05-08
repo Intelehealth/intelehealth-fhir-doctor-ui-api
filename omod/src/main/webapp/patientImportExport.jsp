@@ -19,11 +19,7 @@
 		(FHIR R4 <strong>Patient</strong> or <strong>Bundle</strong> JSON), and date-range export from
 		<code>GET …/patient/export/created</code> (<code>startDate</code> / <code>endDate</code> as <code>yyyy-MM-dd</code>).
 	</p>--%>
-	<p class="small text-muted">
-		
-		Upstream base URL: Administration → Settings → <code><c:out value="${patientExchangeGpKey}" /></code>
-		(or <code>patientexchange.baseUrl</code> in <code>ihmodule.properties</code>).
-	</p>
+	<p class="small text-muted">API is served directly from this module via <code>/ws/rest/v1/ihmodule/patient-exchange</code>.</p>
 
 	<div class="row g-4">
 		<div class="col-lg-6">
@@ -35,6 +31,18 @@
 						The API returns counts (<code>total</code>, <code>created</code>, <code>skipped</code>, <code>failed</code>) and per-row <code>items</code>
 						with <code>inputId</code>, <code>status</code> (<code>CREATED</code> | <code>SKIPPED</code> | <code>FAILED</code>), <code>message</code>, and optional <code>createdId</code>.
 					</p>
+					<div class="mb-3">
+						<label for="importLocation" class="form-label">Location</label>
+						<select class="form-select form-select-sm" id="importLocation" required>
+							<option value="">Select location </option>
+							<c:forEach var="loc" items="${importLocations}">
+								<option value="<c:out value="${loc.uuid}" />"><c:out value="${loc.name}" /></option>
+							</c:forEach>
+						</select>
+						<c:if test="${empty importLocations}">
+							<p class="small text-warning mb-0 mt-1">No active locations found (or not logged in).</p>
+						</c:if>
+					</div>
 					<div class="mb-3">
 						<label for="importFile" class="form-label">FHIR JSON file</label>
 						<input type="file" class="form-control form-control-sm" id="importFile" accept=".json,application/json" />
@@ -98,6 +106,6 @@
 		proxyBase: '<c:out value="${patientExchangeProxyBase}" />'
 	};
 </script>
-<script src="${pageContext.request.contextPath}/moduleResources/ihmodule/js/patientImportExport.js?v=1"></script>
+<script src="${pageContext.request.contextPath}/moduleResources/ihmodule/js/patientImportExport.js?v=2"></script>
 
 <%@ include file="/WEB-INF/template/footer.jsp"%>

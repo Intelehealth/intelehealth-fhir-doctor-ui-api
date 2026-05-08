@@ -18,6 +18,200 @@
 
 	var proxyBase = normalizePatientExchangeProxyBase(cfg.proxyBase || '');
 
+	/** Full pending list from last successful GET (client-side pagination). */
+	var pendingRowsCache = [];
+	var pendingCurrentPage = 1;
+	var pendingPaginationWired = false;
+
+	function getPendingPageSize() {
+		var sel = document.getElementById('pendingPageSize');
+		if (!sel) {
+			return 10;
+		}
+		var v = parseInt(sel.value, 10);
+		if (isNaN(v) || v < 0) {
+			return 10;
+		}
+		return v;
+	}
+
+	function totalPendingPages(nRows, pageSize) {
+		if (nRows === 0) {
+			return 1;
+		}
+		if (pageSize === 0) {
+			return 1;
+		}
+		return Math.max(1, Math.ceil(nRows / pageSize));
+	}
+
+	function buildPendingRowElement(row) {
+		var tr = document.createElement('tr');
+		var name = [row.sourceGiven || '', row.sourceFamily || ''].join(' ').trim() || '—';
+		tr.innerHTML =
+			'<td>' +
+			escapeHtml(row.dateCreated || '') +
+			'</td>' +
+			'<td><code>' +
+			escapeHtml(row.localPatientUuid || '') +
+			'</code></td>' +
+			'<td>' +
+			escapeHtml(name) +
+			'</td>' +
+			'<td>' +
+			escapeHtml(row.sourceBirthdate || '') +
+			'</td>' +
+			'<td>' +
+			escapeHtml(row.sourceGenderCode || '') +
+			'</td>' +
+			'<td class="small text-break" style="white-space:pre-line;max-width:280px">' +
+			escapeHtml(row.candidateAddressSnapshot || '') +
+			'</td>' +
+			'<td>' +
+			String(row.candidateCount != null ? row.candidateCount : '') +
+			'</td>' +
+			'<td><small>' +
+			escapeHtml(row.caseUuid || '') +
+			'</small></td>' +
+			'<td>' +
+			'<button type="button" class="btn btn-sm btn-outline-primary me-1 btn-view-dup">View duplicates</button>' +
+			'<button type="button" class="btn btn-sm btn-primary btn-force-sync">Force sync</button>' +
+			'</td>';
+		tr.dataset.caseUuid = row.caseUuid || '';
+		tr.dataset.localPatientUuid = row.localPatientUuid || '';
+		tr.dataset.sourceTelecom = row.sourceTelecom || '';
+		return tr;
+	}
+
+	function bindPendingRowButtons(tbody) {
+		Array.prototype.forEach.call(tbody.querySelectorAll('.btn-view-dup'), function (btn) {
+			btn.addEventListener('click', function () {
+				var tr = btn.closest('tr');
+				openCandidatesModal(
+					tr.dataset.caseUuid,
+					tr.dataset.localPatientUuid,
+					readSourceMetaFromPendingRow(tr)
+				);
+			});
+		});
+		Array.prototype.forEach.call(tbody.querySelectorAll('.btn-force-sync'), function (btn) {
+			btn.addEventListener('click', function () {
+				var tr = btn.closest('tr');
+				doForceSyncThenReview(tr.dataset.localPatientUuid, tr.dataset.caseUuid, btn);
+			});
+		});
+	}
+
+	function updatePendingPaginationControls(startIdx, endIdx, totalRows, pageCount, pageSize) {
+		var info = document.getElementById('pendingPaginationInfo');
+		var ind = document.getElementById('pendingPageIndicator');
+		var prevBtn = document.getElementById('pendingPagePrev');
+		var nextBtn = document.getElementById('pendingPageNext');
+		var prevLi = document.getElementById('pendingPagePrevLi');
+		var nextLi = document.getElementById('pendingPageNextLi');
+		if (info) {
+			if (pageSize === 0) {
+				info.textContent = 'Showing all ' + totalRows + ' row(s)';
+			} else {
+				info.textContent =
+					'Showing ' + startIdx + '–' + endIdx + ' of ' + totalRows + ' row(s)';
+			}
+		}
+		if (ind) {
+			ind.textContent = 'Page ' + pendingCurrentPage + ' / ' + pageCount;
+		}
+		var prevDis = pendingCurrentPage <= 1 || pageSize === 0 || totalRows === 0;
+		var nextDis = pendingCurrentPage >= pageCount || pageSize === 0 || totalRows === 0;
+		if (prevBtn) {
+			prevBtn.disabled = prevDis;
+		}
+		if (nextBtn) {
+			nextBtn.disabled = nextDis;
+		}
+		if (prevLi) {
+			prevLi.classList.toggle('disabled', prevDis);
+		}
+		if (nextLi) {
+			nextLi.classList.toggle('disabled', nextDis);
+		}
+	}
+
+	function renderPendingTablePage() {
+		var tbody = document.getElementById('pendingCasesBody');
+		var wrap = document.getElementById('pendingPaginationWrap');
+		if (!tbody) {
+			return;
+		}
+		var n = pendingRowsCache.length;
+		if (n === 0) {
+			tbody.innerHTML =
+				'<tr><td colspan="9" class="text-center text-muted">No pending duplicate-review cases.</td></tr>';
+			if (wrap) {
+				wrap.style.display = 'none';
+			}
+			return;
+		}
+		var ps = getPendingPageSize();
+		var pageCount = totalPendingPages(n, ps);
+		if (pendingCurrentPage > pageCount) {
+			pendingCurrentPage = pageCount;
+		}
+		if (pendingCurrentPage < 1) {
+			pendingCurrentPage = 1;
+		}
+		var start = ps === 0 ? 0 : (pendingCurrentPage - 1) * ps;
+		var slice =
+			ps === 0 ? pendingRowsCache.slice() : pendingRowsCache.slice(start, start + ps);
+		var startDisplay = ps === 0 ? 1 : start + 1;
+		var endDisplay = ps === 0 ? n : start + slice.length;
+
+		tbody.innerHTML = '';
+		slice.forEach(function (row) {
+			tbody.appendChild(buildPendingRowElement(row));
+		});
+		bindPendingRowButtons(tbody);
+
+		if (wrap) {
+			wrap.style.display = '';
+		}
+		updatePendingPaginationControls(startDisplay, endDisplay, n, pageCount, ps);
+	}
+
+	function wirePendingPaginationIfNeeded() {
+		if (pendingPaginationWired) {
+			return;
+		}
+		pendingPaginationWired = true;
+		var prevBtn = document.getElementById('pendingPagePrev');
+		var nextBtn = document.getElementById('pendingPageNext');
+		var sizeSel = document.getElementById('pendingPageSize');
+		if (prevBtn) {
+			prevBtn.addEventListener('click', function () {
+				if (pendingCurrentPage > 1) {
+					pendingCurrentPage--;
+					renderPendingTablePage();
+				}
+			});
+		}
+		if (nextBtn) {
+			nextBtn.addEventListener('click', function () {
+				var n = pendingRowsCache.length;
+				var ps = getPendingPageSize();
+				var pc = totalPendingPages(n, ps);
+				if (pendingCurrentPage < pc) {
+					pendingCurrentPage++;
+					renderPendingTablePage();
+				}
+			});
+		}
+		if (sizeSel) {
+			sizeSel.addEventListener('change', function () {
+				pendingCurrentPage = 1;
+				renderPendingTablePage();
+			});
+		}
+	}
+
 	function showBsModal(el) {
 		if (!el) {
 			return;
@@ -108,6 +302,10 @@
 		return proxyBase + '/mpi-local';
 	}
 
+	function statisticsUrl() {
+		return proxyBase + '/cases/statistics';
+	}
+
 	function readOwaspCsrfToken() {
 		var names = ['OWASP-CSRFTOKEN', 'OWASP_CSRFTOKEN'];
 		var i;
@@ -163,13 +361,58 @@
 		return typeof s === 'string' && /^\s*</.test(s);
 	}
 
+	function setStatEl(id, n) {
+		var el = document.getElementById(id);
+		if (el) {
+			el.textContent = n != null ? String(n) : '—';
+		}
+	}
+
+	function loadDupReviewStatistics() {
+		fetch(statisticsUrl(), { credentials: 'same-origin' })
+			.then(function (r) {
+				return r.text().then(function (t) {
+					return { ok: r.ok, text: t };
+				});
+			})
+			.then(function (res) {
+				if (!res.ok) {
+					setStatEl('statTotalCases', '—');
+					setStatEl('statPending', '—');
+					setStatEl('statResolvedLink', '—');
+					setStatEl('statResolvedForce', '—');
+					return;
+				}
+				var j = JSON.parse(res.text);
+				if (!j || j.error) {
+					return;
+				}
+				setStatEl('statTotalCases', j.totalCases);
+				setStatEl('statPending', j.pendingCount);
+				setStatEl('statResolvedLink', j.resolvedLinkExistingCount);
+				setStatEl('statResolvedForce', j.resolvedForceSendCount);
+			})
+			.catch(function () {
+				setStatEl('statTotalCases', '—');
+				setStatEl('statPending', '—');
+				setStatEl('statResolvedLink', '—');
+				setStatEl('statResolvedForce', '—');
+			});
+	}
+
 	function loadPendingList() {
 		var tbody = document.getElementById('pendingCasesBody');
 		var status = document.getElementById('pendingStatus');
+		var wrap = document.getElementById('pendingPaginationWrap');
 		if (!tbody) {
 			return;
 		}
-		tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">Loading…</td></tr>';
+		wirePendingPaginationIfNeeded();
+		pendingRowsCache = [];
+		if (wrap) {
+			wrap.style.display = 'none';
+		}
+		tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">Loading…</td></tr>';
 		if (status) {
 			status.textContent = '';
 			status.className = 'ms-2 text-muted';
@@ -188,65 +431,22 @@
 				if (!Array.isArray(rows)) {
 					throw new Error(rows.error || JSON.stringify(rows));
 				}
-				tbody.innerHTML = '';
-				if (!rows.length) {
-					tbody.innerHTML =
-						'<tr><td colspan="8" class="text-center text-muted">No pending duplicate-review cases.</td></tr>';
-					return;
-				}
-				rows.forEach(function (row) {
-					var tr = document.createElement('tr');
-					var name =
-						[row.sourceGiven || '', row.sourceFamily || ''].join(' ').trim() || '—';
-					tr.innerHTML =
-						'<td>' +
-						escapeHtml(row.dateCreated || '') +
-						'</td>' +
-						'<td><code>' +
-						escapeHtml(row.localPatientUuid || '') +
-						'</code></td>' +
-						'<td>' +
-						escapeHtml(name) +
-						'</td>' +
-						'<td>' +
-						escapeHtml(row.sourceBirthdate || '') +
-						'</td>' +
-						'<td>' +
-						escapeHtml(row.sourceGenderCode || '') +
-						'</td>' +
-						'<td>' +
-						String(row.candidateCount != null ? row.candidateCount : '') +
-						'</td>' +
-						'<td><small>' +
-						escapeHtml(row.caseUuid || '') +
-						'</small></td>' +
-						'<td>' +
-						'<button type="button" class="btn btn-sm btn-outline-primary me-1 btn-view-dup">View duplicates</button>' +
-						'<button type="button" class="btn btn-sm btn-primary btn-force-sync">Force sync &amp; review</button>' +
-						'</td>';
-					tr.dataset.caseUuid = row.caseUuid || '';
-					tr.dataset.localPatientUuid = row.localPatientUuid || '';
-					tbody.appendChild(tr);
-				});
-
-				Array.prototype.forEach.call(tbody.querySelectorAll('.btn-view-dup'), function (btn) {
-					btn.addEventListener('click', function () {
-						var tr = btn.closest('tr');
-						openCandidatesModal(tr.dataset.caseUuid, tr.dataset.localPatientUuid);
-					});
-				});
-				Array.prototype.forEach.call(tbody.querySelectorAll('.btn-force-sync'), function (btn) {
-					btn.addEventListener('click', function () {
-						var tr = btn.closest('tr');
-						doForceSyncThenReview(tr.dataset.localPatientUuid, tr.dataset.caseUuid, btn);
-					});
-				});
+				pendingRowsCache = rows;
+				pendingCurrentPage = 1;
+				renderPendingTablePage();
 			})
 			.catch(function (e) {
+				pendingRowsCache = [];
+				if (wrap) {
+					wrap.style.display = 'none';
+				}
 				tbody.innerHTML =
-					'<tr><td colspan="8" class="text-danger">Failed to load pending cases: ' +
+					'<tr><td colspan="9" class="text-danger">Failed to load pending cases: ' +
 					escapeHtml(String(e.message || e)) +
 					'</td></tr>';
+			})
+			.then(function () {
+				loadDupReviewStatistics();
 			});
 	}
 
@@ -261,13 +461,78 @@
 			.replace(/"/g, '&quot;');
 	}
 
-	function openCandidatesModal(caseUuid, sourcePatientUuid, showModal) {
+	function readSourceMetaFromPendingRow(tr) {
+		if (!tr || !tr.cells || tr.cells.length < 9) {
+			return null;
+		}
+		return {
+			created: tr.cells[0].textContent.trim(),
+			patientUuid: tr.cells[1].textContent.trim(),
+			name: tr.cells[2].textContent.trim(),
+			dob: tr.cells[3].textContent.trim(),
+			gender: tr.cells[4].textContent.trim(),
+			address: tr.cells[5].textContent.trim(),
+			candidateCount: tr.cells[6].textContent.trim(),
+			caseUuid: tr.cells[7].textContent.trim(),
+			telecom: (tr.dataset && tr.dataset.sourceTelecom ? tr.dataset.sourceTelecom : '').trim()
+		};
+	}
+
+	function fillModalSourceSummary(meta, caseUuid, sourcePatientUuid) {
+		function setText(id, val) {
+			var el = document.getElementById(id);
+			if (el) {
+				el.textContent = val != null && String(val).length ? val : '—';
+			}
+		}
+		if (!meta) {
+			setText('modalSrcName', '—');
+			setText('modalSrcDob', '—');
+			setText('modalSrcGender', '—');
+			setText('modalSrcTelecom', '—');
+			setText('modalSrcAddress', '—');
+			setText('modalSrcCreated', '—');
+			setText('modalSrcCandCount', '—');
+			setText('modalSourcePatientUuid', sourcePatientUuid || '—');
+			setText('modalCaseUuid', caseUuid || '—');
+			return;
+		}
+		setText('modalSrcName', meta.name);
+		setText('modalSrcDob', meta.dob);
+		setText('modalSrcGender', meta.gender);
+		setText('modalSrcTelecom', meta.telecom);
+		setText('modalSrcAddress', meta.address);
+		setText('modalSrcCreated', meta.created);
+		setText('modalSrcCandCount', meta.candidateCount);
+		setText('modalSourcePatientUuid', meta.patientUuid || sourcePatientUuid || '');
+		setText('modalCaseUuid', meta.caseUuid || caseUuid || '');
+	}
+
+	/**
+	 * @param {string} caseUuid
+	 * @param {string} sourcePatientUuid
+	 * @param {object|boolean} sourceMetaOrShowModal  optional row snapshot; or legacy third arg was showModal boolean
+	 * @param {boolean} [showModal]
+	 */
+	function openCandidatesModal(caseUuid, sourcePatientUuid, sourceMetaOrShowModal, showModal) {
+		var sourceMeta = null;
+		var show = true;
+		if (typeof sourceMetaOrShowModal === 'boolean') {
+			show = sourceMetaOrShowModal;
+		} else if (sourceMetaOrShowModal != null && typeof sourceMetaOrShowModal === 'object') {
+			sourceMeta = sourceMetaOrShowModal;
+			if (typeof showModal === 'boolean') {
+				show = showModal;
+			}
+		} else if (typeof showModal === 'boolean') {
+			show = showModal;
+		}
+
 		var modal = document.getElementById('duplicateReviewModal');
-		document.getElementById('modalSourcePatientUuid').textContent = sourcePatientUuid || '';
-		document.getElementById('modalCaseUuid').textContent = caseUuid || '';
+		fillModalSourceSummary(sourceMeta, caseUuid, sourcePatientUuid);
 		clearModalAlert();
 		var candBody = document.getElementById('candidatesBody');
-		candBody.innerHTML = '<tr><td colspan="7" class="text-muted">Loading…</td></tr>';
+		candBody.innerHTML = '<tr><td colspan="8" class="text-muted">Loading…</td></tr>';
 
 		fetch(candidatesUrl(caseUuid), { credentials: 'same-origin' })
 			.then(function (r) {
@@ -286,7 +551,7 @@
 				candBody.innerHTML = '';
 				if (!list.length) {
 					candBody.innerHTML =
-						'<tr><td colspan="7" class="text-muted">No candidates returned.</td></tr>';
+						'<tr><td colspan="8" class="text-muted">No candidates returned.</td></tr>';
 				} else {
 					list.forEach(function (c) {
 						var nm = [c.candidateGiven || '', c.candidateFamily || ''].join(' ').trim() || '—';
@@ -295,9 +560,9 @@
 							'<td><code>' +
 							escapeHtml(c.fhirPatientLogicalId || '') +
 							'</code></td>' +
-							'<td><input type="text" class="form-control form-control-sm mpi-val-input" value="' +
-							escapeHtml(c.mpiIdentifierValue || '') +
-							'" placeholder="MPI id"/></td>' +
+							'<td><span class="badge bg-light text-dark border">' +
+							escapeHtml(c.mpiIdentifierValue || '—') +
+							'</span></td>' +
 							'<td>' +
 							escapeHtml(nm) +
 							'</td>' +
@@ -309,29 +574,32 @@
 							'</td>' +
 							'<td>' +
 							escapeHtml(c.candidateTelecom || '') +
+						'</td>' +
+							'<td class="small text-break" style="white-space:pre-line;max-width:280px">' +
+							escapeHtml(c.candidateAddressSnapshot || '') +
 							'</td>' +
-							'<td><button type="button" class="btn btn-sm btn-success btn-set-mpi">Set MPI</button></td>';
+						'<td><button type="button" class="btn btn-sm btn-success btn-set-mpi">Use this MPI Id</button></td>';
 						tr.dataset.fhirLogicalId = c.fhirPatientLogicalId || '';
+						tr.dataset.mpiIdentifierValue = c.mpiIdentifierValue || '';
 						candBody.appendChild(tr);
 					});
 
 					Array.prototype.forEach.call(candBody.querySelectorAll('.btn-set-mpi'), function (btn) {
 						btn.addEventListener('click', function () {
 							var tr = btn.closest('tr');
-							var mpiInput = tr.querySelector('.mpi-val-input');
-							var mpiVal = mpiInput ? mpiInput.value.trim() : '';
+							var mpiVal = (tr.dataset.mpiIdentifierValue || '').trim();
 							postSetMpi(sourcePatientUuid, mpiVal, tr.dataset.fhirLogicalId, btn);
 						});
 					});
 				}
-				if (showModal !== false && modal) {
+				if (show !== false && modal) {
 					showBsModal(modal);
 				}
 			})
 			.catch(function (e) {
 				candBody.innerHTML =
-					'<tr><td colspan="7" class="text-danger">' + escapeHtml(String(e.message || e)) + '</td></tr>';
-				if (showModal !== false && modal) {
+					'<tr><td colspan="8" class="text-danger">' + escapeHtml(String(e.message || e)) + '</td></tr>';
+				if (show !== false && modal) {
 					showBsModal(modal);
 				}
 			});
@@ -410,9 +678,7 @@
 					status.textContent = okMsg;
 					status.className = 'ms-2 text-success';
 				}
-				modalAlert(okMsg, 'success');
-				openCandidatesModal(caseUuid, localPatientUuid, true);
-				loadPendingList();
+				window.location.reload();
 			})
 			.catch(function (e) {
 				btn.disabled = false;
@@ -430,7 +696,7 @@
 			return;
 		}
 		if (!mpiIdentifierValue) {
-			alert('Enter or confirm MPI identifier value.');
+			alert('MPI identifier value is missing for this candidate.');
 			return;
 		}
 		btn.disabled = true;
@@ -455,15 +721,22 @@
 			})
 			.then(function (res) {
 				btn.disabled = false;
+				var parsed = null;
 				try {
-					var j = JSON.parse(res.text);
-					modalAlert(
-						j.message || j.error || JSON.stringify(j),
-						res.ok && j.status !== 'skipped' ? 'success' : 'warning'
-					);
+					parsed = JSON.parse(res.text);
 				} catch (ex) {
-					modalAlert(res.text.substring(0, 400), res.ok ? 'success' : 'danger');
+					parsed = null;
 				}
+				if (res.ok && parsed && !parsed.error && parsed.status !== 'failed') {
+					window.location.reload();
+					return;
+				}
+				modalAlert(
+					parsed
+						? (parsed.message || parsed.error || JSON.stringify(parsed))
+						: res.text.substring(0, 400),
+					res.ok ? 'warning' : 'danger'
+				);
 				loadPendingList();
 			})
 			.catch(function (e) {
@@ -473,6 +746,7 @@
 	}
 
 	document.addEventListener('DOMContentLoaded', function () {
+		loadDupReviewStatistics();
 		loadPendingList();
 		var refresh = document.getElementById('btnRefreshPending');
 		if (refresh) {

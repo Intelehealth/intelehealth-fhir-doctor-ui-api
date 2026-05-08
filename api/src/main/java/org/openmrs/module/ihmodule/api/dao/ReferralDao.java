@@ -17,14 +17,13 @@ import org.apache.commons.lang3.StringUtils;
 import org.hibernate.transform.AliasToBeanResultTransformer;
 import org.hibernate.type.StandardBasicTypes;
 import org.openmrs.api.APIException;
+import org.openmrs.api.context.Context;
 import org.openmrs.api.db.hibernate.DbSessionFactory;
 import org.openmrs.module.ihmodule.Referral;
-import org.springframework.beans.factory.annotation.Autowired;
 
 public class ReferralDao {
 	
-	@Autowired
-	DbSessionFactory sessionFactory;
+	DbSessionFactory sessionFactory = Context.getRegisteredComponent("dbSessionFactory", DbSessionFactory.class);
 	
 	@SuppressWarnings("unchecked")
 	public List<Referral> findAllByPatient(String uuid) throws APIException {

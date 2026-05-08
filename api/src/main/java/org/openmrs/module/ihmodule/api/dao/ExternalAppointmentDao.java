@@ -12,13 +12,13 @@ package org.openmrs.module.ihmodule.api.dao;
 import org.hibernate.transform.AliasToBeanResultTransformer;
 import org.hibernate.type.StandardBasicTypes;
 import org.openmrs.api.APIException;
+import org.openmrs.api.context.Context;
 import org.openmrs.api.db.hibernate.DbSession;
 import org.openmrs.api.db.hibernate.DbSessionFactory;
 import org.openmrs.module.ihmodule.ExternalAppointment;
 import org.openmrs.module.ihmodule.api.impl.exp.DuplicateEntryException;
 import org.openmrs.module.ihmodule.api.impl.exp.InvalidInputParamException;
 import org.openmrs.module.ihmodule.dto.ExternalAppointmentDTO;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.persistence.EntityNotFoundException;
@@ -28,8 +28,7 @@ import java.util.List;
 
 public class ExternalAppointmentDao {
 	
-	@Autowired
-	DbSessionFactory sessionFactory;
+	DbSessionFactory sessionFactory = Context.getRegisteredComponent("dbSessionFactory", DbSessionFactory.class);
 	
 	@SuppressWarnings("unchecked")
 	@Transactional

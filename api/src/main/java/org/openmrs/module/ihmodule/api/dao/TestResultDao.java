@@ -16,15 +16,14 @@ import org.hibernate.SessionFactory;
 import org.hibernate.transform.AliasToBeanResultTransformer;
 import org.hibernate.type.StandardBasicTypes;
 import org.openmrs.api.APIException;
+import org.openmrs.api.context.Context;
 import org.openmrs.api.db.hibernate.DbSession;
 import org.openmrs.api.db.hibernate.DbSessionFactory;
 import org.openmrs.module.ihmodule.TestResult;
-import org.springframework.beans.factory.annotation.Autowired;
 
 public class TestResultDao {
 	
-	@Autowired
-	DbSessionFactory dsessionFactory;
+	DbSessionFactory dsessionFactory = Context.getRegisteredComponent("dbSessionFactory", DbSessionFactory.class);
 	
 	private DbSession getSession() {
 		return dsessionFactory.getCurrentSession();

@@ -3,7 +3,7 @@
 
 <hibernate-mapping package="org.openmrs.module.ihmodule" >
 
-	<class name="DataExchangeAuditLog" table="data_exchange_auditlog" abstract="true">
+	<class name="DataExchangeAuditLog" entity-name="LegacyDataExchangeAuditLog" table="data_exchange_auditlog" abstract="true">
 	
 		<id name="id" type="int" column="id" unsaved-value="0">
 			<generator class="native">

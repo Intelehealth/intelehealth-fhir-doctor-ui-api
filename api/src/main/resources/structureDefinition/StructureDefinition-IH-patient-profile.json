@@ -1,0 +1,253 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "IH-patient-profile",
+  "extension": [
+    {
+      "url": "http://hl7.org/fhir/StructureDefinition/structuredefinition-category",
+      "valueString": "Base.Individuals"
+    },
+    {
+      "url": "http://hl7.org/fhir/StructureDefinition/structuredefinition-security-category",
+      "valueCode": "patient"
+    }
+  ],
+  "url": "https://ih-ig.mpower-social.com/StructureDefinition/IH-patient-profile",
+  "version": "1.0.0",
+  "name": "IHPatientProfile",
+  "title": "IH Patient Profile",
+  "status": "active",
+  "description": "An IH profile that extends the Patient resource with required identifier and meta.profile (assert this profile on create/update at the FHIR server).",
+  "fhirVersion": "4.0.1",
+  "mapping": [
+    {
+      "identity": "rim",
+      "uri": "http://hl7.org/v3",
+      "name": "RIM Mapping"
+    },
+    {
+      "identity": "cda",
+      "uri": "http://hl7.org/v3/cda",
+      "name": "CDA (R2)"
+    },
+    {
+      "identity": "w5",
+      "uri": "http://hl7.org/fhir/fivews",
+      "name": "FiveWs Pattern Mapping"
+    },
+    {
+      "identity": "v2",
+      "uri": "http://hl7.org/v2",
+      "name": "HL7 v2 Mapping"
+    },
+    {
+      "identity": "loinc",
+      "uri": "http://loinc.org",
+      "name": "LOINC code for the element"
+    }
+  ],
+  "kind": "resource",
+  "abstract": false,
+  "type": "Patient",
+  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/Patient",
+  "derivation": "constraint",
+  "differential": {
+    "element": [
+      {
+        "id": "Patient.meta",
+        "path": "Patient.meta",
+        "min": 1
+      },
+      {
+        "id": "Patient.meta.profile",
+        "path": "Patient.meta.profile",
+        "slicing": {
+          "discriminator": [
+            {
+              "type": "value",
+              "path": "$this"
+            }
+          ],
+          "rules": "open"
+        },
+        "min": 1
+      },
+      {
+        "id": "Patient.meta.profile:ihPatientProfile",
+        "path": "Patient.meta.profile",
+        "sliceName": "ihPatientProfile",
+        "min": 1,
+        "max": "1",
+        "patternCanonical": "https://ih-ig.mpower-social.com/StructureDefinition/IH-patient-profile"
+      },
+      {
+        "id": "Patient.implicitRules",
+        "path": "Patient.implicitRules",
+        "max": "0"
+      },
+      {
+        "id": "Patient.language",
+        "path": "Patient.language",
+        "max": "0"
+      },
+      {
+        "id": "Patient.text",
+        "path": "Patient.text",
+        "max": "0"
+      },
+      {
+        "id": "Patient.contained",
+        "path": "Patient.contained",
+        "max": "0"
+      },
+      {
+        "id": "Patient.extension",
+        "path": "Patient.extension",
+        "slicing": {
+          "discriminator": [
+            {
+              "type": "value",
+              "path": "url"
+            }
+          ],
+          "ordered": false,
+          "rules": "open"
+        }
+      },
+      {
+        "id": "Patient.extension:economicStatus",
+        "path": "Patient.extension",
+        "sliceName": "economicStatus",
+        "min": 0,
+        "max": "*",
+        "type": [
+          {
+            "code": "Extension",
+            "profile": [
+              "http://intelehealth-central-fhir.mpower-social.com/fhir/StructureDefinition/Economic-Status"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "Patient.extension:educationLevel",
+        "path": "Patient.extension",
+        "sliceName": "educationLevel",
+        "min": 0,
+        "max": "*",
+        "type": [
+          {
+            "code": "Extension",
+            "profile": [
+              "http://intelehealth-central-fhir.mpower-social.com/fhir/StructureDefinition/Education-Level"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "Patient.extension:nationalID",
+        "path": "Patient.extension",
+        "sliceName": "nationalID",
+        "min": 0,
+        "max": "*",
+        "type": [
+          {
+            "code": "Extension",
+            "profile": [
+              "http://intelehealth-central-fhir.mpower-social.com/fhir/StructureDefinition/NationalID"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "Patient.extension:occupation",
+        "path": "Patient.extension",
+        "sliceName": "occupation",
+        "min": 0,
+        "max": "*",
+        "type": [
+          {
+            "code": "Extension",
+            "profile": [
+              "http://intelehealth-central-fhir.mpower-social.com/fhir/StructureDefinition/occupation"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "Patient.extension:emergencyContactNumber",
+        "path": "Patient.extension",
+        "sliceName": "emergencyContactNumber",
+        "min": 0,
+        "max": "*",
+        "type": [
+          {
+            "code": "Extension",
+            "profile": [
+              "http://intelehealth-central-fhir.mpower-social.com/fhir/StructureDefinition/Emergency-Contact-Number"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "Patient.extension:householdNumber",
+        "path": "Patient.extension",
+        "sliceName": "householdNumber",
+        "min": 0,
+        "max": "*",
+        "type": [
+          {
+            "code": "Extension",
+            "profile": [
+              "http://intelehealth-central-fhir.mpower-social.com/fhir/StructureDefinition/Household-Number"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "Patient.extension:caste",
+        "path": "Patient.extension",
+        "sliceName": "caste",
+        "min": 0,
+        "max": "*",
+        "type": [
+          {
+            "code": "Extension",
+            "profile": [
+              "http://intelehealth-central-fhir.mpower-social.com/fhir/StructureDefinition/Caste"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "Patient.identifier",
+        "path": "Patient.identifier",
+        "definition": "An identifier for this patient",
+        "min": 1
+      },
+      {
+        "id": "Patient.identifier.type.coding.system",
+        "path": "Patient.identifier.type.coding.system",
+        "patternUri": "http://terminology.hl7.org/CodeSystem/v2-0203"
+      },
+      {
+        "id": "Patient.identifier.type.coding.code",
+        "path": "Patient.identifier.type.coding.code",
+        "binding": {
+          "strength": "required",
+          "valueSet": "http://hl7.org/fhir/ValueSet/identifier-type"
+        }
+      },
+      {
+        "id": "Patient.identifier.system",
+        "path": "Patient.identifier.system",
+        "min": 1
+      },
+      {
+        "id": "Patient.identifier.value",
+        "path": "Patient.identifier.value",
+        "short": "The value that is unique within the system",
+        "min": 1
+      }
+    ]
+  }
+}

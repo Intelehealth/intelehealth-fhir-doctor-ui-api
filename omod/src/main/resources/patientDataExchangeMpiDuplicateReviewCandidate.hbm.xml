@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE hibernate-mapping PUBLIC "-//Hibernate/Hibernate Mapping DTD 3.0//EN"
+        "http://hibernate.sourceforge.net/hibernate-mapping-3.0.dtd">
+<hibernate-mapping package="org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate">
+	<class name="MpiPatientDuplicateReviewCandidate" table="mpi_patient_duplicate_review_candidate">
+		<id name="id" type="long" column="id">
+			<generator class="native"/>
+		</id>
+		<many-to-one name="reviewCase" class="org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate.MpiPatientDuplicateReviewCase" column="review_case_id" not-null="true" fetch="select"/>
+		<property name="fhirPatientLogicalId" type="string" column="fhir_patient_logical_id" not-null="true"/>
+		<property name="mpiIdentifierValue" type="string" column="mpi_identifier_value"/>
+		<property name="candidateBirthdate" type="string" column="candidate_birthdate"/>
+		<property name="candidateFamily" type="string" column="candidate_family"/>
+		<property name="candidateGiven" type="string" column="candidate_given"/>
+		<property name="candidateGenderCode" type="string" column="candidate_gender_code"/>
+		<property name="candidateTelecom" type="string" column="candidate_telecom"/>
+		<property name="candidateAddressLines" type="text" column="candidate_address_lines"/>
+		<property name="candidateAddressCity" type="string" column="candidate_address_city"/>
+		<property name="candidateAddressDistrict" type="string" column="candidate_address_district"/>
+		<property name="candidateAddressState" type="string" column="candidate_address_state"/>
+		<property name="candidateAddressPostalCode" type="string" column="candidate_address_postal_code"/>
+		<property name="candidateAddressCountry" type="string" column="candidate_address_country"/>
+		<property name="candidateAddressSnapshot" type="text" column="candidate_address_snapshot"/>
+		<property name="patientResourceJson" type="text" column="patient_resource_json"/>
+	</class>
+</hibernate-mapping>

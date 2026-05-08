@@ -16,8 +16,8 @@ import javax.servlet.http.HttpSession;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.openmrs.User;
+import org.openmrs.api.context.Context;
 import org.openmrs.api.UserService;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Controller;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.ModelAttribute;
@@ -35,8 +35,7 @@ public class APIfordoctorUIController {
 	/** Logger for this class and subclasses */
 	protected final Log log = LogFactory.getLog(getClass());
 	
-	@Autowired
-	UserService userService;
+	UserService userService = Context.getUserService();
 	
 	/** Success form view name */
 	private final String VIEW = "/module/ihmodule/ihmodule";

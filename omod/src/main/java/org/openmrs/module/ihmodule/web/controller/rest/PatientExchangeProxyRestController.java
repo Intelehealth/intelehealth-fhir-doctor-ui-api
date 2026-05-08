@@ -2,6 +2,9 @@ package org.openmrs.module.ihmodule.web.controller.rest;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.regex.Pattern;
 
 import javax.servlet.http.HttpServletResponse;
 
@@ -10,7 +13,20 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.openmrs.api.context.Context;
 import org.openmrs.User;
-import org.openmrs.module.ihmodule.utils.IhmoduleProperties;
+import org.openmrs.module.ihmodule.api.patientexchange.api.dto.ForcePatientSyncRequest;
+import org.openmrs.module.ihmodule.api.patientexchange.api.dto.LocalMpiUpdateRequest;
+import org.openmrs.module.ihmodule.api.patientexchange.export.CreatedPatientExportResult;
+import org.openmrs.module.ihmodule.api.patientexchange.export.CreatedPatientExportService;
+import org.openmrs.module.ihmodule.api.patientexchange.importupload.PatientUploadImportResponse;
+import org.openmrs.module.ihmodule.api.patientexchange.importupload.PatientUploadImportService;
+import org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate.ForceSyncDuplicateResolutionContext;
+import org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate.MpiDuplicateReviewQueryService;
+import org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate.MpiDuplicateReviewResolutionService;
+import org.openmrs.module.ihmodule.api.patientexchange.scheduler.DataSendToFHIR;
+import org.openmrs.module.ihmodule.api.patientexchange.scheduler.ResourceIsNotValid;
+import org.openmrs.module.ihmodule.api.patientexchange.service.LocalMpiAlreadySetException;
+import org.openmrs.module.ihmodule.api.patientexchange.service.LocalPatientMpiUpdateService;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -18,8 +34,10 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 /**
- * Proxies the Spring Boot patient exchange service for the duplicate-patient UI.
+ * Serves patient exchange endpoints for duplicate-patient UI directly from ihmodule services.
  * <p>
  * Mapped both as legacy {@code *.form} URLs and under {@code /rest/v1/ihmodule/patient-exchange/*},
  * which resolves to {@code /ws/rest/v1/ihmodule/patient-exchange/*} on the server — same
@@ -28,10 +46,6 @@ import org.springframework.web.multipart.MultipartFile;
  * <p>
  * Handlers write JSON via {@link HttpServletResponse} directly (not {@code ResponseEntity}) for
  * Servlet 3.0 / Tomcat 7 compatibility (avoids {@code setContentLengthLong}).
- * <p>
- * Base URL resolution (first non-blank wins): OpenMRS global property
- * {@code ihmodule.patientexchange.baseUrl}, then {@code patientexchange.baseUrl} from bundled
- * {@code ihmodule.properties}, then {@link #DEFAULT_BASE}.
  */
 @Controller
 public class PatientExchangeProxyRestController {
@@ -40,34 +54,31 @@ public class PatientExchangeProxyRestController {
 	
 	public static final String GP_PATIENT_EXCHANGE_BASE_URL = "ihmodule.patientexchange.baseUrl";
 	
-	private static final String DEFAULT_BASE = "http://localhost:6001";
+	private static final Pattern DATE_YYYY_MM_DD = Pattern.compile("\\d{4}-\\d{2}-\\d{2}");
 	
-	private static final String MPI_DUP_PREFIX = "/patientinfo/rest/v1/mpi-duplicate-review";
+	private MpiDuplicateReviewQueryService mpiDuplicateReviewQueryService = Context.getRegisteredComponent(
+	    "mpiDuplicateReviewQueryService", MpiDuplicateReviewQueryService.class);
 	
-	private static final String PATIENT_PREFIX = "/patientinfo/rest/v1/patient";
+	private DataSendToFHIR dataSendToFHIR = Context.getRegisteredComponent("dataSendToFHIR", DataSendToFHIR.class);
 	
-	private String baseUrl() {
-		String gp = Context.getAdministrationService().getGlobalProperty(GP_PATIENT_EXCHANGE_BASE_URL);
-		if (StringUtils.isNotBlank(gp)) {
-			return gp.trim();
-		}
-		String fromBundle = IhmoduleProperties.getPatientExchangeBaseUrl();
-		if (StringUtils.isNotBlank(fromBundle)) {
-			return fromBundle.trim();
-		}
-		return DEFAULT_BASE;
-	}
+	private LocalPatientMpiUpdateService localPatientMpiUpdateService = Context.getRegisteredComponent(
+	    "localPatientMpiUpdateService", LocalPatientMpiUpdateService.class);
+	
+	private MpiDuplicateReviewResolutionService mpiDuplicateReviewResolutionService = Context.getRegisteredComponent(
+	    "mpiDuplicateReviewResolutionService", MpiDuplicateReviewResolutionService.class);
+	
+	private PatientUploadImportService patientUploadImportService = Context.getRegisteredComponent(
+	    "patientUploadImportService", PatientUploadImportService.class);
+	
+	private CreatedPatientExportService createdPatientExportService = Context.getRegisteredComponent(
+	    "createdPatientExportService", CreatedPatientExportService.class);
+	
+	private ObjectMapper objectMapper = new ObjectMapper();
 	
 	private boolean rejectIfUnauthorized(HttpServletResponse response) throws IOException {
 		if (!Context.isAuthenticated()) {
 			log.warn("ihmodule patientExchange proxy: request rejected — not authenticated");
-			byte[] b = "{\"error\":\"Not authenticated\"}".getBytes(StandardCharsets.UTF_8);
-			response.resetBuffer();
-			response.setStatus(401);
-			response.setContentType("application/json;charset=UTF-8");
-			response.setContentLength(b.length);
-			response.getOutputStream().write(b);
-			response.getOutputStream().flush();
+			writeJson(response, HttpStatus.UNAUTHORIZED.value(), errorBody("Not authenticated"));
 			return true;
 		}
 		return false;
@@ -80,10 +91,18 @@ public class PatientExchangeProxyRestController {
 		}
 		if (log.isDebugEnabled()) {
 			User u = Context.getAuthenticatedUser();
-			log.debug("ihmodule patientExchange: patientExchangePending.form user=" + (u != null ? u.getUsername() : "?")
-			        + " upstreamBase=" + baseUrl());
+			log.debug("ihmodule patientExchange: pending cases requested by user=" + (u != null ? u.getUsername() : "?"));
 		}
-		PatientExchangeProxyHelper.proxyGet(response, baseUrl(), MPI_DUP_PREFIX + "/cases/pending");
+		writeJson(response, HttpStatus.OK.value(), mpiDuplicateReviewQueryService.listPendingCases());
+	}
+	
+	@RequestMapping(value = { "module/ihmodule/patientExchangeDupStatistics.form",
+	        "/rest/v1/ihmodule/patient-exchange/cases/statistics" }, method = RequestMethod.GET)
+	public void duplicateReviewStatistics(HttpServletResponse response) throws IOException {
+		if (rejectIfUnauthorized(response)) {
+			return;
+		}
+		writeJson(response, HttpStatus.OK.value(), mpiDuplicateReviewQueryService.getCaseStatistics());
 	}
 	
 	@RequestMapping(value = { "module/ihmodule/patientExchangeCandidates.form",
@@ -93,37 +112,104 @@ public class PatientExchangeProxyRestController {
 			return;
 		}
 		if (caseUuid == null || caseUuid.trim().isEmpty()) {
-			log.warn("ihmodule patientExchange: patientExchangeCandidates.form missing or empty caseUuid");
-			byte[] b = "{\"error\":\"caseUuid is required\"}".getBytes(StandardCharsets.UTF_8);
-			response.resetBuffer();
-			response.setStatus(400);
-			response.setContentType("application/json;charset=UTF-8");
-			response.setContentLength(b.length);
-			response.getOutputStream().write(b);
-			response.getOutputStream().flush();
+			writeJson(response, HttpStatus.BAD_REQUEST.value(), errorBody("caseUuid is required"));
 			return;
 		}
-		String enc = java.net.URLEncoder.encode(caseUuid.trim(), "UTF-8");
-		PatientExchangeProxyHelper.proxyGet(response, baseUrl(), MPI_DUP_PREFIX + "/cases/" + enc + "/candidates");
+		try {
+			writeJson(response, HttpStatus.OK.value(),
+			    mpiDuplicateReviewQueryService.listCandidatesForCaseUuid(caseUuid.trim()));
+		}
+		catch (IllegalArgumentException ex) {
+			writeJson(response, HttpStatus.NOT_FOUND.value(), errorBody(ex.getMessage()));
+		}
 	}
 	
 	@RequestMapping(value = { "module/ihmodule/patientExchangeForceSync.form",
 	        "/rest/v1/ihmodule/patient-exchange/force-sync" }, method = RequestMethod.POST, consumes = "application/json")
-	public void forceSync(@RequestBody(required = false) String body, HttpServletResponse response) throws IOException {
+	public void forceSync(@RequestBody(required = false) ForcePatientSyncRequest body, HttpServletResponse response)
+			throws IOException {
 		if (rejectIfUnauthorized(response)) {
 			return;
 		}
-		PatientExchangeProxyHelper.proxyPostJson(response, baseUrl(), PATIENT_PREFIX + "/sync/force", body != null ? body
-		        : "{}");
+		if (body == null || StringUtils.isBlank(body.getPatientUuid())) {
+			writeJson(response, HttpStatus.BAD_REQUEST.value(), errorBody("patientUuid is required"));
+			return;
+		}
+		if (StringUtils.isBlank(body.getResolvedBy())) {
+			writeJson(response, HttpStatus.BAD_REQUEST.value(), errorBody("resolvedBy is required"));
+			return;
+		}
+		ForceSyncDuplicateResolutionContext.begin(body.getResolvedBy().trim());
+		try {
+			org.openmrs.module.ihmodule.api.patientexchange.domain.FhirResponse res = dataSendToFHIR
+					.forceSendPatientToCentralByUuid(body.getPatientUuid().trim());
+			Map<String, Object> ok = new LinkedHashMap<>();
+			ok.put("patientUuid", body.getPatientUuid().trim());
+			ok.put("statusCode", res.getStatusCode());
+			ok.put("message", res.getMessage());
+			ok.put("response", res.getResponse());
+			if ("skipped".equals(res.getStatusCode())) {
+				ok.put("status", "skipped");
+			}
+			writeJson(response, HttpStatus.OK.value(), ok);
+		} catch (IllegalArgumentException ex) {
+			writeJson(response, HttpStatus.BAD_REQUEST.value(), errorBody(ex.getMessage()));
+		} catch (ResourceIsNotValid ex) {
+			writeJson(response, HttpStatus.UNPROCESSABLE_ENTITY.value(), errorBody(ex.getMessage()));
+		} catch (Exception ex) {
+			writeJson(response, HttpStatus.INTERNAL_SERVER_ERROR.value(), errorBody(ex.getMessage()));
+		} finally {
+			ForceSyncDuplicateResolutionContext.end();
+		}
 	}
 	
 	@RequestMapping(value = { "module/ihmodule/patientExchangeMpiLocal.form", "/rest/v1/ihmodule/patient-exchange/mpi-local" }, method = RequestMethod.POST, consumes = "application/json")
-	public void mpiLocal(@RequestBody(required = false) String body, HttpServletResponse response) throws IOException {
+	public void mpiLocal(@RequestBody(required = false) LocalMpiUpdateRequest body, HttpServletResponse response)
+			throws IOException {
 		if (rejectIfUnauthorized(response)) {
 			return;
 		}
-		PatientExchangeProxyHelper.proxyPostJson(response, baseUrl(), PATIENT_PREFIX + "/mpi/local", body != null ? body
-		        : "{}");
+		if (body == null || StringUtils.isBlank(body.getPatientUuid())) {
+			writeJson(response, HttpStatus.BAD_REQUEST.value(), errorBody("patientUuid is required"));
+			return;
+		}
+		if (StringUtils.isBlank(body.getMpiIdentifierValue())) {
+			writeJson(response, HttpStatus.BAD_REQUEST.value(), errorBody("mpiIdentifierValue is required"));
+			return;
+		}
+		if (StringUtils.isBlank(body.getResolvedBy())) {
+			writeJson(response, HttpStatus.BAD_REQUEST.value(), errorBody("resolvedBy is required"));
+			return;
+		}
+		try {
+			localPatientMpiUpdateService.applyMpiIdentifierToLocalPatient(body.getPatientUuid().trim(),
+					body.getMpiIdentifierValue().trim());
+			try {
+				mpiDuplicateReviewResolutionService.resolvePendingCaseAfterLocalMpiUpdate(body.getPatientUuid().trim(),
+						body.getMpiIdentifierValue().trim(), body.getChosenFhirPatientLogicalId(),
+						body.getResolvedBy().trim());
+			} catch (RuntimeException ex) {
+				log.warn("Duplicate-review resolution after local MPI failed for patient "
+						+ body.getPatientUuid() + ": " + ex.getMessage(), ex);
+			}
+			Map<String, Object> ok = new LinkedHashMap<>();
+			ok.put("status", "ok");
+			ok.put("patientUuid", body.getPatientUuid().trim());
+			ok.put("mpiIdentifierValue", body.getMpiIdentifierValue().trim());
+			writeJson(response, HttpStatus.OK.value(), ok);
+		} catch (LocalMpiAlreadySetException ex) {
+			Map<String, Object> skipped = new LinkedHashMap<>();
+			skipped.put("status", "skipped");
+			skipped.put("patientUuid", body.getPatientUuid().trim());
+			skipped.put("message", ex.getMessage());
+			writeJson(response, HttpStatus.OK.value(), skipped);
+		} catch (IllegalArgumentException ex) {
+			writeJson(response, HttpStatus.BAD_REQUEST.value(), errorBody(ex.getMessage()));
+		} catch (IllegalStateException ex) {
+			writeJson(response, HttpStatus.NOT_FOUND.value(), errorBody(ex.getMessage()));
+		} catch (Exception ex) {
+			writeJson(response, HttpStatus.INTERNAL_SERVER_ERROR.value(), errorBody(ex.getMessage()));
+		}
 	}
 	
 	/**
@@ -132,24 +218,26 @@ public class PatientExchangeProxyRestController {
 	 */
 	@RequestMapping(value = { "module/ihmodule/patientExchangeImportUpload.form",
 	        "/rest/v1/ihmodule/patient-exchange/import-upload" }, method = RequestMethod.POST)
-	public void importUpload(@RequestParam(value = "file", required = false) MultipartFile file, HttpServletResponse response)
+	public void importUpload(@RequestParam(value = "file", required = false) MultipartFile file,
+	        @RequestParam(value = "locationUuid", required = false) String locationUuid, HttpServletResponse response)
 	        throws IOException {
 		if (rejectIfUnauthorized(response)) {
 			return;
 		}
 		if (file == null || file.isEmpty()) {
-			byte[] b = "{\"error\":\"file is required\"}".getBytes(StandardCharsets.UTF_8);
-			response.resetBuffer();
-			response.setStatus(400);
-			response.setContentType("application/json;charset=UTF-8");
-			response.setContentLength(b.length);
-			response.getOutputStream().write(b);
-			response.getOutputStream().flush();
+			writeJson(response, HttpStatus.BAD_REQUEST.value(), errorBody("file is required"));
 			return;
 		}
-		byte[] bytes = file.getBytes();
-		PatientExchangeProxyHelper.proxyPostMultipartFile(response, baseUrl(), PATIENT_PREFIX + "/import/upload", bytes,
-		    file.getOriginalFilename());
+		try {
+			PatientUploadImportResponse out = patientUploadImportService.importPatientFile(file, locationUuid);
+			writeJson(response, HttpStatus.OK.value(), out);
+		}
+		catch (IllegalArgumentException ex) {
+			writeJson(response, HttpStatus.BAD_REQUEST.value(), errorBody(ex.getMessage()));
+		}
+		catch (Exception ex) {
+			writeJson(response, HttpStatus.INTERNAL_SERVER_ERROR.value(), errorBody(ex.getMessage()));
+		}
 	}
 	
 	/**
@@ -165,17 +253,47 @@ public class PatientExchangeProxyRestController {
 		}
 		String sd = startDate != null ? startDate.trim() : "";
 		String ed = endDate != null ? endDate.trim() : "";
-		if (!sd.matches("\\d{4}-\\d{2}-\\d{2}") || !ed.matches("\\d{4}-\\d{2}-\\d{2}")) {
-			byte[] b = "{\"error\":\"startDate and endDate must be yyyy-MM-dd\"}".getBytes(StandardCharsets.UTF_8);
-			response.resetBuffer();
-			response.setStatus(400);
-			response.setContentType("application/json;charset=UTF-8");
-			response.setContentLength(b.length);
-			response.getOutputStream().write(b);
-			response.getOutputStream().flush();
+		if (!DATE_YYYY_MM_DD.matcher(sd).matches() || !DATE_YYYY_MM_DD.matcher(ed).matches()) {
+			writeJson(response, HttpStatus.BAD_REQUEST.value(), errorBody("startDate and endDate must be yyyy-MM-dd"));
 			return;
 		}
-		String q = "?startDate=" + sd + "&endDate=" + ed;
-		PatientExchangeProxyHelper.proxyGetForwardHeaders(response, baseUrl(), PATIENT_PREFIX + "/export/created" + q);
+		try {
+			CreatedPatientExportResult result = createdPatientExportService.exportCreatedPatients(sd, ed);
+			byte[] payload = result.getPayload() != null ? result.getPayload().getBytes(StandardCharsets.UTF_8)
+			        : new byte[0];
+			response.resetBuffer();
+			response.setStatus(HttpStatus.OK.value());
+			response.setContentType("application/fhir+json;charset=UTF-8");
+			response.setHeader("Content-Disposition", "attachment; filename=\"created-patients-" + sd + "-to-" + ed
+			        + ".json\"");
+			response.setHeader("X-Total-Patients", Integer.toString(result.getTotalPatients()));
+			response.setHeader("X-Exported-Patients", Integer.toString(result.getExportedPatients()));
+			response.setHeader("X-Validation-Failed-Patients", Integer.toString(result.getValidationFailedPatients()));
+			response.setContentLength(payload.length);
+			response.getOutputStream().write(payload);
+			response.getOutputStream().flush();
+		}
+		catch (IllegalArgumentException ex) {
+			writeJson(response, HttpStatus.BAD_REQUEST.value(), errorBody(ex.getMessage()));
+		}
+		catch (Exception ex) {
+			writeJson(response, HttpStatus.INTERNAL_SERVER_ERROR.value(), errorBody(ex.getMessage()));
+		}
+	}
+	
+	private void writeJson(HttpServletResponse response, int statusCode, Object body) throws IOException {
+		byte[] payload = objectMapper.writeValueAsBytes(body);
+		response.resetBuffer();
+		response.setStatus(statusCode);
+		response.setContentType("application/json;charset=UTF-8");
+		response.setContentLength(payload.length);
+		response.getOutputStream().write(payload);
+		response.getOutputStream().flush();
+	}
+	
+	private static Map<String, Object> errorBody(String message) {
+		Map<String, Object> m = new LinkedHashMap<>();
+		m.put("error", message != null ? message : "Unexpected error");
+		return m;
 	}
 }

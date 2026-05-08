@@ -15,14 +15,13 @@ import java.util.List;
 import org.hibernate.transform.AliasToBeanResultTransformer;
 import org.hibernate.type.StandardBasicTypes;
 import org.openmrs.api.APIException;
+import org.openmrs.api.context.Context;
 import org.openmrs.api.db.hibernate.DbSessionFactory;
 import org.openmrs.module.ihmodule.DataMigration;
-import org.springframework.beans.factory.annotation.Autowired;
 
 public class DataMigrationDao {
 	
-	@Autowired
-	DbSessionFactory sessionFactory;
+	DbSessionFactory sessionFactory = Context.getRegisteredComponent("dbSessionFactory", DbSessionFactory.class);
 	
 	/*private SessionFactory sessionFactory;
 	

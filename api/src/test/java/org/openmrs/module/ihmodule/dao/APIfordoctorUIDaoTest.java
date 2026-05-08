@@ -16,7 +16,6 @@ import org.openmrs.api.context.Context;
 import org.openmrs.module.ihmodule.Item;
 import org.openmrs.module.ihmodule.api.dao.APIfordoctorUIDao;
 import org.openmrs.test.BaseModuleContextSensitiveTest;
-import org.springframework.beans.factory.annotation.Autowired;
 
 import static org.hamcrest.Matchers.*;
 import static org.junit.Assert.*;
@@ -29,11 +28,13 @@ import static org.junit.Assert.*;
  */
 public class APIfordoctorUIDaoTest extends BaseModuleContextSensitiveTest {
 	
-	@Autowired
-	APIfordoctorUIDao dao;
+	private APIfordoctorUIDao dao() {
+		return Context.getRegisteredComponent("APIfordoctorUIDao", APIfordoctorUIDao.class);
+	}
 	
-	@Autowired
-	UserService userService;
+	private UserService userService() {
+		return Context.getUserService();
+	}
 	
 	@Test
 	@Ignore("Unignore if you want to make the Item class persistable, see also Item and liquibase.xml")
@@ -41,17 +42,17 @@ public class APIfordoctorUIDaoTest extends BaseModuleContextSensitiveTest {
 		//Given
 		Item item = new Item();
 		item.setDescription("some description");
-		item.setOwner(userService.getUser(1));
+		item.setOwner(userService().getUser(1));
 		
 		//When
-		dao.saveItem(item);
+		dao().saveItem(item);
 		
 		//Let's clean up the cache to be sure getItemByUuid fetches from DB and not from cache
 		Context.flushSession();
 		Context.clearSession();
 		
 		//Then
-		Item savedItem = dao.getItemByUuid(item.getUuid());
+		Item savedItem = dao().getItemByUuid(item.getUuid());
 		
 		assertThat(savedItem, hasProperty("uuid", is(item.getUuid())));
 		assertThat(savedItem, hasProperty("owner", is(item.getOwner())));

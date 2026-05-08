@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.openmrs.api.context.Context;
 import org.openmrs.api.impl.BaseOpenmrsService;
 import org.openmrs.module.ihmodule.DiagnosticReport;
 import org.openmrs.module.ihmodule.api.DiagnosticReportService;
@@ -14,7 +15,6 @@ import org.openmrs.module.ihmodule.utils.DeploymentConfProperties;
 import org.openmrs.module.ihmodule.utils.HttpResponse;
 import org.openmrs.module.ihmodule.utils.HttpService;
 import org.openmrs.module.ihmodule.utils.ReqParam;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -23,8 +23,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 public class DiagnosticReportServiceImpl extends BaseOpenmrsService implements DiagnosticReportService {
 	
-	@Autowired
-	DeploymentConfProperties deployConf;
+	DeploymentConfProperties deployConf = Context.getRegisteredComponent("ihmodule.DeploymentConfProperties",
+	    DeploymentConfProperties.class);
 	
 	DiagnosticReportDao dReportDao;
 	

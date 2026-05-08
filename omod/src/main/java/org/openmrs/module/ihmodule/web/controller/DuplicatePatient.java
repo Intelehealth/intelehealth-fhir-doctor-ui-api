@@ -4,7 +4,6 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpSession;
 
 import org.openmrs.api.context.Context;
-import org.openmrs.module.ihmodule.web.controller.rest.PatientExchangeProxyRestController;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -48,7 +47,6 @@ public class DuplicatePatient {
 		model.addAttribute("patientExchangeProxyBase", ctx + "/ws/rest/v1/ihmodule/patient-exchange");
 		model.addAttribute("resolvedByUsername", Context.getAuthenticatedUser() != null ? Context.getAuthenticatedUser()
 		        .getUsername() : "");
-		model.addAttribute("patientExchangeGpKey", PatientExchangeProxyRestController.GP_PATIENT_EXCHANGE_BASE_URL);
 	}
 	
 }

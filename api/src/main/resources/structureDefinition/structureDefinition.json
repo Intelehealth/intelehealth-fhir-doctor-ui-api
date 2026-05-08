@@ -1,0 +1,516 @@
+{
+	"resourceType": "Bundle",
+	"type": "collection",
+	"entry": [
+		{
+			"resource": {
+				"resourceType": "StructureDefinition",
+				"id": "Caste",
+				"url": "http://intelehealth-central-fhir.mpower-social.com/fhir/StructureDefinition/Caste",
+				"version": "1.0",
+				"name": "Caste",
+				"status": "draft",
+				"publisher": "mPower-social",
+				"description": "An extension to add a Caste for a Patient resource.",
+				"fhirVersion": "4.0.0",
+				"kind": "complex-type",
+				"abstract": false,
+				"context": [
+					{
+						"type": "element",
+						"expression": "Patient"
+					}
+				],
+				"type": "Extension",
+				"baseDefinition": "http://hl7.org/fhir/StructureDefinition/Extension",
+				"snapshot": {
+					"element": [
+						{
+							"id": "Extension",
+							"path": "Extension",
+							"short": "Caste extension for Patient",
+							"definition": "A Caste for the Patient resource.",
+							"min": 0,
+							"max": "*"
+						},
+						{
+							"id": "Extension.url",
+							"path": "Extension.url",
+							"short": "Extension URL",
+							"definition": "The unique URL of the extension.",
+							"min": 1,
+							"max": "1",
+							"fixedUri": "http://intelehealth-central-fhir.mpower-social.com/fhir/StructureDefinition/Caste"
+						},
+						{
+							"id": "Extension.valueString",
+							"path": "Extension.valueString",
+							"short": "Caste",
+							"definition": "The patient's Caste as a string.",
+							"min": 1,
+							"max": "1",
+							"type": [
+								{
+									"code": "string"
+								}
+							]
+						}
+					]
+				}
+			}
+		},
+		{
+			"resource": {
+				"resourceType": "StructureDefinition",
+				"id": "createdDate",
+				"url": "http://intelehealth-central-fhir.mpower-social.com/fhir/StructureDefinition/createdDate",
+				"version": "1.0",
+				"name": "createdDate",
+				"status": "draft",
+				"publisher": "mPower-social",
+				"description": "An extension to add a createdDate for a Patient resource.",
+				"fhirVersion": "4.0.0",
+				"kind": "complex-type",
+				"abstract": false,
+				"context": [
+					{
+						"type": "element",
+						"expression": "Patient"
+					}
+				],
+				"type": "Extension",
+				"baseDefinition": "http://hl7.org/fhir/StructureDefinition/Extension",
+				"snapshot": {
+					"element": [
+						{
+							"id": "Extension",
+							"path": "Extension",
+							"short": "createdDate extension for Patient",
+							"definition": "A createdDate for the Patient resource.",
+							"min": 0,
+							"max": "*"
+						},
+						{
+							"id": "Extension.url",
+							"path": "Extension.url",
+							"short": "Extension URL",
+							"definition": "The unique URL of the extension.",
+							"min": 1,
+							"max": "1",
+							"fixedUri": "http://intelehealth-central-fhir.mpower-social.com/fhir/StructureDefinition/createdDate"
+						},
+						{
+							"id": "Extension.valueString",
+							"path": "Extension.valueString",
+							"short": "createdDate",
+							"definition": "The patient's createdDate as a string.",
+							"min": 1,
+							"max": "1",
+							"type": [
+								{
+									"code": "string"
+								}
+							]
+						}
+					]
+				}
+			}
+		},
+		{
+			"resource": {
+				"resourceType": "StructureDefinition",
+				"id": "Economic-Status",
+				"url": "http://intelehealth-central-fhir.mpower-social.com/fhir/StructureDefinition/Economic-Status",
+				"version": "1.0",
+				"name": "Economic-Status",
+				"status": "draft",
+				"publisher": "mPower-social",
+				"description": "An extension to add a Economic-Status for a Patient resource.",
+				"fhirVersion": "4.0.0",
+				"kind": "complex-type",
+				"abstract": false,
+				"context": [
+					{
+						"type": "element",
+						"expression": "Patient"
+					}
+				],
+				"type": "Extension",
+				"baseDefinition": "http://hl7.org/fhir/StructureDefinition/Extension",
+				"snapshot": {
+					"element": [
+						{
+							"id": "Extension",
+							"path": "Extension",
+							"short": "Economic-Status extension for Patient",
+							"definition": "A Economic-Status for the Patient resource.",
+							"min": 0,
+							"max": "*"
+						},
+						{
+							"id": "Extension.url",
+							"path": "Extension.url",
+							"short": "Extension URL",
+							"definition": "The unique URL of the extension.",
+							"min": 1,
+							"max": "1",
+							"fixedUri": "http://intelehealth-central-fhir.mpower-social.com/fhir/StructureDefinition/Economic-Status"
+						},
+						{
+							"id": "Extension.valueString",
+							"path": "Extension.valueString",
+							"short": "Economic-Status",
+							"definition": "The patient's Economic-Status as a string.",
+							"min": 1,
+							"max": "1",
+							"type": [
+								{
+									"code": "string"
+								}
+							]
+						}
+					]
+				}
+			}
+		},
+		{
+			"resource": {
+				"resourceType": "StructureDefinition",
+				"id": "Education-Level",
+				"url": "http://intelehealth-central-fhir.mpower-social.com/fhir/StructureDefinition/Education-Level",
+				"version": "1.0",
+				"name": "Education-Level",
+				"status": "draft",
+				"publisher": "mPower-social",
+				"description": "An extension to add a Education-Level for a Patient resource.",
+				"fhirVersion": "4.0.0",
+				"kind": "complex-type",
+				"abstract": false,
+				"context": [
+					{
+						"type": "element",
+						"expression": "Patient"
+					}
+				],
+				"type": "Extension",
+				"baseDefinition": "http://hl7.org/fhir/StructureDefinition/Extension",
+				"snapshot": {
+					"element": [
+						{
+							"id": "Extension",
+							"path": "Extension",
+							"short": "Education-Level extension for Patient",
+							"definition": "A Education-Level for the Patient resource.",
+							"min": 0,
+							"max": "*"
+						},
+						{
+							"id": "Extension.url",
+							"path": "Extension.url",
+							"short": "Extension URL",
+							"definition": "The unique URL of the extension.",
+							"min": 1,
+							"max": "1",
+							"fixedUri": "http://intelehealth-central-fhir.mpower-social.com/fhir/StructureDefinition/Education-Level"
+						},
+						{
+							"id": "Extension.valueString",
+							"path": "Extension.valueString",
+							"short": "Education-Level",
+							"definition": "The patient's Education-Level as a string.",
+							"min": 1,
+							"max": "1",
+							"type": [
+								{
+									"code": "string"
+								}
+							]
+						}
+					]
+				}
+			}
+		},
+		{
+			"resource": {
+				"resourceType": "StructureDefinition",
+				"id": "NationalID",
+				"url": "http://intelehealth-central-fhir.mpower-social.com/fhir/StructureDefinition/NationalID",
+				"version": "1.0",
+				"name": "NationalID",
+				"status": "draft",
+				"publisher": "mPower-social",
+				"description": "An extension to add a NationalID for a Patient resource.",
+				"fhirVersion": "4.0.0",
+				"kind": "complex-type",
+				"abstract": false,
+				"context": [
+					{
+						"type": "element",
+						"expression": "Patient"
+					}
+				],
+				"type": "Extension",
+				"baseDefinition": "http://hl7.org/fhir/StructureDefinition/Extension",
+				"snapshot": {
+					"element": [
+						{
+							"id": "Extension",
+							"path": "Extension",
+							"short": "NationalID extension for Patient",
+							"definition": "A NationalID for the Patient resource.",
+							"min": 0,
+							"max": "*"
+						},
+						{
+							"id": "Extension.url",
+							"path": "Extension.url",
+							"short": "Extension URL",
+							"definition": "The unique URL of the extension.",
+							"min": 1,
+							"max": "1",
+							"fixedUri": "http://intelehealth-central-fhir.mpower-social.com/fhir/StructureDefinition/NationalID"
+						},
+						{
+							"id": "Extension.valueString",
+							"path": "Extension.valueString",
+							"short": "NationalID",
+							"definition": "The patient's NationalID as a string.",
+							"min": 1,
+							"max": "1",
+							"type": [
+								{
+									"code": "string"
+								}
+							]
+						}
+					]
+				}
+			}
+		},
+		{
+			"resource": {
+				"resourceType": "StructureDefinition",
+				"id": "occupation",
+				"url": "http://intelehealth-central-fhir.mpower-social.com/fhir/StructureDefinition/occupation",
+				"version": "1.0",
+				"name": "occupation",
+				"status": "draft",
+				"publisher": "mPower-social",
+				"description": "An extension to add a occupation for a Patient resource.",
+				"fhirVersion": "4.0.0",
+				"kind": "complex-type",
+				"abstract": false,
+				"context": [
+					{
+						"type": "element",
+						"expression": "Patient"
+					}
+				],
+				"type": "Extension",
+				"baseDefinition": "http://hl7.org/fhir/StructureDefinition/Extension",
+				"snapshot": {
+					"element": [
+						{
+							"id": "Extension",
+							"path": "Extension",
+							"short": "occupation extension for Patient",
+							"definition": "A occupation for the Patient resource.",
+							"min": 0,
+							"max": "*"
+						},
+						{
+							"id": "Extension.url",
+							"path": "Extension.url",
+							"short": "Extension URL",
+							"definition": "The unique URL of the extension.",
+							"min": 1,
+							"max": "1",
+							"fixedUri": "http://intelehealth-central-fhir.mpower-social.com/fhir/StructureDefinition/occupation"
+						},
+						{
+							"id": "Extension.valueString",
+							"path": "Extension.valueString",
+							"short": "occupation",
+							"definition": "The patient's occupation as a string.",
+							"min": 1,
+							"max": "1",
+							"type": [
+								{
+									"code": "string"
+								}
+							]
+						}
+					]
+				}
+			}
+		},
+		{
+			"resource": {
+				"resourceType": "StructureDefinition",
+				"id": "providerUUID",
+				"url": "http://intelehealth-central-fhir.mpower-social.com/fhir/StructureDefinition/providerUUID",
+				"version": "1.0",
+				"name": "providerUUID",
+				"status": "draft",
+				"publisher": "mPower-social",
+				"description": "An extension to add a providerUUID for a Patient resource.",
+				"fhirVersion": "4.0.0",
+				"kind": "complex-type",
+				"abstract": false,
+				"context": [
+					{
+						"type": "element",
+						"expression": "Patient"
+					}
+				],
+				"type": "Extension",
+				"baseDefinition": "http://hl7.org/fhir/StructureDefinition/Extension",
+				"snapshot": {
+					"element": [
+						{
+							"id": "Extension",
+							"path": "Extension",
+							"short": "providerUUID extension for Patient",
+							"definition": "A providerUUID for the Patient resource.",
+							"min": 0,
+							"max": "*"
+						},
+						{
+							"id": "Extension.url",
+							"path": "Extension.url",
+							"short": "Extension URL",
+							"definition": "The unique URL of the extension.",
+							"min": 1,
+							"max": "1",
+							"fixedUri": "http://intelehealth-central-fhir.mpower-social.com/fhir/StructureDefinition/providerUUID"
+						},
+						{
+							"id": "Extension.valueString",
+							"path": "Extension.valueString",
+							"short": "providerUUID",
+							"definition": "The patient's providerUUID as a string.",
+							"min": 1,
+							"max": "1",
+							"type": [
+								{
+									"code": "string"
+								}
+							]
+						}
+					]
+				}
+			}
+		},
+		{
+			"resourceType": "StructureDefinition",
+			"id": "address",
+			"url": "http://intelehealth-central-fhir.mpower-social.com/fhir/StructureDefinition/address",
+			"name": "address",
+			"status": "active",
+			"publisher": "mPower-social",
+			"date": "2025-02-06",
+			"kind": "complex-type",
+			"abstract": false,
+			"type": "Extension",
+			"baseDefinition": "http://hl7.org/fhir/StructureDefinition/Extension",
+			"derivation": "constraint",
+			"differential": {
+				"element": [
+					{
+						"id": "Extension",
+						"path": "Extension",
+						"short": "An extension for address details",
+						"definition": "An extension to store detailed address information.",
+						"min": 0,
+						"max": "*"
+					},
+					{
+						"id": "Extension.url",
+						"path": "Extension.url",
+						"fixedUri": "http://intelehealth-central-fhir.mpower-social.com/fhir/StructureDefinition/address"
+					},
+					{
+						"id": "Extension.extension",
+						"path": "Extension.extension",
+						"min": 0,
+						"max": "*"
+					},
+					{
+						"id": "Extension.extension:address1",
+						"path": "Extension.extension",
+						"sliceName": "address1",
+						"short": "Address Line 1",
+						"definition": "First line of the address.",
+						"min": 0,
+						"max": "1",
+						"type": [
+							{
+								"code": "Extension"
+							}
+						],
+						"extension": [
+							{
+								"url": "http://intelehealth-central-fhir.mpower-social.com/fhir/StructureDefinition/address#address1",
+								"valueString": ""
+							}
+						]
+					},
+					{
+						"id": "Extension.extension:address2",
+						"path": "Extension.extension",
+						"sliceName": "address2",
+						"short": "Address Line 2",
+						"definition": "Second line of the address.",
+						"min": 0,
+						"max": "1",
+						"type": [
+							{
+								"code": "Extension"
+							}
+						],
+						"extension": [
+							{
+								"url": "http://intelehealth-central-fhir.mpower-social.com/fhir/StructureDefinition/address#address2",
+								"valueString": ""
+							}
+						]
+					}
+				]
+			}
+		},
+		{
+		  "resourceType": "StructureDefinition",
+		  "id": "MPI",
+		  "url": "http://intelehealth-central-fhir.mpower-social.com/fhir/StructureDefinition/MPI",
+		  "name": "MPI",
+		  "status": "active",
+		  "publisher": "mpower-social",
+		  "description": "A unique identifier for patients registered in the shr system",
+		  "fhirVersion": "4.0.0",
+		  "kind": "complex-type",
+		  "abstract": false,
+		  "type": "Identifier",
+		  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/Identifier",
+		  "derivation": "constraint",
+		  "snapshot": {
+		    "element": [
+		      {
+		        "id": "Identifier.system",
+		        "path": "Identifier.system",
+		        "short": "Master Patient Index Identifier",
+		        "definition": "A globally unique system for shr patient identification.",
+		        "min": 1,
+		        "max": "1",
+		        "type": [
+		          {
+		            "code": "uri"
+		          }
+		        ],
+		        "fixedUri": "http://intelehealth-central-fhir.mpower-social.com/fhir/StructureDefinition/MPI"
+		      }
+		    ]
+		  }
+		}
+
+	]
+}

@@ -42,7 +42,14 @@
 			return;
 		}
 
+		var locationUuid = ($('#importLocation').val() || '').trim();
+		if (!locationUuid) {
+			showAlert($alert, 'err', 'Select a location.');
+			return;
+		}
+
 		var fd = new FormData();
+		fd.append('locationUuid', locationUuid);
 		fd.append('file', fileInput.files[0]);
 
 		$status.text('Uploading…');

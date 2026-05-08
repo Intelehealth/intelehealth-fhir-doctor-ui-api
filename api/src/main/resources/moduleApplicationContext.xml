@@ -23,7 +23,13 @@
   		    http://www.springframework.org/schema/util
   		    http://www.springframework.org/schema/util/spring-util-3.0.xsd">
 
-    <context:component-scan base-package="org.openmrs.module.ihmodule" />
+    <!-- Limit auto-scan to migrated patient exchange beans to avoid accidental
+         registration clashes with legacy module classes. -->
+    <context:component-scan base-package="org.openmrs.module.ihmodule.api.patientexchange" />
+    <context:component-scan base-package="org.openmrs.module.ihmodule" use-default-filters="false">
+        <context:include-filter type="assignable" expression="org.openmrs.module.ihmodule.APIfordoctorUIConfig" />
+        <context:include-filter type="assignable" expression="org.openmrs.module.ihmodule.utils.DeploymentConfProperties" />
+    </context:component-scan>
 
     <!-- Wraps APIfordoctorUIService methods in DB transactions and OpenMRS interceptors,
     which set audit info like dateCreated, changedBy, etc.-->

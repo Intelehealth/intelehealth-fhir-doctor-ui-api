@@ -1,8 +1,14 @@
 package org.openmrs.module.ihmodule.web.controller;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
+
 import javax.servlet.http.HttpServletRequest;
 
-import org.openmrs.module.ihmodule.web.controller.rest.PatientExchangeProxyRestController;
+import org.openmrs.Location;
+import org.openmrs.api.context.Context;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -42,7 +48,12 @@ public class PatientImportExport {
 		exposeCsrfForAjax(request, model);
 		String ctx = request.getContextPath();
 		model.addAttribute("patientExchangeProxyBase", ctx + "/ws/rest/v1/ihmodule/patient-exchange");
-		model.addAttribute("patientExchangeGpKey", PatientExchangeProxyRestController.GP_PATIENT_EXCHANGE_BASE_URL);
+		List<Location> importLocations = new ArrayList<>();
+		if (Context.isAuthenticated()) {
+			importLocations.addAll(Context.getLocationService().getAllLocations(false));
+			Collections.sort(importLocations, Comparator.comparing(Location::getName, String.CASE_INSENSITIVE_ORDER));
+		}
+		model.addAttribute("importLocations", importLocations);
 		return "/module/ihmodule/patientImportExport";
 	}
 }

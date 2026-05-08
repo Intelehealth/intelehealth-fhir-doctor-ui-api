@@ -15,21 +15,20 @@ import java.util.List;
 
 import org.openmrs.User;
 import org.openmrs.api.APIException;
+import org.openmrs.api.context.Context;
 import org.openmrs.api.db.UserDAO;
 import org.openmrs.api.impl.BaseOpenmrsService;
 import org.openmrs.module.ihmodule.ConfigDataSyncModule;
 import org.openmrs.module.ihmodule.api.ConfigDataSyncModuleService;
 import org.openmrs.module.ihmodule.api.dao.ConfigDataSyncModuleDao;
 import org.openmrs.module.ihmodule.dto.ConfigDataSyncModuleDTO;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 public class ConfigDataSyncModuleServiceImpl extends BaseOpenmrsService implements ConfigDataSyncModuleService {
 	
 	ConfigDataSyncModuleDao dao;
 	
-	@Autowired
-	UserDAO userDao;
+	UserDAO userDao = Context.getRegisteredComponent("userDAO", UserDAO.class);
 	
 	public void setDao(ConfigDataSyncModuleDao dao) {
 		this.dao = dao;

@@ -22,6 +22,7 @@ import org.openmrs.Drug;
 import org.openmrs.api.APIException;
 import org.openmrs.api.ConceptService;
 import org.openmrs.api.EncounterService;
+import org.openmrs.api.context.Context;
 import org.openmrs.api.impl.BaseOpenmrsService;
 import org.openmrs.module.ihmodule.DataMigration;
 import org.openmrs.module.ihmodule.DataMigrationObject;
@@ -31,7 +32,6 @@ import org.openmrs.module.ihmodule.Orders;
 import org.openmrs.module.ihmodule.api.DataMigrationService;
 import org.openmrs.module.ihmodule.api.dao.DataMigrationDao;
 import org.openmrs.module.ihmodule.utils.HttpService;
-import org.springframework.beans.factory.annotation.Autowired;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -41,11 +41,9 @@ public class DataMigrationServiceImpl extends BaseOpenmrsService implements Data
 	
 	DataMigrationDao dao;
 	
-	@Autowired
-	private EncounterService encounterService;
+	private EncounterService encounterService = Context.getEncounterService();
 	
-	@Autowired
-	private ConceptService conceptService;
+	private ConceptService conceptService = Context.getConceptService();
 	
 	public void setDao(DataMigrationDao dao) {
 		this.dao = dao;

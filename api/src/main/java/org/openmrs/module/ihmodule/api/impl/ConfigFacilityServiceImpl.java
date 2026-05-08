@@ -15,20 +15,19 @@ import java.util.List;
 
 import org.openmrs.User;
 import org.openmrs.api.APIException;
+import org.openmrs.api.context.Context;
 import org.openmrs.api.db.UserDAO;
 import org.openmrs.api.impl.BaseOpenmrsService;
 import org.openmrs.module.ihmodule.ConfigFacility;
 import org.openmrs.module.ihmodule.api.ConfigFacilityService;
 import org.openmrs.module.ihmodule.api.dao.ConfigFacilityDao;
 import org.openmrs.module.ihmodule.dto.ConfigFacilityDTO;
-import org.springframework.beans.factory.annotation.Autowired;
 
 public class ConfigFacilityServiceImpl extends BaseOpenmrsService implements ConfigFacilityService {
 	
 	ConfigFacilityDao dao;
 	
-	@Autowired
-	UserDAO userDao;
+	UserDAO userDao = Context.getRegisteredComponent("userDAO", UserDAO.class);
 	
 	public void setDao(ConfigFacilityDao dao) {
 		this.dao = dao;

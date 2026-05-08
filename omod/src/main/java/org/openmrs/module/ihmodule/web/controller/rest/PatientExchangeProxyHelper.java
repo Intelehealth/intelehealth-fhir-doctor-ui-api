@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 
 import javax.servlet.http.HttpServletResponse;
 
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -57,11 +58,14 @@ public final class PatientExchangeProxyHelper {
 		}
 	}
 	
-	/** Proxies multipart upload ({@code file} field) to upstream; upstream responds with JSON. */
+	/**
+	 * Proxies multipart upload ({@code file} field, optional {@code locationUuid}) to upstream;
+	 * upstream responds with JSON.
+	 */
 	public static void proxyPostMultipartFile(HttpServletResponse response, String baseUrl, String path, byte[] fileBytes,
-	        String originalFilename) throws IOException {
+	        String originalFilename, String locationUuid) throws IOException {
 		try {
-			ProxyResult r = exchangeMultipartPost(baseUrl, path, fileBytes, originalFilename);
+			ProxyResult r = exchangeMultipartPost(baseUrl, path, fileBytes, originalFilename, locationUuid);
 			writeJson(response, r.statusCode, r.body);
 		}
 		catch (Exception e) {
@@ -169,8 +173,8 @@ public final class PatientExchangeProxyHelper {
 		}
 	}
 	
-	private static ProxyResult exchangeMultipartPost(String baseUrl, String path, byte[] fileBytes, String originalFilename)
-	        throws Exception {
+	private static ProxyResult exchangeMultipartPost(String baseUrl, String path, byte[] fileBytes, String originalFilename,
+	        String locationUuid) throws Exception {
 		HttpURLConnection conn = null;
 		try {
 			String normalized = baseUrl != null ? baseUrl.replaceAll("/$", "") : "";
@@ -187,6 +191,14 @@ public final class PatientExchangeProxyHelper {
 			OutputStream out = conn.getOutputStream();
 			String ln = "\r\n";
 			out.write(("--" + boundary + ln).getBytes(StandardCharsets.UTF_8));
+			if (StringUtils.isNotBlank(locationUuid)) {
+				String v = locationUuid.trim();
+				out.write(("Content-Disposition: form-data; name=\"locationUuid\"" + ln + ln)
+				        .getBytes(StandardCharsets.UTF_8));
+				out.write(v.getBytes(StandardCharsets.UTF_8));
+				out.write(ln.getBytes(StandardCharsets.UTF_8));
+				out.write(("--" + boundary + ln).getBytes(StandardCharsets.UTF_8));
+			}
 			out.write(("Content-Disposition: form-data; name=\"file\"; filename=\"" + safeName + "\"" + ln)
 			        .getBytes(StandardCharsets.UTF_8));
 			out.write(("Content-Type: application/octet-stream" + ln + ln).getBytes(StandardCharsets.UTF_8));

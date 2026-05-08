@@ -40,6 +40,11 @@
 		externalAppointment.hbm.xml
 		diagnosticReport.hbm.xml
 		externalReferral.hbm.xml
+		patientDataExchangeIHMarker.hbm.xml
+		patientDataExchangeDataExchangeAuditLog.hbm.xml
+		patientDataExchangeMpiDuplicateReviewCase.hbm.xml
+		patientDataExchangeMpiDuplicateReviewCandidate.hbm.xml
+		patientDataExchangeValidationRecord.hbm.xml
 	</mappingFiles>
 	<!-- AOP
 	<advice>

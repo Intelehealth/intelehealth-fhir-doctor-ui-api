@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE hibernate-mapping PUBLIC "-//Hibernate/Hibernate Mapping DTD 3.0//EN"
+        "http://hibernate.sourceforge.net/hibernate-mapping-3.0.dtd">
+<hibernate-mapping package="org.openmrs.module.ihmodule.api.patientexchange.model">
+	<class name="DataExchangeAuditLog" entity-name="PatientExchangeDataExchangeAuditLog" table="data_exchange_auditlog">
+		<id name="id" type="int" column="id">
+			<generator class="native"/>
+		</id>
+		<property name="resourceName" type="string" column="resource_name"/>
+		<property name="status" type="boolean" column="status" not-null="true"/>
+		<property name="resourceUuid" type="string" column="resource_uuid"/>
+		<property name="fhirId" type="string" column="fhir_id"/>
+		<property name="request" type="text" column="request"/>
+		<property name="requestUrl" type="text" column="request_url"/>
+		<property name="response" type="text" column="response"/>
+		<property name="responseStatus" type="string" column="response_status"/>
+		<property name="dateCreated" type="string" column="date_created"/>
+		<property name="creator" type="int" column="creator"/>
+		<property name="changedBy" type="int" column="changed_by"/>
+		<property name="dateChanged" type="string" column="date_changed"/>
+		<property name="voided" type="boolean" column="voided"/>
+		<property name="voidedBy" type="int" column="voided_by"/>
+		<property name="dateVoided" type="string" column="date_voided"/>
+		<property name="voidReason" type="string" column="void_reason"/>
+		<property name="uuid" type="string" column="uuid"/>
+	</class>
+</hibernate-mapping>
