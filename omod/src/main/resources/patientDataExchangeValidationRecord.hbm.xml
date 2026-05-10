@@ -4,7 +4,7 @@
 <hibernate-mapping package="org.openmrs.module.ihmodule.api.patientexchange.validationrecord">
 	<class name="FhirResourceValidationRecord" table="fhir_resource_validation_record">
 		<id name="id" type="long" column="id">
-			<generator class="native"/>
+			<generator class="assigned"/>
 		</id>
 		<property name="resourceType" type="string" column="resource_type" not-null="true"/>
 		<property name="resourceLogicalId" type="string" column="resource_logical_id"/>

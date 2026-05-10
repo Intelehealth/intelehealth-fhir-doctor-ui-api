@@ -107,6 +107,15 @@ public class FhirConfig extends IHConstant {
 		return resolveBooleanProperty("intelehealth.fhir.patient.import.profile.validation.enabled", true);
 	}
 	
+	/**
+	 * When {@code true}, upload import creates {@link org.openmrs.Patient} via
+	 * {@code PatientService.savePatient} instead of FHIR2 {@code POST Patient}. Default
+	 * {@code false} preserves legacy FHIR2 create behaviour.
+	 */
+	public boolean isPatientImportNativeCreateEnabled() {
+		return resolveBooleanProperty("intelehealth.fhir.patient.import.native.create.enabled", false);
+	}
+	
 	public String getPatientProfileUrl() {
 		return patientProfileUrl;
 	}

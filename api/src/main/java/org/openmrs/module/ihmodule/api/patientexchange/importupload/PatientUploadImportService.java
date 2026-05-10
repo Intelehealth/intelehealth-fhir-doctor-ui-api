@@ -3,6 +3,9 @@ package org.openmrs.module.ihmodule.api.patientexchange.importupload;
 import org.openmrs.module.ihmodule.api.patientexchange.config.FhirContextHolder;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.util.Date;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -13,6 +16,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
+import org.hl7.fhir.r4.model.Address;
 import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.BooleanType;
 import org.hl7.fhir.r4.model.DateType;
@@ -22,7 +26,13 @@ import org.hl7.fhir.r4.model.Identifier;
 import org.hl7.fhir.r4.model.Patient;
 import org.hl7.fhir.r4.model.Reference;
 import org.hl7.fhir.r4.model.Resource;
+import org.hl7.fhir.r4.model.StringType;
 import org.hl7.fhir.r4.model.Type;
+import org.openmrs.Location;
+import org.openmrs.PatientIdentifier;
+import org.openmrs.PatientIdentifierType;
+import org.openmrs.PersonAddress;
+import org.openmrs.PersonName;
 import org.openmrs.api.context.Context;
 import org.openmrs.PersonAttributeType;
 import org.openmrs.module.ihmodule.api.patientexchange.config.FhirConfig;
@@ -35,7 +45,6 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.util.UriUtils;
 
 import ca.uhn.fhir.context.FhirContext;
-import ca.uhn.fhir.rest.api.MethodOutcome;
 import ca.uhn.fhir.validation.FhirValidator;
 import ca.uhn.fhir.validation.ValidationOptions;
 import ca.uhn.fhir.validation.ValidationResult;
@@ -59,6 +68,8 @@ public class PatientUploadImportService {
 	private static final String OPENMRS_IDENTIFIER_TYPE_CODING_SYSTEM = "http://fhir.openmrs.org/code-system/identifier-type";
 	
 	private static final String GP_PREFERRED_IDENTIFIER_TYPE_UUID = "intelehealth.fhir.patient.import.preferred.identifier.type.uuid";
+
+	private static final String GP_FHIR2_CONTACT_POINT_ATTRIBUTE_TYPE_UUID = "fhir2.personContactPointAttributeTypeUuid";
 	
 	private static final String MR_IDENTIFIER_CODE = "MR";
 
@@ -93,11 +104,11 @@ public class PatientUploadImportService {
 		
 		for (Patient patient : patients) {
 			PatientUploadImportItemResult item = new PatientUploadImportItemResult();
-			item.setInputId(patient.getIdElement() != null ? patient.getIdElement().getIdPart() : null);
 			try {
 				ensurePreferredOpenMrsIdentifier(patient);
 				ensureIdentifierLocation(patient, effectiveLocationUuid);
 				normalizeBirthDateDayPrecision(patient);
+				item.setInputId(correlationIdForImportItem(patient));
 				if (fhirConfig.isPatientImportProfileValidationEnabled()) {
 					validatePatientAgainstProfileBeforeCreate(patient);
 				}
@@ -107,31 +118,42 @@ public class PatientUploadImportService {
 					response.setSkipped(response.getSkipped() + 1);
 				} else {
 					boolean demographicDuplicateCheckEnabled = fhirConfig.isPatientImportDemographicDuplicateCheckEnabled();
+					
 					if (demographicDuplicateCheckEnabled && existsByDemographics(patient)) {
 						item.setStatus("SKIPPED");
 						item.setMessage("Patient already exists (same family, given, gender, birth date)");
 						response.setSkipped(response.getSkipped() + 1);
-						log.info("Import duplicate-check decision: skipped by demographics for inputId={}",
-						    item.getInputId());
-						continue;
-					}
-					if (!demographicDuplicateCheckEnabled) {
 						log.info(
-						    "Import duplicate-check decision: demographic check disabled by config (key=intelehealth.fhir.patient.import.demographic.duplicate.check.enabled) for inputId={}",
-						    item.getInputId());
+						    "Import duplicate-check: skipped — demographic match in DB (identifier search did not fire first). correlationId={}, family={}, given={}, birthDate={}",
+						    item.getInputId(), safeFamily(patient), safeGiven(patient), formatBirthDateYyyyMmDd(patient));
+					} else {
+						if (!demographicDuplicateCheckEnabled) {
+							log.debug(
+							    "Import duplicate-check disabled by config intelehealth.fhir.patient.import.demographic.duplicate.check.enabled for correlationId={}",
+							    item.getInputId());
+						}
+						if (!hasPreferredIdentifier(patient)) {
+							throw new IllegalArgumentException("No preferred identifier available for create");
+						}
+						patient.setId((String) null);
+						String finalPayload = fhirContext.newJsonParser().encodeResourceToString(patient);
+						log.info("Import upload final patient payload for correlationId={}: {}", item.getInputId(), finalPayload);
+						if (fhirConfig.isPatientImportNativeCreateEnabled()) {
+							String createdUuid = createPatientViaOpenmrsNativeApi(patient, effectiveLocationUuid);
+							item.setStatus("CREATED");
+							item.setCreatedId(createdUuid);
+							persistImportedPatientExtensions(createdUuid, patient);
+							item.setMessage("Patient created");
+						} else {
+							ca.uhn.fhir.rest.api.MethodOutcome outcome = fhirConfig.getLocalOpenMRSFhirContext().create()
+							        .resource(patient).execute();
+							item.setStatus("CREATED");
+							item.setCreatedId(outcome.getId() != null ? outcome.getId().getIdPart() : null);
+							persistImportedPatientExtensions(item.getCreatedId(), patient);
+							item.setMessage("Patient created");
+						}
+						response.setCreated(response.getCreated() + 1);
 					}
-					if (!hasPreferredIdentifier(patient)) {
-						throw new IllegalArgumentException("No preferred identifier available for create");
-					}
-					patient.setId((String) null);
-					String finalPayload = fhirContext.newJsonParser().encodeResourceToString(patient);
-					log.info("Import upload final patient payload for inputId={}: {}", item.getInputId(), finalPayload);
-					MethodOutcome outcome = fhirConfig.getLocalOpenMRSFhirContext().create().resource(patient).execute();
-					item.setStatus("CREATED");
-					item.setCreatedId(outcome.getId() != null ? outcome.getId().getIdPart() : null);
-					persistImportedPatientExtensions(item.getCreatedId(), patient);
-					item.setMessage("Patient created");
-					response.setCreated(response.getCreated() + 1);
 				}
 			}
 			catch (Exception e) {
@@ -353,7 +375,7 @@ public class PatientUploadImportService {
 		String family = safeFamily(patient);
 		String given = safeGiven(patient);
 		String gender = patient.getGender() != null ? patient.getGender().toCode() : null;
-		String birthDate = new SimpleDateFormat("yyyy-MM-dd").format(patient.getBirthDate());
+		String birthDate = formatBirthDateYyyyMmDd(patient);
 		String phone = safePhone(patient);
 		log.info(
 		    "Import duplicate-check DB query demographics: family='{}', given='{}', gender='{}', birthDate='{}', phone='{}'",
@@ -470,7 +492,7 @@ public class PatientUploadImportService {
 	private List<Map<String, String>> buildLocalDemographicSearchCandidates(Patient patient) {
 		List<Map<String, String>> candidates = new ArrayList<>();
 		HumanName name = patient.getNameFirstRep();
-		String birthDate = new SimpleDateFormat("yyyy-MM-dd").format(patient.getBirthDate());
+		String birthDate = formatBirthDateYyyyMmDd(patient);
 		String family = name.getFamily().trim();
 		String given = StringUtils.trimToEmpty(name.getGivenAsSingleString());
 		String gender = patient.getGender().toCode();
@@ -572,6 +594,171 @@ public class PatientUploadImportService {
 		// Keep date-only value to avoid timezone rollback (e.g. 1996-05-23 -> 1996-05-22).
 		patient.setBirthDateElement(new DateType(birthDateText));
 	}
+
+	/**
+	 * Maps FHIR {@code birthDate} (calendar date) to {@link Date} for OpenMRS {@code person.birthdate}. Raw
+	 * {@link Patient#getBirthDate()} can shift the stored calendar day across JDBC/time zones; parsing the
+	 * normalized yyyy-MM-dd string and anchoring at noon UTC avoids off-by-one dates in the DB.
+	 */
+	private static Date resolveBirthDateForOpenmrs(Patient fhirPatient) {
+		if (fhirPatient == null || !fhirPatient.hasBirthDate()) {
+			return null;
+		}
+		if (fhirPatient.hasBirthDateElement()) {
+			String raw = fhirPatient.getBirthDateElement().asStringValue();
+			if (StringUtils.isNotBlank(raw) && raw.length() >= 10) {
+				String ymd = raw.substring(0, 10);
+				try {
+					LocalDate ld = LocalDate.parse(ymd);
+					return Date.from(ld.atTime(12, 0).atZone(ZoneOffset.UTC).toInstant());
+				}
+				catch (Exception ignored) {
+					// partial FHIR dates or non-ISO — fall back
+				}
+			}
+		}
+		return fhirPatient.getBirthDate();
+	}
+
+	/**
+	 * Persists a new OpenMRS patient from the prepared FHIR resource. Only used when
+	 * {@link FhirConfig#isPatientImportNativeCreateEnabled()} is true; default import continues to use FHIR2 POST.
+	 */
+	private String createPatientViaOpenmrsNativeApi(Patient fhirPatient, String locationUuid) {
+		String typeUuid = resolvePreferredIdentifierTypeUuid();
+		if (StringUtils.isBlank(typeUuid)) {
+			throw new IllegalArgumentException(
+			        "Preferred identifier type UUID is required for native import (same as FHIR import)");
+		}
+		PatientIdentifierType idType = Context.getPatientService().getPatientIdentifierTypeByUuid(typeUuid.trim());
+		if (idType == null) {
+			throw new IllegalArgumentException("Patient identifier type not found for UUID: " + typeUuid);
+		}
+		String locUuid = StringUtils.isNotBlank(locationUuid) ? locationUuid.trim() : OPENMRS_DEFAULT_IDENTIFIER_LOCATION_UUID;
+		Location location = Context.getLocationService().getLocationByUuid(locUuid);
+		if (location == null) {
+			throw new IllegalArgumentException("Location not found for UUID: " + locUuid);
+		}
+		Identifier preferred = findOpenMrsIdentifierFromJson(fhirPatient);
+		if (preferred == null || StringUtils.isBlank(preferred.getValue())) {
+			throw new IllegalArgumentException("OpenMRS ID identifier is required for native import");
+		}
+
+		org.openmrs.Patient omrsPatient = new org.openmrs.Patient();
+
+		if (fhirPatient.hasName() && fhirPatient.getNameFirstRep() != null) {
+			HumanName hn = fhirPatient.getNameFirstRep();
+			PersonName pn = new PersonName();
+			pn.setFamilyName(StringUtils.trimToNull(hn.getFamily()));
+			if (hn.hasGiven() && !hn.getGiven().isEmpty()) {
+				pn.setGivenName(StringUtils.trimToNull(hn.getGiven().get(0).getValue()));
+				if (hn.getGiven().size() > 1) {
+					StringBuilder mid = new StringBuilder();
+					for (int i = 1; i < hn.getGiven().size(); i++) {
+						if (mid.length() > 0) {
+							mid.append(' ');
+						}
+						mid.append(hn.getGiven().get(i).getValue());
+					}
+					pn.setMiddleName(StringUtils.trimToNull(mid.toString()));
+				}
+			}
+			pn.setPreferred(true);
+			omrsPatient.addName(pn);
+		}
+
+		if (fhirPatient.hasGender()) {
+			String g = fhirPatient.getGender().toCode();
+			if ("male".equalsIgnoreCase(g)) {
+				omrsPatient.setGender("M");
+			} else if ("female".equalsIgnoreCase(g)) {
+				omrsPatient.setGender("F");
+			} else {
+				omrsPatient.setGender("U");
+			}
+		}
+
+		if (fhirPatient.hasBirthDate()) {
+			omrsPatient.setBirthdate(resolveBirthDateForOpenmrs(fhirPatient));
+		}
+
+		if (fhirPatient.hasAddress()) {
+			Address fa = fhirPatient.getAddressFirstRep();
+			PersonAddress pa = new PersonAddress();
+			if (fa.hasLine()) {
+				List<StringType> lines = fa.getLine();
+				if (!lines.isEmpty() && lines.get(0).getValue() != null) {
+					pa.setAddress1(lines.get(0).getValue());
+				}
+				if (lines.size() > 1 && lines.get(1).getValue() != null) {
+					pa.setAddress2(lines.get(1).getValue());
+				}
+				if (lines.size() > 2) {
+					StringBuilder rest = new StringBuilder();
+					for (int i = 2; i < lines.size(); i++) {
+						if (lines.get(i).getValue() == null) {
+							continue;
+						}
+						if (rest.length() > 0) {
+							rest.append(' ');
+						}
+						rest.append(lines.get(i).getValue());
+					}
+					pa.setAddress3(rest.toString());
+				}
+			}
+			pa.setCityVillage(fa.getCity());
+			pa.setStateProvince(fa.getState());
+			pa.setPostalCode(fa.getPostalCode());
+			pa.setCountry(fa.getCountry());
+			pa.setPreferred(true);
+			omrsPatient.addAddress(pa);
+		}
+
+		PatientIdentifier pid = new PatientIdentifier();
+		pid.setIdentifier(preferred.getValue().trim());
+		pid.setIdentifierType(idType);
+		pid.setLocation(location);
+		pid.setPreferred(true);
+		omrsPatient.addIdentifier(pid);
+
+		applyTelecomAsPersonAttributeIfConfigured(omrsPatient, fhirPatient);
+
+		Context.getPatientService().savePatient(omrsPatient);
+		return omrsPatient.getUuid();
+	}
+
+	private void applyTelecomAsPersonAttributeIfConfigured(org.openmrs.Patient omrsPatient, Patient fhirPatient) {
+		String phone = safePhone(fhirPatient);
+		if (StringUtils.isBlank(phone)) {
+			return;
+		}
+		// Primary patient phone maps to OpenMRS "Telephone Number" (FHIR Patient.telecom); Emergency Contact uses extension only.
+		PersonAttributeType pat = Context.getPersonService().getPersonAttributeTypeByName("Telephone Number");
+		if (pat != null && !pat.getRetired()) {
+			omrsPatient.addAttribute(new org.openmrs.PersonAttribute(pat, phone));
+			return;
+		}
+		String attrUuid = null;
+		try {
+			attrUuid = Context.getAdministrationService().getGlobalProperty(GP_FHIR2_CONTACT_POINT_ATTRIBUTE_TYPE_UUID);
+		}
+		catch (Exception ex) {
+			log.debug("Could not read global property {}", GP_FHIR2_CONTACT_POINT_ATTRIBUTE_TYPE_UUID, ex);
+		}
+		if (StringUtils.isBlank(attrUuid)) {
+			log.info(
+			    "Native import: telecom present but no PersonAttributeType 'Telephone Number' and global property {} is blank; phone skipped",
+			    GP_FHIR2_CONTACT_POINT_ATTRIBUTE_TYPE_UUID);
+			return;
+		}
+		pat = Context.getPersonService().getPersonAttributeTypeByUuid(attrUuid.trim());
+		if (pat == null || pat.getRetired()) {
+			log.warn("Native import: PersonAttributeType not found or retired for uuid={}", attrUuid);
+			return;
+		}
+		omrsPatient.addAttribute(new org.openmrs.PersonAttribute(pat, phone));
+	}
 	
 	private void validatePatientAgainstProfileBeforeCreate(Patient patient) {
 		assertKnownProfileExtensions(patient);
@@ -653,8 +840,8 @@ public class PatientUploadImportService {
 		String defaultUnderscore = defaultName.replace('-', '_').replace(' ', '_');
 		switch (suffix) {
 			case "Emergency-Contact-Number":
-				return Arrays.asList("Telephone Number", "Emergency Contact Number", "Phone Number",
-				    "Emergency-Contact-Number");
+				// Extension is emergency contact phone — not the patient's primary Telephone Number (that comes from telecom).
+				return Arrays.asList("Emergency Contact Number", "Emergency-Contact-Number");
 			case "Caste":
 				return Arrays.asList("Caste", "caste");
 			case "Economic-Status":
@@ -718,7 +905,7 @@ public class PatientUploadImportService {
 		if (incoming.getGender() != found.getGender()) {
 			return false;
 		}
-		String inDob = new SimpleDateFormat("yyyy-MM-dd").format(incoming.getBirthDate());
+		String inDob = formatBirthDateYyyyMmDd(incoming);
 		String fdDob = new SimpleDateFormat("yyyy-MM-dd").format(found.getBirthDate());
 		if (!StringUtils.equals(inDob, fdDob)) {
 			return false;
@@ -753,5 +940,34 @@ public class PatientUploadImportService {
 			}
 		}
 		return "";
+	}
+
+	/** FHIR logical id if present; otherwise preferred OpenMRS identifier value (upload JSON rarely sets {@code Patient.id}). */
+	private static String correlationIdForImportItem(Patient patient) {
+		if (patient == null) {
+			return null;
+		}
+		if (patient.getIdElement() != null && StringUtils.isNotBlank(patient.getIdElement().getIdPart())) {
+			return patient.getIdElement().getIdPart().trim();
+		}
+		Identifier omrsId = findOpenMrsIdentifierFromJson(patient);
+		if (omrsId != null && StringUtils.isNotBlank(omrsId.getValue())) {
+			return omrsId.getValue().trim();
+		}
+		return null;
+	}
+
+	/** Uses FHIR date element string when present so duplicate SQL matches the JSON calendar day (avoids TZ rollback). */
+	private static String formatBirthDateYyyyMmDd(Patient patient) {
+		if (patient == null || !patient.hasBirthDate()) {
+			return "";
+		}
+		if (patient.hasBirthDateElement()) {
+			String raw = patient.getBirthDateElement().asStringValue();
+			if (StringUtils.isNotBlank(raw) && raw.length() >= 10) {
+				return raw.substring(0, 10);
+			}
+		}
+		return new SimpleDateFormat("yyyy-MM-dd").format(patient.getBirthDate());
 	}
 }

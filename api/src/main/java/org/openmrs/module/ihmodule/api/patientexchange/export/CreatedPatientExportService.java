@@ -318,6 +318,11 @@ public class CreatedPatientExportService extends IHConstant {
 		String trimmed = attributeName.trim();
 		String normalized = trimmed.toLowerCase().replaceAll("[\\s_-]+", "");
 		switch (normalized) {
+			case "telephonenumber":
+			case "phonenumber":
+				// Primary phone is represented as FHIR Patient.telecom (FHIR2); do not duplicate as Emergency-Contact extension.
+				return null;
+			case "emergencycontactnumber":
 			case "emergencycontactname":
 				return "Emergency-Contact-Number";
 			case "caste":
@@ -343,7 +348,7 @@ public class CreatedPatientExportService extends IHConstant {
 			return true;
 		}
 		String trimmed = value.trim();
-		return trimmed.isEmpty() ;
+		return trimmed.isEmpty();
 	}
 	
 	private static final class ExportItem {

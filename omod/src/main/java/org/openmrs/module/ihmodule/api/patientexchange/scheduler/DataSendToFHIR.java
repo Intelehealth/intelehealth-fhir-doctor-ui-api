@@ -1,7 +1,10 @@
 package org.openmrs.module.ihmodule.api.patientexchange.scheduler;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.UnsupportedEncodingException;
+import java.nio.charset.StandardCharsets;
 import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -12,6 +15,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import org.hl7.fhir.instance.model.api.IBaseResource;
 import org.hl7.fhir.r4.model.Address;
 import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.Bundle.BundleEntryComponent;
@@ -28,6 +32,7 @@ import org.hl7.fhir.r4.model.Patient;
 import org.hl7.fhir.r4.model.Reference;
 import org.hl7.fhir.r4.model.Resource;
 import org.hl7.fhir.r4.model.StringType;
+import org.hl7.fhir.r4.model.StructureDefinition;
 import org.openmrs.api.context.Context;
 import org.openmrs.module.ihmodule.api.patientexchange.config.FhirConfig;
 import org.openmrs.module.ihmodule.api.patientexchange.datatype.ConfigFacilityDataType;
@@ -62,7 +67,10 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 
 import ca.uhn.fhir.context.ConfigurationException;
 import ca.uhn.fhir.context.FhirContext;
+import ca.uhn.fhir.context.support.DefaultProfileValidationSupport;
 import ca.uhn.fhir.parser.DataFormatException;
+import ca.uhn.fhir.rest.api.MethodOutcome;
+import ca.uhn.fhir.rest.api.PreferReturnEnum;
 import ca.uhn.fhir.validation.FhirValidator;
 import ca.uhn.fhir.validation.ValidationOptions;
 import ca.uhn.fhir.validation.ValidationResult;
@@ -145,7 +153,7 @@ public class DataSendToFHIR extends IHConstant {
 		}
 	}
 
-	@Scheduled(fixedDelay = 60000, initialDelay = 500)
+	
 	public void scheduleTaskUsingCronExpression() throws ParseException, UnsupportedEncodingException,
 			DataFormatException, JsonProcessingException, JSONException {
 		ensureDependencies();
@@ -155,7 +163,7 @@ public class DataSendToFHIR extends IHConstant {
 		//transferModifiedPatient();
 	}
 	
-	private void transferCreatedPatient() {
+	public void transferCreatedPatient() {
 		ensureDependencies();
 		ConfigDataSync patientSync = configDataSyncService.getConfigDataSync(ConfigFacilityDataType.PATIENTS);
 
@@ -336,7 +344,8 @@ public class DataSendToFHIR extends IHConstant {
 				ValidationRecordContext.setPayloadJson(patientPayloadBeforeValidation);
 				ValidationRecordContext.setFailureReason(null);
 				//System.err.println("Patient payload before validation: " + patientPayloadBeforeValidation);
-				if (!validateResource(localPatient, localPatientUUID)) {
+				boolean isValid = validateResource(localPatient, localPatientUUID);
+				if (!isValid) {
 					LOGGER.error("VALIDATION STATUS: INVALID for patient uuid={}", localPatientUUID);
 					String reason = ValidationRecordContext.getFailureReason();
 					validationRecordService.recordValues(
@@ -560,21 +569,38 @@ public class DataSendToFHIR extends IHConstant {
 		}
 	}
 
+	/**
+	 * Single-resource {@code POST /Patient} via OpenHIM (no FHIR transaction bundle, no MDM operation).
+	 * The returned {@link Bundle} mimics a transaction-response shape so {@link #extractResponseId(Bundle)}
+	 * keeps working for the caller.
+	 */
 	private Bundle postCreatePatient(Patient patient) {
-		Bundle createTransaction = new Bundle();
-		createTransaction.setType(Bundle.BundleType.TRANSACTION);
-		createTransaction.addEntry().setResource(patient).getRequest().setMethod(Bundle.HTTPVerb.POST).setUrl("Patient");
-		return firFhirConfig.getOpenCRFhirContext().transaction().withBundle(createTransaction).execute();
+		MethodOutcome outcome = firFhirConfig.getOpenCRFhirContext().create()
+				.resource(patient)
+				.prefer(PreferReturnEnum.REPRESENTATION)
+				.execute();
+		Bundle responseBundle = new Bundle();
+		responseBundle.setType(Bundle.BundleType.TRANSACTIONRESPONSE);
+		Bundle.BundleEntryComponent entry = responseBundle.addEntry();
+		if (outcome != null && outcome.getResource() instanceof Resource) {
+			entry.setResource((Resource) outcome.getResource());
+		}
+		BundleEntryResponseComponent responseComponent = entry.getResponse();
+		String createdId = (outcome != null && outcome.getId() != null) ? outcome.getId().getIdPart() : null;
+		if (createdId != null && !createdId.isEmpty()) {
+			responseComponent.setLocation("Patient/" + createdId);
+		}
+		responseComponent.setStatus("201 Created");
+		return responseBundle;
 	}
 
+	/**
+	 * Single-resource {@code PUT /Patient/{mpiId}} via OpenHIM (no FHIR transaction bundle, no MDM operation).
+	 */
 	private Bundle putPatientWithMpiId(Patient patient, String mpiId) {
 		Patient toUpdate = patient.copy();
 		toUpdate.setId(mpiId);
-		Bundle updateTransaction = new Bundle();
-		updateTransaction.setType(Bundle.BundleType.TRANSACTION);
-		updateTransaction.addEntry().setResource(toUpdate).getRequest().setMethod(Bundle.HTTPVerb.PUT)
-				.setUrl("Patient/" + mpiId);
-		firFhirConfig.getOpenCRFhirContext().transaction().withBundle(updateTransaction).execute();
+		firFhirConfig.getOpenCRFhirContext().update().resource(toUpdate).withId(mpiId).execute();
 		return singlePatientBundle(toUpdate);
 	}
 
@@ -831,6 +857,10 @@ public class DataSendToFHIR extends IHConstant {
 		String normalized = attributeName.trim().toLowerCase().replaceAll("[\\s_-]+", "");
 
 		switch (normalized) {
+		case "telephonenumber":
+		case "phonenumber":
+			return null;
+		case "emergencycontactnumber":
 		case "emergencycontactname":
 			return "Emergency-Contact-Number";
 		case "caste":
@@ -904,26 +934,121 @@ public class DataSendToFHIR extends IHConstant {
 		identifier.setType(ensuredType);
 	}
 
+	private Object buildIhStructureDefinitionSupport() throws Exception {
+		Class<?> prePopulatedSupportClass = Class
+				.forName("org.hl7.fhir.common.hapi.validation.support.PrePopulatedValidationSupport");
+		Object support = prePopulatedSupportClass.getConstructor(FhirContext.class).newInstance(fhirContext);
+		loadStructureDefinitions(support, classpathFile("structureDefinition/structureDefinition.json"));
+		loadStructureDefinitions(support, classpathFile("structureDefinition/StructureDefinition-Emergency-Contact-Number.json"));
+		loadStructureDefinitions(support, classpathFile("structureDefinition/StructureDefinition-Household-Number.json"));
+		loadStructureDefinitions(support, classpathFile(patientProfileDefinitionPath));
+		return support;
+	}
+
+	private String classpathFile(String value) {
+		return value;
+	}
+
+	private void loadStructureDefinitions(Object support, String classpathFile) throws Exception {
+		if (classpathFile == null || classpathFile.trim().isEmpty()) {
+			return;
+		}
+		ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+		if (classLoader == null) {
+			classLoader = getClass().getClassLoader();
+		}
+		try (InputStream inputStream = classLoader.getResourceAsStream(classpathFile)) {
+			if (inputStream == null) {
+				LOGGER.warn("StructureDefinition resource not found on classpath: {}", classpathFile);
+				return;
+			}
+			IBaseResource parsed = fhirContext.newJsonParser()
+					.parseResource(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
+			if (parsed instanceof Bundle) {
+				for (BundleEntryComponent entry : ((Bundle) parsed).getEntry()) {
+					if (entry.getResource() instanceof StructureDefinition) {
+						StructureDefinition sd = (StructureDefinition) entry.getResource();
+						support.getClass().getMethod("addStructureDefinition", StructureDefinition.class).invoke(support, sd);
+						LOGGER.info("Loaded StructureDefinition: {}", sd.getName());
+					}
+				}
+				return;
+			}
+			if (parsed instanceof StructureDefinition) {
+				StructureDefinition sd = (StructureDefinition) parsed;
+				support.getClass().getMethod("addStructureDefinition", StructureDefinition.class).invoke(support, sd);
+				LOGGER.info("Loaded StructureDefinition: {}", sd.getName());
+			}
+		}
+	}
+
+	private boolean registerValidationSupport(FhirValidator validator, String patientUuid) {
+		try {
+			Class<?> chainClass = Class.forName("org.hl7.fhir.common.hapi.validation.support.ValidationSupportChain");
+			Class<?> iValidationSupportClass = Class
+					.forName("org.hl7.fhir.common.hapi.validation.support.IValidationSupport");
+			Object chain = chainClass.getConstructor().newInstance();
+			java.lang.reflect.Method addMethod = chainClass.getMethod("addValidationSupport", iValidationSupportClass);
+
+			Class<?> inMemoryClass = Class
+					.forName("org.hl7.fhir.common.hapi.validation.support.InMemoryTerminologyServerValidationSupport");
+			Object inMemory = inMemoryClass.getConstructor(FhirContext.class).newInstance(fhirContext);
+			addMethod.invoke(chain, inMemory);
+
+			Object defaultProfile = new DefaultProfileValidationSupport(fhirContext);
+			addMethod.invoke(chain, defaultProfile);
+
+			Object ihSupport = buildIhStructureDefinitionSupport();
+			addMethod.invoke(chain, ihSupport);
+
+			Class<?> snapshotClass = Class
+					.forName("org.hl7.fhir.common.hapi.validation.support.SnapshotGeneratingValidationSupport");
+			Object snapshot = snapshotClass.getConstructor(FhirContext.class).newInstance(fhirContext);
+			addMethod.invoke(chain, snapshot);
+
+			Class<?> validatorModuleClass = Class
+					.forName("org.hl7.fhir.common.hapi.validation.validator.FhirInstanceValidator");
+			Object validatorModule = validatorModuleClass.getConstructor(iValidationSupportClass).newInstance(chain);
+			validator.registerValidatorModule((ca.uhn.fhir.validation.IValidatorModule) validatorModule);
+			return true;
+		}
+		catch (ClassNotFoundException err) {
+			LOGGER.error(
+					"FHIR validator classes are not available on module classpath; skipping validation for patient uuid={}",
+					patientUuid, err);
+			ValidationRecordContext.setFailureReason("FHIR validator class missing: " + err.getMessage());
+			return false;
+		}
+		catch (Throwable ex) {
+			LOGGER.error("Failed to initialise FHIR validator support chain for patient uuid=" + patientUuid + ": "
+					+ ex.getMessage(), ex);
+			ValidationRecordContext.setFailureReason("Validator init failed: " + ex.getMessage());
+			return false;
+		}
+	}
+
 	private boolean validateResource(Patient patient, String patientUuid)
 			throws ConfigurationException, DataFormatException, IOException {
 
 		FhirValidator validator = fhirContext.newValidator();
-		// OpenMRS module runtime may not include HAPI XML schema resources; use instance/profile validation only.
+		// Standard XSD/Schematron resources are not on the OpenMRS module classpath; rely on the
+		// instance validator + IH profile resources only (same wiring as the Spring Boot module).
 		validator.setValidateAgainstStandardSchema(false);
 		validator.setValidateAgainstStandardSchematron(false);
+
+		if (!registerValidationSupport(validator, patientUuid)) {
+			LOGGER.warn("Skipping FHIR validation for patient uuid={} because validator support is unavailable",
+					patientUuid);
+			return true;
+		}
 
 		ValidationOptions options = new ValidationOptions();
 		options.addProfile(getPatientProfileUrl());
 		ValidationResult result;
 		try {
 			result = validator.validateWithResult(patient, options);
-		} catch (Exception ex) {
-			if (ex.getMessage() != null && ex.getMessage().contains("HAPI-1758")) {
-				LOGGER.warn("FHIR schema resources not available in runtime; skipping schema-based validation for patient uuid={}",
-						patientUuid);
-				ValidationRecordContext.setFailureReason(null);
-				return true;
-			}
+		}
+		catch (Exception ex) {
 			LOGGER.error("Validation execution failed for patient uuid=" + patientUuid + ": "
 					+ ex.getMessage(), ex);
 			ValidationRecordContext.setFailureReason(ex.getMessage());

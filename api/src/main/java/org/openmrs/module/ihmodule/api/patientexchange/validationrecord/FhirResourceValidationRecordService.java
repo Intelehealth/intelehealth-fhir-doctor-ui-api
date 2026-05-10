@@ -24,6 +24,9 @@ public class FhirResourceValidationRecordService {
 	
 	private static final int MAX_PAYLOAD = 200000;
 	
+	private static final java.util.concurrent.atomic.AtomicLong RECORD_ID_SEQUENCE = new java.util.concurrent.atomic.AtomicLong(
+	        System.currentTimeMillis());
+	
 	@Autowired
 	private FhirResourceValidationRecordRepository repository;
 	
@@ -37,6 +40,7 @@ public class FhirResourceValidationRecordService {
 	        String payloadJson) {
 		try {
 			FhirResourceValidationRecord row = new FhirResourceValidationRecord();
+			row.setId(nextRecordId());
 			row.setResourceType(StringUtils.isNotBlank(resourceType) ? resourceType : "Unknown");
 			row.setResourceLogicalId(resourceLogicalId);
 			row.setOutcome(outcome != null ? outcome.name() : ValidationOutcome.PROCESSING_ERROR.name());
@@ -79,5 +83,9 @@ public class FhirResourceValidationRecordService {
 			return m;
 		}
 		return m.substring(0, maxLen) + "...";
+	}
+	
+	private static long nextRecordId() {
+		return RECORD_ID_SEQUENCE.incrementAndGet();
 	}
 }

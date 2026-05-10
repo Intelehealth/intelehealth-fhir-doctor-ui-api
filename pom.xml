@@ -201,7 +201,7 @@
 	</pluginRepositories>
 
 	<properties>
-		<openmrsPlatformVersion>1.11.6</openmrsPlatformVersion>
+		<openmrsPlatformVersion>2.4.3</openmrsPlatformVersion>
 		<!-- Match OpenMRS 2.7.x webapp Jackson; prevents JavaTimeModule vs Module ClassCast when HAPI is on the classpath. -->
 		<jackson.version>2.18.2</jackson.version>
 	</properties>

@@ -3,8 +3,6 @@ package org.openmrs.module.ihmodule.api.patientexchange.validationrecord;
 import java.util.UUID;
 
 import javax.persistence.Column;
-import javax.persistence.GeneratedValue;
-import javax.persistence.GenerationType;
 import javax.persistence.Id;
 import javax.persistence.Lob;
 
@@ -17,7 +15,6 @@ import org.openmrs.module.ihmodule.api.patientexchange.utils.DateUtils;
 public class FhirResourceValidationRecord {
 	
 	@Id
-	@GeneratedValue(strategy = GenerationType.AUTO)
 	private Long id;
 	
 	@Column(name = "resource_type", nullable = false, length = 64)
