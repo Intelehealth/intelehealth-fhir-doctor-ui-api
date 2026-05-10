@@ -11,7 +11,6 @@ package org.openmrs.module.ihmodule.api.impl;
 
 import java.math.BigDecimal;
 import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -41,9 +40,23 @@ public class DataMigrationServiceImpl extends BaseOpenmrsService implements Data
 	
 	DataMigrationDao dao;
 	
-	private EncounterService encounterService = Context.getEncounterService();
+	private EncounterService encounterService;
 	
-	private ConceptService conceptService = Context.getConceptService();
+	private ConceptService conceptService;
+	
+	private EncounterService encounterService() {
+		if (encounterService == null) {
+			encounterService = Context.getEncounterService();
+		}
+		return encounterService;
+	}
+	
+	private ConceptService conceptService() {
+		if (conceptService == null) {
+			conceptService = Context.getConceptService();
+		}
+		return conceptService;
+	}
 	
 	public void setDao(DataMigrationDao dao) {
 		this.dao = dao;
@@ -70,19 +83,19 @@ public class DataMigrationServiceImpl extends BaseOpenmrsService implements Data
 		DataMigrationObject obj = new DataMigrationObject();
 		obj.setEncounterDatetime(medication.getEnccounterdate());
 		obj.setPatient(medication.getPerson());
-		obj.setEncounterType(encounterService.getEncounterType("Order").getUuid());
+		obj.setEncounterType(encounterService().getEncounterType("Order").getUuid());
 		obj.setVisit(medication.getVisit());
 		List<Orders> orders = new ArrayList<Orders>();
 		obj.setLocation(medication.getLocation());
 		Orders order = new Orders();
 		order.setPatient(medication.getPerson());
 		List<String> medicineInformation = Arrays.asList(medication.getValue().split(":"));
-		Drug drug = conceptService.getDrug(medicineInformation.get(0));
+		Drug drug = conceptService().getDrug(medicineInformation.get(0));
 		order.setDrug(drug.getUuid());
 		order.setConcept(drug.getConcept().getUuid());
 		order.setDuration(BigDecimal.valueOf(Long.parseLong(medicineInformation.get(2))));
 		order.setDosingInstructions(medicineInformation.get(3) + ":" + medicineInformation.get(4));
-		Concept doseunits = conceptService.getConceptByName(medicineInformation.get(1));
+		Concept doseunits = conceptService().getConceptByName(medicineInformation.get(1));
 		order.setDoseUnits(doseunits.getUuid());
 		order.setQuantityUnits(doseunits.getUuid());
 		orders.add(order);
@@ -106,7 +119,7 @@ public class DataMigrationServiceImpl extends BaseOpenmrsService implements Data
 	private void convertLabData(DataMigration medication) {
 		LabTest laboder = new LabTest();
 		laboder.setPatient(medication.getPerson());
-		laboder.setEncounterType(encounterService.getEncounterType("Order").getUuid());
+		laboder.setEncounterType(encounterService().getEncounterType("Order").getUuid());
 		laboder.setVisit(medication.getVisit());
 		laboder.setEncounterDatetime(medication.getEnccounterdate());
 		laboder.setLocation(medication.getLocation());
@@ -114,7 +127,7 @@ public class DataMigrationServiceImpl extends BaseOpenmrsService implements Data
 		LabOrder theOrder = new LabOrder();
 		theOrder.setPatient(medication.getPerson());
 		List<String> lab = Arrays.asList(medication.getValue().split(":"));
-		Concept theLab = conceptService.getConceptByName(lab.get(0));
+		Concept theLab = conceptService().getConceptByName(lab.get(0));
 		theOrder.setConcept(theLab.getUuid());
 		orders.add(theOrder);
 		laboder.setOrders(orders);

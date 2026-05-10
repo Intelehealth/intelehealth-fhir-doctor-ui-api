@@ -1,5 +1,6 @@
 package org.openmrs.module.ihmodule.api.patientexchange.dataimports;
 
+import org.openmrs.module.ihmodule.api.patientexchange.config.FhirContextHolder;
 import java.io.UnsupportedEncodingException;
 import java.util.ArrayList;
 import java.util.List;
@@ -9,7 +10,6 @@ import org.hl7.fhir.r4.model.Bundle.BundleEntryComponent;
 import org.hl7.fhir.r4.model.Coding;
 import org.hl7.fhir.r4.model.Observation;
 import org.hl7.fhir.r4.model.Resource;
-import org.openmrs.api.context.Context;
 import org.openmrs.module.ihmodule.api.patientexchange.config.FhirConfig;
 import org.openmrs.module.ihmodule.api.patientexchange.datatype.QueryTable;
 import org.openmrs.module.ihmodule.api.patientexchange.service.CommonOperationService;
@@ -19,16 +19,18 @@ import org.springframework.stereotype.Service;
 
 import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.rest.api.MethodOutcome;
+import org.springframework.beans.factory.annotation.Autowired;
 
 @Service
 public class ImportObservationService extends IHConstant {
 	
-	FhirContext fhirContext = FhirContext.forR4();
+	FhirContext fhirContext = FhirContextHolder.R4;
 	
-	private FhirConfig firFhirConfig = Context.getRegisteredComponent("fhirConfig", FhirConfig.class);
+	@Autowired
+	private FhirConfig firFhirConfig;
 	
-	private CommonOperationService commonOperationService = Context.getRegisteredComponent("commonOperationService",
-	    CommonOperationService.class);
+	@Autowired
+	private CommonOperationService commonOperationService;
 	
 	public void importObservation(String patientId) throws UnsupportedEncodingException {
 		

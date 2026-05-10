@@ -35,6 +35,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * Serves patient exchange endpoints for duplicate-patient UI directly from ihmodule services.
@@ -56,22 +57,23 @@ public class PatientExchangeProxyRestController {
 	
 	private static final Pattern DATE_YYYY_MM_DD = Pattern.compile("\\d{4}-\\d{2}-\\d{2}");
 	
-	private MpiDuplicateReviewQueryService mpiDuplicateReviewQueryService = Context.getRegisteredComponent(
-	    "mpiDuplicateReviewQueryService", MpiDuplicateReviewQueryService.class);
+	@Autowired
+	private MpiDuplicateReviewQueryService mpiDuplicateReviewQueryService;
 	
-	private DataSendToFHIR dataSendToFHIR = Context.getRegisteredComponent("dataSendToFHIR", DataSendToFHIR.class);
+	@Autowired
+	private DataSendToFHIR dataSendToFHIR;
 	
-	private LocalPatientMpiUpdateService localPatientMpiUpdateService = Context.getRegisteredComponent(
-	    "localPatientMpiUpdateService", LocalPatientMpiUpdateService.class);
+	@Autowired
+	private LocalPatientMpiUpdateService localPatientMpiUpdateService;
 	
-	private MpiDuplicateReviewResolutionService mpiDuplicateReviewResolutionService = Context.getRegisteredComponent(
-	    "mpiDuplicateReviewResolutionService", MpiDuplicateReviewResolutionService.class);
+	@Autowired
+	private MpiDuplicateReviewResolutionService mpiDuplicateReviewResolutionService;
 	
-	private PatientUploadImportService patientUploadImportService = Context.getRegisteredComponent(
-	    "patientUploadImportService", PatientUploadImportService.class);
+	@Autowired
+	private PatientUploadImportService patientUploadImportService;
 	
-	private CreatedPatientExportService createdPatientExportService = Context.getRegisteredComponent(
-	    "createdPatientExportService", CreatedPatientExportService.class);
+	@Autowired
+	private CreatedPatientExportService createdPatientExportService;
 	
 	private ObjectMapper objectMapper = new ObjectMapper();
 	
@@ -141,6 +143,11 @@ public class PatientExchangeProxyRestController {
 		}
 		ForceSyncDuplicateResolutionContext.begin(body.getResolvedBy().trim());
 		try {
+			if (log.isDebugEnabled()) {
+				User u = Context.getAuthenticatedUser();
+				log.debug("ihmodule patientExchange: force-sync requested by user="
+				        + (u != null ? u.getUsername() : "?") + ", patientUuid=" + body.getPatientUuid().trim());
+			}
 			org.openmrs.module.ihmodule.api.patientexchange.domain.FhirResponse res = dataSendToFHIR
 					.forceSendPatientToCentralByUuid(body.getPatientUuid().trim());
 			Map<String, Object> ok = new LinkedHashMap<>();
@@ -153,10 +160,15 @@ public class PatientExchangeProxyRestController {
 			}
 			writeJson(response, HttpStatus.OK.value(), ok);
 		} catch (IllegalArgumentException ex) {
+			log.warn("ihmodule patientExchange: force-sync bad request, patientUuid=" + body.getPatientUuid().trim()
+			        + ", message=" + ex.getMessage(), ex);
 			writeJson(response, HttpStatus.BAD_REQUEST.value(), errorBody(ex.getMessage()));
 		} catch (ResourceIsNotValid ex) {
+			log.warn("ihmodule patientExchange: force-sync unprocessable, patientUuid=" + body.getPatientUuid().trim()
+			        + ", message=" + ex.getMessage(), ex);
 			writeJson(response, HttpStatus.UNPROCESSABLE_ENTITY.value(), errorBody(ex.getMessage()));
 		} catch (Exception ex) {
+			log.error("ihmodule patientExchange: force-sync failed, patientUuid=" + body.getPatientUuid().trim(), ex);
 			writeJson(response, HttpStatus.INTERNAL_SERVER_ERROR.value(), errorBody(ex.getMessage()));
 		} finally {
 			ForceSyncDuplicateResolutionContext.end();
@@ -182,6 +194,12 @@ public class PatientExchangeProxyRestController {
 			return;
 		}
 		try {
+			if (log.isDebugEnabled()) {
+				User u = Context.getAuthenticatedUser();
+				log.debug("ihmodule patientExchange: mpi-local requested by user="
+				        + (u != null ? u.getUsername() : "?") + ", patientUuid=" + body.getPatientUuid().trim()
+				        + ", chosenFhirPatientLogicalId=" + body.getChosenFhirPatientLogicalId());
+			}
 			localPatientMpiUpdateService.applyMpiIdentifierToLocalPatient(body.getPatientUuid().trim(),
 					body.getMpiIdentifierValue().trim());
 			try {
@@ -198,16 +216,23 @@ public class PatientExchangeProxyRestController {
 			ok.put("mpiIdentifierValue", body.getMpiIdentifierValue().trim());
 			writeJson(response, HttpStatus.OK.value(), ok);
 		} catch (LocalMpiAlreadySetException ex) {
+			log.info("ihmodule patientExchange: mpi-local skipped, patientUuid=" + body.getPatientUuid().trim()
+			        + ", message=" + ex.getMessage());
 			Map<String, Object> skipped = new LinkedHashMap<>();
 			skipped.put("status", "skipped");
 			skipped.put("patientUuid", body.getPatientUuid().trim());
 			skipped.put("message", ex.getMessage());
 			writeJson(response, HttpStatus.OK.value(), skipped);
 		} catch (IllegalArgumentException ex) {
+			log.warn("ihmodule patientExchange: mpi-local bad request, patientUuid=" + body.getPatientUuid().trim()
+			        + ", message=" + ex.getMessage(), ex);
 			writeJson(response, HttpStatus.BAD_REQUEST.value(), errorBody(ex.getMessage()));
 		} catch (IllegalStateException ex) {
+			log.warn("ihmodule patientExchange: mpi-local not found, patientUuid=" + body.getPatientUuid().trim()
+			        + ", message=" + ex.getMessage(), ex);
 			writeJson(response, HttpStatus.NOT_FOUND.value(), errorBody(ex.getMessage()));
 		} catch (Exception ex) {
+			log.error("ihmodule patientExchange: mpi-local failed, patientUuid=" + body.getPatientUuid().trim(), ex);
 			writeJson(response, HttpStatus.INTERNAL_SERVER_ERROR.value(), errorBody(ex.getMessage()));
 		}
 	}
@@ -229,13 +254,23 @@ public class PatientExchangeProxyRestController {
 			return;
 		}
 		try {
+			if (log.isDebugEnabled()) {
+				User u = Context.getAuthenticatedUser();
+				log.debug("ihmodule patientExchange: import-upload requested by user=" + (u != null ? u.getUsername() : "?")
+				        + ", locationUuid=" + locationUuid + ", filename=" + file.getOriginalFilename());
+			}
 			PatientUploadImportResponse out = patientUploadImportService.importPatientFile(file, locationUuid);
 			writeJson(response, HttpStatus.OK.value(), out);
 		}
 		catch (IllegalArgumentException ex) {
+			log.warn("ihmodule patientExchange: import-upload bad request, locationUuid=" + locationUuid + ", filename="
+			        + file.getOriginalFilename() + ", message=" + ex.getMessage(), ex);
 			writeJson(response, HttpStatus.BAD_REQUEST.value(), errorBody(ex.getMessage()));
 		}
 		catch (Exception ex) {
+			log.error(
+			    "ihmodule patientExchange: import-upload failed, locationUuid=" + locationUuid + ", filename="
+			            + file.getOriginalFilename(), ex);
 			writeJson(response, HttpStatus.INTERNAL_SERVER_ERROR.value(), errorBody(ex.getMessage()));
 		}
 	}
@@ -258,6 +293,11 @@ public class PatientExchangeProxyRestController {
 			return;
 		}
 		try {
+			if (log.isDebugEnabled()) {
+				User u = Context.getAuthenticatedUser();
+				log.debug("ihmodule patientExchange: export-created requested by user="
+				        + (u != null ? u.getUsername() : "?") + ", startDate=" + sd + ", endDate=" + ed);
+			}
 			CreatedPatientExportResult result = createdPatientExportService.exportCreatedPatients(sd, ed);
 			byte[] payload = result.getPayload() != null ? result.getPayload().getBytes(StandardCharsets.UTF_8)
 			        : new byte[0];
@@ -274,9 +314,12 @@ public class PatientExchangeProxyRestController {
 			response.getOutputStream().flush();
 		}
 		catch (IllegalArgumentException ex) {
+			log.warn("ihmodule patientExchange: export-created bad request, startDate=" + sd + ", endDate=" + ed
+			        + ", message=" + ex.getMessage(), ex);
 			writeJson(response, HttpStatus.BAD_REQUEST.value(), errorBody(ex.getMessage()));
 		}
 		catch (Exception ex) {
+			log.error("ihmodule patientExchange: export-created failed, startDate=" + sd + ", endDate=" + ed, ex);
 			writeJson(response, HttpStatus.INTERNAL_SERVER_ERROR.value(), errorBody(ex.getMessage()));
 		}
 	}

@@ -35,7 +35,14 @@ public class APIfordoctorUIController {
 	/** Logger for this class and subclasses */
 	protected final Log log = LogFactory.getLog(getClass());
 	
-	UserService userService = Context.getUserService();
+	private UserService userService;
+	
+	private UserService userService() {
+		if (userService == null) {
+			userService = Context.getUserService();
+		}
+		return userService;
+	}
 	
 	/** Success form view name */
 	private final String VIEW = "/module/ihmodule/ihmodule";
@@ -76,7 +83,7 @@ public class APIfordoctorUIController {
 	 */
 	@ModelAttribute("users")
 	protected List<User> getUsers() throws Exception {
-		List<User> users = userService.getAllUsers();
+		List<User> users = userService().getAllUsers();
 		
 		// this object will be made available to the jsp page under the variable name
 		// that is defined in the @ModuleAttribute tag

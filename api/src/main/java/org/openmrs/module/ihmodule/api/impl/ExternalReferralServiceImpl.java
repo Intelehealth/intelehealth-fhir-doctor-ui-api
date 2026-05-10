@@ -3,7 +3,6 @@ package org.openmrs.module.ihmodule.api.impl;
 import org.openmrs.User;
 import org.openmrs.annotation.Authorized;
 import org.openmrs.api.APIException;
-import org.openmrs.api.context.Context;
 import org.openmrs.api.db.UserDAO;
 import org.openmrs.api.impl.BaseOpenmrsService;
 import org.openmrs.module.ihmodule.ExternalReferral;
@@ -22,12 +21,13 @@ import javax.validation.Validator;
 import java.util.Date;
 import java.util.List;
 import java.util.Set;
+import org.springframework.beans.factory.annotation.Autowired;
 
 public class ExternalReferralServiceImpl extends BaseOpenmrsService implements ExternalReferralService {
 	
 	private ExternalReferralDao dao;
 	
-	UserDAO userDao = Context.getRegisteredComponent("userDAO", UserDAO.class);
+	UserDAO userDao;
 	
 	private ExternalAppointmentDao externalAppointmentDao;
 	

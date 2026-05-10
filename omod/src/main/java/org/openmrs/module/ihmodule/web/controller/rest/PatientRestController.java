@@ -15,12 +15,13 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RequestParam;
 
 import ca.uhn.fhir.context.FhirContext;
+import org.openmrs.module.ihmodule.api.patientexchange.config.FhirContextHolder;
 
 @Controller
 @RequestMapping("/rest/v1/member")
 public class PatientRestController {
 	
-	FhirContext fhirContext = FhirContext.forR4();
+	FhirContext fhirContext = FhirContextHolder.R4;
 	
 	@RequestMapping(value = "/{resourceType}", method = RequestMethod.GET)
 	public ResponseEntity<?> getMember(@PathVariable("resourceType") String resourceType, @RequestParam Map<String, String> reqParam)

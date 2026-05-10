@@ -1,13 +1,14 @@
 package org.openmrs.module.ihmodule.api.patientexchange.validationrecord;
 
-import org.hibernate.SessionFactory;
-import org.openmrs.api.context.Context;
+import org.openmrs.api.db.hibernate.DbSessionFactory;
 import org.springframework.stereotype.Repository;
+import org.springframework.beans.factory.annotation.Autowired;
 
 @Repository
 public class FhirResourceValidationRecordRepository {
 	
-	private SessionFactory sessionFactory = Context.getRegisteredComponent("sessionFactory", SessionFactory.class);
+	@Autowired
+	private DbSessionFactory sessionFactory;
 	
 	public FhirResourceValidationRecord save(FhirResourceValidationRecord row) {
 		sessionFactory.getCurrentSession().saveOrUpdate(row);

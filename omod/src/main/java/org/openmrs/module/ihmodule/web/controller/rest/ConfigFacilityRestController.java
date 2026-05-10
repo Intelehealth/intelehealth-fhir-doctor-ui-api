@@ -15,12 +15,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 
 import ca.uhn.fhir.context.FhirContext;
+import org.openmrs.module.ihmodule.api.patientexchange.config.FhirContextHolder;
 
 @Controller
 @RequestMapping("/rest/v1/config-facility")
 public class ConfigFacilityRestController<RequestAppointmentDTO> {
 	
-	FhirContext fhirContext = FhirContext.forR4();
+	FhirContext fhirContext = FhirContextHolder.R4;
 	
 	@RequestMapping(value = "/save", method = RequestMethod.POST)
 	public ResponseEntity<?> save(@RequestBody ConfigFacility param) throws Exception {

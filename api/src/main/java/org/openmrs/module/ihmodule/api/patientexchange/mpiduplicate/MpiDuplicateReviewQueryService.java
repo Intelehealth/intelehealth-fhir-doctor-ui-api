@@ -3,21 +3,21 @@ package org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import org.openmrs.api.context.Context;
 import org.openmrs.module.ihmodule.api.patientexchange.api.dto.MpiDuplicateReviewCandidateDto;
 import org.openmrs.module.ihmodule.api.patientexchange.api.dto.MpiDuplicateReviewCaseSummaryDto;
 import org.openmrs.module.ihmodule.api.patientexchange.api.dto.MpiDuplicateReviewStatisticsDto;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Autowired;
 
 @Service
 public class MpiDuplicateReviewQueryService {
 	
-	private MpiPatientDuplicateReviewCaseRepository caseRepository = Context.getRegisteredComponent(
-	    "mpiPatientDuplicateReviewCaseRepository", MpiPatientDuplicateReviewCaseRepository.class);
+	@Autowired
+	private MpiPatientDuplicateReviewCaseRepository caseRepository;
 	
-	private MpiPatientDuplicateReviewCandidateRepository candidateRepository = Context.getRegisteredComponent(
-	    "mpiPatientDuplicateReviewCandidateRepository", MpiPatientDuplicateReviewCandidateRepository.class);
+	@Autowired
+	private MpiPatientDuplicateReviewCandidateRepository candidateRepository;
 	
 	@Transactional(readOnly = true)
 	public List<MpiDuplicateReviewCaseSummaryDto> listPendingCases() {

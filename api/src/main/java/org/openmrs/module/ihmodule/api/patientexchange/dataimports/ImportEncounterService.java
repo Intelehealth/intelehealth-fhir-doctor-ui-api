@@ -1,5 +1,6 @@
 package org.openmrs.module.ihmodule.api.patientexchange.dataimports;
 
+import org.openmrs.module.ihmodule.api.patientexchange.config.FhirContextHolder;
 import java.io.UnsupportedEncodingException;
 import java.text.ParseException;
 
@@ -10,7 +11,6 @@ import org.hl7.fhir.r4.model.Encounter;
 import org.hl7.fhir.r4.model.Encounter.EncounterLocationComponent;
 import org.hl7.fhir.r4.model.Reference;
 import org.hl7.fhir.r4.model.Resource;
-import org.openmrs.api.context.Context;
 import org.openmrs.module.ihmodule.api.patientexchange.config.FhirConfig;
 import org.openmrs.module.ihmodule.api.patientexchange.datatype.QueryTable;
 import org.openmrs.module.ihmodule.api.patientexchange.service.CommonOperationService;
@@ -24,21 +24,24 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 
 import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.rest.api.MethodOutcome;
+import org.springframework.beans.factory.annotation.Autowired;
 
 @Service
 public class ImportEncounterService extends IHConstant {
 	
-	FhirContext fhirContext = FhirContext.forR4();
+	FhirContext fhirContext = FhirContextHolder.R4;
 	
-	private FhirConfig firFhirConfig = Context.getRegisteredComponent("fhirConfig", FhirConfig.class);
+	@Autowired
+	private FhirConfig firFhirConfig;
 	
-	private CommonOperationService commonOperationService = Context.getRegisteredComponent("commonOperationService",
-	    CommonOperationService.class);
+	@Autowired
+	private CommonOperationService commonOperationService;
 	
-	private VisitTypeService visitType = Context.getRegisteredComponent("visitTypeService", VisitTypeService.class);
+	@Autowired
+	private VisitTypeService visitType;
 	
-	private ImportLocationService importLocationService = Context.getRegisteredComponent("importLocationService",
-	    ImportLocationService.class);
+	@Autowired
+	private ImportLocationService importLocationService;
 	
 	public void importEncounter(String patientId, String locationUuid) throws UnsupportedEncodingException, JSONException,
 	        JsonProcessingException, ParseException {

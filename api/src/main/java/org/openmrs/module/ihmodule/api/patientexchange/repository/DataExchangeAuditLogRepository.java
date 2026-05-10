@@ -1,17 +1,28 @@
 package org.openmrs.module.ihmodule.api.patientexchange.repository;
 
 import org.openmrs.module.ihmodule.api.patientexchange.model.DataExchangeAuditLog;
-import org.hibernate.SessionFactory;
-import org.openmrs.api.context.Context;
+import org.openmrs.api.db.hibernate.DbSessionFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
+import org.springframework.beans.factory.annotation.Autowired;
 
 @Repository
 public class DataExchangeAuditLogRepository {
 	
-	private SessionFactory sessionFactory = Context.getRegisteredComponent("sessionFactory", SessionFactory.class);
+	private static final Logger LOGGER = LoggerFactory.getLogger(DataExchangeAuditLogRepository.class);
+	
+	@Autowired
+	private DbSessionFactory sessionFactory;
 	
 	public DataExchangeAuditLog save(DataExchangeAuditLog auditLog) {
-		sessionFactory.getCurrentSession().saveOrUpdate(auditLog);
+		try {
+			sessionFactory.getCurrentSession().saveOrUpdate(auditLog);
+		}
+		catch (Exception ex) {
+			// In some deployments this entity mapping is not available; do not break sync flow for audit failure.
+			LOGGER.warn("Skipping data_exchange_auditlog persistence due to mapping/runtime issue: {}", ex.getMessage());
+		}
 		return auditLog;
 	}
 }

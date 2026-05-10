@@ -13,14 +13,14 @@ import java.io.Serializable;
 import java.util.List;
 
 import org.openmrs.api.APIException;
-import org.openmrs.api.context.Context;
 import org.openmrs.api.db.hibernate.DbSession;
 import org.openmrs.api.db.hibernate.DbSessionFactory;
 import org.openmrs.module.ihmodule.ConfigDataSyncModule;
+import org.springframework.beans.factory.annotation.Autowired;
 
 public class ConfigDataSyncModuleDao {
 	
-	DbSessionFactory sessionFactory = Context.getRegisteredComponent("dbSessionFactory", DbSessionFactory.class);
+	DbSessionFactory sessionFactory;
 	
 	@SuppressWarnings("unchecked")
 	public ConfigDataSyncModule save(ConfigDataSyncModule entity) throws APIException {

@@ -2,14 +2,15 @@ package org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate;
 
 import java.util.List;
 
-import org.hibernate.SessionFactory;
-import org.openmrs.api.context.Context;
+import org.openmrs.api.db.hibernate.DbSessionFactory;
 import org.springframework.stereotype.Repository;
+import org.springframework.beans.factory.annotation.Autowired;
 
 @Repository
 public class MpiPatientDuplicateReviewCandidateRepository {
 	
-	private SessionFactory sessionFactory = Context.getRegisteredComponent("sessionFactory", SessionFactory.class);
+	@Autowired
+	private DbSessionFactory sessionFactory;
 	
 	@SuppressWarnings("unchecked")
 	public List<MpiPatientDuplicateReviewCandidate> findByReviewCase_IdOrderByIdAsc(Long reviewCaseId) {

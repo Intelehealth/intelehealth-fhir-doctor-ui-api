@@ -1,15 +1,14 @@
 package org.openmrs.module.ihmodule.api.patientexchange;
 
-import org.springframework.boot.SpringApplication;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.scheduling.annotation.EnableScheduling;
-
-@EnableScheduling
-@SpringBootApplication
+/**
+ * Placeholder class retained from the original Spring Boot codebase. In OpenMRS module runtime this
+ * must stay as a plain class (no Spring Boot auto-configuration annotations), otherwise module
+ * startup can be blocked by Boot context initialization in the host application.
+ */
 public class Application {
 	
-	public static void main(String[] args) {
-		SpringApplication.run(Application.class, args);
+	private Application() {
+		// utility holder
 	}
 	
 }

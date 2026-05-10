@@ -15,7 +15,6 @@ import org.hl7.fhir.r4.model.HumanName;
 import org.hl7.fhir.r4.model.Identifier;
 import org.hl7.fhir.r4.model.Patient;
 import org.hl7.fhir.r4.model.StringType;
-import org.openmrs.api.context.Context;
 import org.openmrs.module.ihmodule.api.patientexchange.config.FhirConfig;
 import org.openmrs.module.ihmodule.api.patientexchange.dto.Names;
 import org.openmrs.module.ihmodule.api.patientexchange.dto.PatientAddress;
@@ -23,11 +22,13 @@ import org.openmrs.module.ihmodule.api.patientexchange.dto.SearchPateintDTO;
 import org.openmrs.module.ihmodule.api.patientexchange.param.ReuestParam;
 import org.json.JSONException;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 
 @Service
 public class PatientSearchService {
 	
-	private FhirConfig firFhirConfig = Context.getRegisteredComponent("fhirConfig", FhirConfig.class);
+	@Autowired
+	private FhirConfig firFhirConfig;
 	
 	public List<SearchPateintDTO> searchPatient(PatientSearchParam param) throws ParseException,
 	        UnsupportedEncodingException, JSONException {

@@ -2,7 +2,6 @@ package org.openmrs.module.ihmodule.api.patientexchange.service;
 
 import java.io.UnsupportedEncodingException;
 
-import org.openmrs.api.context.Context;
 import org.openmrs.module.ihmodule.api.patientexchange.config.FhirConfig;
 import org.openmrs.module.ihmodule.api.patientexchange.domain.FhirResponse;
 import org.openmrs.module.ihmodule.api.patientexchange.utils.HttpWebClient;
@@ -10,11 +9,13 @@ import org.openmrs.module.ihmodule.api.patientexchange.utils.IHConstant;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 
 @Service
 public class VisitTypeService extends IHConstant {
 	
-	private FhirConfig firFhirConfig = Context.getRegisteredComponent("fhirConfig", FhirConfig.class);
+	@Autowired
+	private FhirConfig firFhirConfig;
 	
 	public String saveVisitType(String name, String uuid, String type) throws JSONException, UnsupportedEncodingException {
 		JSONObject visitType = new JSONObject();

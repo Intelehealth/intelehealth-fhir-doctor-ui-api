@@ -4,13 +4,13 @@ import java.io.UnsupportedEncodingException;
 import java.util.Optional;
 
 import org.hl7.fhir.r4.model.Patient;
-import org.openmrs.api.context.Context;
 import org.openmrs.module.ihmodule.api.patientexchange.search.CentralPatientSearchService;
 import org.openmrs.module.ihmodule.api.patientexchange.search.PatientDemographicSearchUriBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * Before MCI patient save: demographic Patient search on central OpenCR (same query as legacy MCI).
@@ -21,11 +21,11 @@ public class CentralPatientDuplicateMatcher {
 	
 	private static final Logger LOGGER = LoggerFactory.getLogger(CentralPatientDuplicateMatcher.class);
 	
-	private CentralPatientSearchService centralPatientSearchService = Context.getRegisteredComponent(
-	    "centralPatientSearchService", CentralPatientSearchService.class);
+	@Autowired
+	private CentralPatientSearchService centralPatientSearchService;
 	
-	private MpiDuplicateReviewService mpiDuplicateReviewService = Context.getRegisteredComponent(
-	    "mpiDuplicateReviewService", MpiDuplicateReviewService.class);
+	@Autowired
+	private MpiDuplicateReviewService mpiDuplicateReviewService;
 	
 	@Value("${intelehealth.fhir.mpi.duplicate.precheck.enabled:true}")
 	private boolean duplicatePrecheckEnabled;

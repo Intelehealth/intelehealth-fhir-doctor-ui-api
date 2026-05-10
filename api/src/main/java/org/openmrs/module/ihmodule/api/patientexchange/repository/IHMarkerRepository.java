@@ -1,15 +1,16 @@
 package org.openmrs.module.ihmodule.api.patientexchange.repository;
 
 import org.openmrs.module.ihmodule.api.patientexchange.model.IHMarker;
-import org.hibernate.SessionFactory;
-import org.openmrs.api.context.Context;
+import org.openmrs.api.db.hibernate.DbSessionFactory;
 import org.openmrs.module.ihmodule.api.patientexchange.utils.DateUtils;
 import org.springframework.stereotype.Repository;
+import org.springframework.beans.factory.annotation.Autowired;
 
 @Repository
 public class IHMarkerRepository {
 	
-	private SessionFactory sessionFactory = Context.getRegisteredComponent("sessionFactory", SessionFactory.class);
+	@Autowired
+	private DbSessionFactory sessionFactory;
 	
 	public IHMarker save(IHMarker marker) {
 		sessionFactory.getCurrentSession().saveOrUpdate(marker);

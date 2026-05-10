@@ -1,5 +1,6 @@
 package org.openmrs.module.ihmodule.api.patientexchange.dataimports;
 
+import org.openmrs.module.ihmodule.api.patientexchange.config.FhirContextHolder;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.text.ParseException;
@@ -14,7 +15,6 @@ import org.hl7.fhir.r4.model.Identifier;
 import org.hl7.fhir.r4.model.Patient;
 import org.hl7.fhir.r4.model.Reference;
 import org.hl7.fhir.r4.model.Resource;
-import org.openmrs.api.context.Context;
 import org.openmrs.module.ihmodule.api.patientexchange.config.FhirConfig;
 import org.openmrs.module.ihmodule.api.patientexchange.datatype.QueryTable;
 import org.openmrs.module.ihmodule.api.patientexchange.service.CommonOperationService;
@@ -29,30 +29,33 @@ import ca.uhn.fhir.rest.api.MethodOutcome;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 
 @Service
 public class ImportPatientService extends IHConstant {
 	
-	FhirContext fhirContext = FhirContext.forR4();
+	FhirContext fhirContext = FhirContextHolder.R4;
 	
-	private FhirConfig firFhirConfig = Context.getRegisteredComponent("fhirConfig", FhirConfig.class);
+	@Autowired
+	private FhirConfig firFhirConfig;
 	
-	private CommonOperationService commonOperationService = Context.getRegisteredComponent("commonOperationService",
-	    CommonOperationService.class);
+	@Autowired
+	private CommonOperationService commonOperationService;
 	
-	private ImportObservationService importObservationService = Context.getRegisteredComponent("importObservationService",
-	    ImportObservationService.class);
+	@Autowired
+	private ImportObservationService importObservationService;
 	
-	private ImportEncounterService importEncounterService = Context.getRegisteredComponent("importEncounterService",
-	    ImportEncounterService.class);
+	@Autowired
+	private ImportEncounterService importEncounterService;
 	
-	private ImportLabOrderService importLabOrderService = Context.getRegisteredComponent("importLabOrderService",
-	    ImportLabOrderService.class);
+	@Autowired
+	private ImportLabOrderService importLabOrderService;
 	
-	private ImportLocationService importLocationService = Context.getRegisteredComponent("importLocationService",
-	    ImportLocationService.class);
+	@Autowired
+	private ImportLocationService importLocationService;
 	
-	private VisitTypeService visitType = Context.getRegisteredComponent("visitTypeService", VisitTypeService.class);
+	@Autowired
+	private VisitTypeService visitType;
 	
 	ObjectMapper mapper = new ObjectMapper();
 	

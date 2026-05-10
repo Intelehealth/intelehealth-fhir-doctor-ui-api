@@ -12,7 +12,6 @@ package org.openmrs.module.ihmodule.api.impl;
 import org.apache.http.client.utils.DateUtils;
 import org.openmrs.User;
 import org.openmrs.api.APIException;
-import org.openmrs.api.context.Context;
 import org.openmrs.api.db.UserDAO;
 import org.openmrs.api.impl.BaseOpenmrsService;
 import org.openmrs.module.ihmodule.ExternalAppointment;
@@ -37,15 +36,15 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.springframework.beans.factory.annotation.Autowired;
 
 public class ExternalAppointmentServiceImpl extends BaseOpenmrsService implements ExtrnalAppointmentService {
 	
 	ExternalAppointmentDao dao;
 	
-	UserDAO userDao = Context.getRegisteredComponent("userDAO", UserDAO.class);
+	UserDAO userDao;
 	
-	DeploymentConfProperties deployConf = Context.getRegisteredComponent("ihmodule.DeploymentConfProperties",
-	    DeploymentConfProperties.class);
+	DeploymentConfProperties deployConf;
 	
 	public void setDao(ExternalAppointmentDao dao) {
 		this.dao = dao;

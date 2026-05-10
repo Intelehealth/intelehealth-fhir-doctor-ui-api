@@ -406,4 +406,44 @@ public class CommonOperationService {
 		}
 		return extensions;
 	}
+	
+	public boolean existsPatientByDemographicsAndPhone(String familyName, String givenName, String gender, String birthDate,
+	        String phone) {
+		String normalizedGender = gender == null ? "" : gender.trim().toLowerCase();
+		String genderCode = "";
+		if ("female".equals(normalizedGender) || "f".equals(normalizedGender)) {
+			genderCode = "f";
+		} else if ("male".equals(normalizedGender) || "m".equals(normalizedGender)) {
+			genderCode = "m";
+		}
+		StringBuilder sql = new StringBuilder();
+		sql.append("select count(distinct p.person_id) ");
+		sql.append("from person p ");
+		sql.append("join patient pat on pat.patient_id = p.person_id and pat.voided = false ");
+		sql.append("join person_name pn on pn.person_id = p.person_id and pn.voided = false ");
+		sql.append("where p.voided = false ");
+		sql.append("and (lower(trim(p.gender)) = :gender or lower(trim(p.gender)) = :genderCode) ");
+		sql.append("and date(p.birthdate) = :birthDate ");
+		sql.append("and lower(trim(pn.family_name)) = :familyName ");
+		sql.append("and lower(trim(pn.given_name)) = :givenName ");
+		if (phone != null && !phone.trim().isEmpty()) {
+			sql.append("and exists (");
+			sql.append("  select 1 from person_attribute pa ");
+			sql.append("  join person_attribute_type paty on paty.person_attribute_type_id = pa.person_attribute_type_id ");
+			sql.append("  where pa.person_id = p.person_id and pa.voided = false ");
+			sql.append("    and lower(trim(pa.value)) = :phone ");
+			sql.append("    and lower(replace(replace(replace(paty.name, ' ', ''), '-', ''), '_', '')) in ");
+			sql.append("        ('telephonenumber','emergencycontactnumber','phonenumber')");
+			sql.append(") ");
+		}
+		javax.persistence.Query query = em.createNativeQuery(sql.toString()).setParameter("gender", normalizedGender)
+		        .setParameter("genderCode", genderCode).setParameter("birthDate", birthDate)
+		        .setParameter("familyName", familyName == null ? "" : familyName.trim().toLowerCase())
+		        .setParameter("givenName", givenName == null ? "" : givenName.trim().toLowerCase());
+		if (phone != null && !phone.trim().isEmpty()) {
+			query.setParameter("phone", phone.trim().toLowerCase());
+		}
+		Number count = (Number) query.getSingleResult();
+		return count != null && count.intValue() > 0;
+	}
 }

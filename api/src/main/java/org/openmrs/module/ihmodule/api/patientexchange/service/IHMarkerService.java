@@ -4,7 +4,6 @@ import static org.openmrs.module.ihmodule.api.patientexchange.utils.DateUtils.to
 
 import javax.transaction.Transactional;
 
-import org.openmrs.api.context.Context;
 import org.openmrs.module.ihmodule.api.patientexchange.model.IHMarker;
 import org.openmrs.module.ihmodule.api.patientexchange.repository.IHMarkerRepository;
 import org.springframework.stereotype.Service;
@@ -12,7 +11,11 @@ import org.springframework.stereotype.Service;
 @Service
 public class IHMarkerService {
 	
-	private IHMarkerRepository ihRepository = Context.getRegisteredComponent("iHMarkerRepository", IHMarkerRepository.class);
+	private final IHMarkerRepository ihRepository;
+	
+	public IHMarkerService(IHMarkerRepository ihRepository) {
+		this.ihRepository = ihRepository;
+	}
 	
 	public IHMarker save(IHMarker ihMarker) {
 		return ihRepository.save(ihMarker);

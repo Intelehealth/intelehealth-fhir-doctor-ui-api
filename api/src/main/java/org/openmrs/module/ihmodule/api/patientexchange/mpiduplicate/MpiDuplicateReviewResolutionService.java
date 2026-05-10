@@ -7,13 +7,13 @@ import org.hl7.fhir.r4.model.Bundle.BundleEntryComponent;
 import org.hl7.fhir.r4.model.Identifier;
 import org.hl7.fhir.r4.model.Patient;
 import org.hl7.fhir.r4.model.Resource;
-import org.openmrs.api.context.Context;
 import org.openmrs.module.ihmodule.api.patientexchange.utils.DateUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * Updates {@link MpiPatientDuplicateReviewCase} when an operator completes force-sync or local MPI
@@ -26,8 +26,8 @@ public class MpiDuplicateReviewResolutionService {
 	
 	private static final String MPI_TYPE_TEXT = "MPI";
 	
-	private MpiPatientDuplicateReviewCaseRepository caseRepository = Context.getRegisteredComponent(
-	    "mpiPatientDuplicateReviewCaseRepository", MpiPatientDuplicateReviewCaseRepository.class);
+	@Autowired
+	private MpiPatientDuplicateReviewCaseRepository caseRepository;
 	
 	@Value("${intelehealth.fhir.resource.identifier.name}")
 	private String mpiIdentifierTypeText;

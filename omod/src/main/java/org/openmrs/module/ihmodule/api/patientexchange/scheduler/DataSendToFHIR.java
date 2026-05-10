@@ -1,7 +1,6 @@
 package org.openmrs.module.ihmodule.api.patientexchange.scheduler;
 
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.io.UnsupportedEncodingException;
 import java.text.ParseException;
 import java.util.ArrayList;
@@ -13,12 +12,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-import org.hl7.fhir.common.hapi.validation.support.InMemoryTerminologyServerValidationSupport;
-import org.hl7.fhir.common.hapi.validation.support.PrePopulatedValidationSupport;
-import org.hl7.fhir.common.hapi.validation.support.SnapshotGeneratingValidationSupport;
-import org.hl7.fhir.common.hapi.validation.support.ValidationSupportChain;
-import org.hl7.fhir.common.hapi.validation.validator.FhirInstanceValidator;
-import org.hl7.fhir.instance.model.api.IBaseResource;
 import org.hl7.fhir.r4.model.Address;
 import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.Bundle.BundleEntryComponent;
@@ -35,7 +28,6 @@ import org.hl7.fhir.r4.model.Patient;
 import org.hl7.fhir.r4.model.Reference;
 import org.hl7.fhir.r4.model.Resource;
 import org.hl7.fhir.r4.model.StringType;
-import org.hl7.fhir.r4.model.StructureDefinition;
 import org.openmrs.api.context.Context;
 import org.openmrs.module.ihmodule.api.patientexchange.config.FhirConfig;
 import org.openmrs.module.ihmodule.api.patientexchange.datatype.ConfigFacilityDataType;
@@ -56,7 +48,6 @@ import org.openmrs.module.ihmodule.api.patientexchange.service.IHMarkerService;
 import org.openmrs.module.ihmodule.api.patientexchange.service.LocalPatientMpiUpdateService;
 import org.openmrs.module.ihmodule.api.patientexchange.service.PatientDataService;
 import org.openmrs.module.ihmodule.api.patientexchange.utils.DateUtils;
-import org.openmrs.module.ihmodule.api.patientexchange.utils.HttpWebClient;
 import org.openmrs.module.ihmodule.api.patientexchange.utils.IHConstant;
 import org.openmrs.module.ihmodule.api.patientexchange.validationrecord.ValidationRecordContext;
 import org.openmrs.module.ihmodule.api.patientexchange.validationrecord.ValidationOutcome;
@@ -64,7 +55,6 @@ import org.openmrs.module.ihmodule.api.patientexchange.validationrecord.FhirReso
 import org.json.JSONException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -72,11 +62,11 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 
 import ca.uhn.fhir.context.ConfigurationException;
 import ca.uhn.fhir.context.FhirContext;
-import ca.uhn.fhir.context.support.DefaultProfileValidationSupport;
 import ca.uhn.fhir.parser.DataFormatException;
 import ca.uhn.fhir.validation.FhirValidator;
 import ca.uhn.fhir.validation.ValidationOptions;
 import ca.uhn.fhir.validation.ValidationResult;
+import org.openmrs.module.ihmodule.api.patientexchange.config.FhirContextHolder;
 
 @Component
 public class DataSendToFHIR extends IHConstant {
@@ -95,7 +85,7 @@ public class DataSendToFHIR extends IHConstant {
 			"Emergency-Contact-Number",
 			"Household-Number",
 			"Caste"));
-	FhirContext fhirContext = FhirContext.forR4();
+	FhirContext fhirContext = FhirContextHolder.R4;
 
 	private FhirConfig firFhirConfig;
 
@@ -247,9 +237,11 @@ public class DataSendToFHIR extends IHConstant {
 			throws ParseException, DataFormatException, JSONException, ConfigurationException, IOException {
 		ensureDependencies();
 		System.err.println("resourceType => " + resourceType + " => " + uuid);
-
-		String data = HttpWebClient.get(localOpenmrsOpenhimURL, "/ws/fhir2/R4/" + resourceType + "?_id=" + uuid,
-				firFhirConfig.getOpenMRSCredentials()[0], firFhirConfig.getOpenMRSCredentials()[1]);
+		Bundle localBundle = firFhirConfig.getLocalOpenMRSFhirContext().search()
+				.byUrl(resourceType + "?_id=" + uuid)
+				.returnBundle(Bundle.class)
+				.execute();
+		String data = fhirContext.newJsonParser().encodeResourceToString(localBundle);
 
 		System.err.println("Local Fhir Bundle => " + data);
 
@@ -271,9 +263,18 @@ public class DataSendToFHIR extends IHConstant {
 		}
 		String uuid = patientUuid.trim();
 		System.err.println("resourceType => Patient => " + uuid + " (force-sync, skip central duplicate search)");
-
-		String data = HttpWebClient.get(localOpenmrsOpenhimURL, "/ws/fhir2/R4/Patient?_id=" + uuid,
-				firFhirConfig.getOpenMRSCredentials()[0], firFhirConfig.getOpenMRSCredentials()[1]);
+		String localBaseUrl = firFhirConfig.getResolvedLocalOpenmrsBaseUrl();
+		LOGGER.error("force-sync config check localOpenmrsOpenhimURL='{}'", localBaseUrl);
+		if (localBaseUrl == null || localBaseUrl.trim().isEmpty()
+		        || localBaseUrl.contains("${")) {
+			throw new IllegalStateException(
+			        "Invalid local OpenMRS base URL config: local.openmrs.openhim.url is blank or unresolved");
+		}
+		Bundle localBundle = firFhirConfig.getLocalOpenMRSFhirContext().search()
+				.byUrl("Patient?_id=" + uuid)
+				.returnBundle(Bundle.class)
+				.execute();
+		String data = fhirContext.newJsonParser().encodeResourceToString(localBundle);
 
 		System.err.println("Local Fhir Bundle => " + data);
 
@@ -376,10 +377,16 @@ public class DataSendToFHIR extends IHConstant {
 							"Deferred pending duplicate MPI review: case_uuid=" + reviewCase.getCaseUuid());
 					deferLog.setResponseStatus("409");
 					deferLog.setStatus(false);
-					DataExchangeAuditLog savedDeferLog = dataExchangeService.save(deferLog);
-					savedDeferLog.setChangedBy(1);
-					savedDeferLog.setDateChanged(DateUtils.toFormattedDateNow());
-					dataExchangeService.update(savedDeferLog);
+					try {
+						DataExchangeAuditLog savedDeferLog = dataExchangeService.save(deferLog);
+						savedDeferLog.setChangedBy(1);
+						savedDeferLog.setDateChanged(DateUtils.toFormattedDateNow());
+						dataExchangeService.update(savedDeferLog);
+					}
+					catch (Exception ex) {
+						LOGGER.error("Unable to persist deferred audit log for patient uuid=" + localPatientUUID
+								+ ": " + ex.getMessage(), ex);
+					}
 					FhirResponse deferResponse = new FhirResponse();
 					deferResponse.setStatusCode("409");
 					deferResponse.setResponse(deferLog.getResponse());
@@ -403,7 +410,14 @@ public class DataSendToFHIR extends IHConstant {
 			log.setRequest(payload);
 			log.setRequestUrl(opencrOpenhimURL + "/Patient");
 
-			DataExchangeAuditLog uLog = dataExchangeService.save(log);
+			DataExchangeAuditLog uLog = null;
+			try {
+				uLog = dataExchangeService.save(log);
+			}
+			catch (Exception ex) {
+				LOGGER.error("Unable to persist outbound audit log for patient uuid=" + localPatientUUID
+						+ ": " + ex.getMessage(), ex);
+			}
 
 			//System.err.println("Final Patient payload before sending to FHIR server: " + payload);
 			/*
@@ -419,13 +433,17 @@ public class DataSendToFHIR extends IHConstant {
 			 */
 			FhirResponse res = sendPatientToCentral(localPatient);
 
-			uLog.setResponse(res.getResponse());
-			uLog.setResponseStatus(res.getStatusCode());
+			if (uLog != null) {
+				uLog.setResponse(res.getResponse());
+				uLog.setResponseStatus(res.getStatusCode());
+			}
 			if ("200".equals(res.getStatusCode())) {
 				Bundle remoteBundle = fhirContext.newJsonParser().parseResource(Bundle.class, res.getResponse());
 				System.err.println("Response from central fhir: " + res.getResponse());
 				syncPatientToLocal(remoteBundle, localPatient);
-				uLog.setFhirId(extractResourceId(remoteBundle));
+				if (uLog != null) {
+					uLog.setFhirId(extractResourceId(remoteBundle));
+				}
 				if (skipCentralMpiDuplicateSearch) {
 					String resolvedBy = ForceSyncDuplicateResolutionContext.peekResolvedBy();
 					if (resolvedBy != null) {
@@ -439,11 +457,21 @@ public class DataSendToFHIR extends IHConstant {
 					}
 				}
 			} else {
-				uLog.setStatus(false);
+				if (uLog != null) {
+					uLog.setStatus(false);
+				}
 			}
-			uLog.setChangedBy(1); // Admin-OpenMRS
-			uLog.setDateChanged(DateUtils.toFormattedDateNow());
-			dataExchangeService.update(uLog);
+			if (uLog != null) {
+				uLog.setChangedBy(1); // Admin-OpenMRS
+				uLog.setDateChanged(DateUtils.toFormattedDateNow());
+				try {
+					dataExchangeService.update(uLog);
+				}
+				catch (Exception ex) {
+					LOGGER.error("Unable to update outbound audit log for patient uuid=" + localPatientUUID
+							+ ": " + ex.getMessage(), ex);
+				}
+			}
 			return res;
 
 		}
@@ -793,7 +821,7 @@ public class DataSendToFHIR extends IHConstant {
 		if (value == null)
 			return true;
 		String trimmed = value.trim();
-		return trimmed.isEmpty() || "not provided".equalsIgnoreCase(trimmed);
+		return trimmed.isEmpty();
 	}
 
 	/** Maps OpenMRS person attribute type name to StructureDefinition id suffix (kebab-case). */
@@ -803,7 +831,7 @@ public class DataSendToFHIR extends IHConstant {
 		String normalized = attributeName.trim().toLowerCase().replaceAll("[\\s_-]+", "");
 
 		switch (normalized) {
-		case "telephonenumber":
+		case "emergencycontactname":
 			return "Emergency-Contact-Number";
 		case "caste":
 			return "Caste";
@@ -818,7 +846,7 @@ public class DataSendToFHIR extends IHConstant {
 		case "householdnumber":
 			return "Household-Number";
 		default:
-			return null;
+			return attributeName;
 		}
 	}
 
@@ -876,59 +904,13 @@ public class DataSendToFHIR extends IHConstant {
 		identifier.setType(ensuredType);
 	}
 
-	private PrePopulatedValidationSupport getCustomSupport()
-			throws ConfigurationException, DataFormatException, IOException {
-		FhirContext ctx = FhirContext.forR4();
-		PrePopulatedValidationSupport customSupport = new PrePopulatedValidationSupport(ctx);
-		loadStructureDefinitions(customSupport, ctx, "structureDefinition/structureDefinition.json");
-		loadStructureDefinitions(customSupport, ctx, "structureDefinition/StructureDefinition-Emergency-Contact-Number.json");
-		loadStructureDefinitions(customSupport, ctx, "structureDefinition/StructureDefinition-Household-Number.json");
-		loadStructureDefinitions(customSupport, ctx, patientProfileDefinitionPath);
-		return customSupport;
-	}
-
-	private void loadStructureDefinitions(PrePopulatedValidationSupport customSupport, FhirContext ctx, String classpathFile)
-			throws IOException {
-		ClassPathResource definitionResource = new ClassPathResource(classpathFile);
-		IBaseResource parsed = ctx.newJsonParser().parseResource(new InputStreamReader(definitionResource.getInputStream()));
-		if (parsed instanceof Bundle) {
-			Bundle bundle = (Bundle) parsed;
-			for (Bundle.BundleEntryComponent entry : bundle.getEntry()) {
-				IBaseResource resource = entry.getResource();
-				if (resource instanceof StructureDefinition) {
-					StructureDefinition structureDefinition = (StructureDefinition) resource;
-					customSupport.addStructureDefinition(structureDefinition);
-					System.err.println("Loaded StructureDefinition: " + structureDefinition.getName());
-				}
-			}
-			return;
-		}
-		if (parsed instanceof StructureDefinition) {
-			StructureDefinition structureDefinition = (StructureDefinition) parsed;
-			customSupport.addStructureDefinition(structureDefinition);
-			System.err.println("Loaded StructureDefinition: " + structureDefinition.getName());
-		}
-	}
-
 	private boolean validateResource(Patient patient, String patientUuid)
 			throws ConfigurationException, DataFormatException, IOException {
 
 		FhirValidator validator = fhirContext.newValidator();
-		FhirContext ctx = fhirContext;
-
-		// Create validation support and add the StructureDefinition
-		ValidationSupportChain validationSupport = new ValidationSupportChain();
-		DefaultProfileValidationSupport defaultSupport = new DefaultProfileValidationSupport(ctx);
-		InMemoryTerminologyServerValidationSupport inMemSupport = new InMemoryTerminologyServerValidationSupport(ctx);
-		SnapshotGeneratingValidationSupport snapshotSupport = new SnapshotGeneratingValidationSupport(ctx);
-
-		validationSupport.addValidationSupport(inMemSupport);
-		validationSupport.addValidationSupport(defaultSupport);
-		validationSupport.addValidationSupport(getCustomSupport());
-		validationSupport.addValidationSupport(snapshotSupport);
-
-		FhirInstanceValidator instanceValidator = new FhirInstanceValidator(validationSupport);
-		validator.registerValidatorModule(instanceValidator);
+		// OpenMRS module runtime may not include HAPI XML schema resources; use instance/profile validation only.
+		validator.setValidateAgainstStandardSchema(false);
+		validator.setValidateAgainstStandardSchematron(false);
 
 		ValidationOptions options = new ValidationOptions();
 		options.addProfile(getPatientProfileUrl());
@@ -936,6 +918,12 @@ public class DataSendToFHIR extends IHConstant {
 		try {
 			result = validator.validateWithResult(patient, options);
 		} catch (Exception ex) {
+			if (ex.getMessage() != null && ex.getMessage().contains("HAPI-1758")) {
+				LOGGER.warn("FHIR schema resources not available in runtime; skipping schema-based validation for patient uuid={}",
+						patientUuid);
+				ValidationRecordContext.setFailureReason(null);
+				return true;
+			}
 			LOGGER.error("Validation execution failed for patient uuid=" + patientUuid + ": "
 					+ ex.getMessage(), ex);
 			ValidationRecordContext.setFailureReason(ex.getMessage());

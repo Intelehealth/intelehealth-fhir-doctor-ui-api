@@ -3,14 +3,15 @@ package org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate;
 import java.util.List;
 import java.util.Optional;
 
-import org.hibernate.SessionFactory;
-import org.openmrs.api.context.Context;
+import org.openmrs.api.db.hibernate.DbSessionFactory;
 import org.springframework.stereotype.Repository;
+import org.springframework.beans.factory.annotation.Autowired;
 
 @Repository
 public class MpiPatientDuplicateReviewCaseRepository {
 	
-	private SessionFactory sessionFactory = Context.getRegisteredComponent("sessionFactory", SessionFactory.class);
+	@Autowired
+	private DbSessionFactory sessionFactory;
 	
 	public MpiPatientDuplicateReviewCase saveAndFlush(MpiPatientDuplicateReviewCase reviewCase) {
 		sessionFactory.getCurrentSession().saveOrUpdate(reviewCase);

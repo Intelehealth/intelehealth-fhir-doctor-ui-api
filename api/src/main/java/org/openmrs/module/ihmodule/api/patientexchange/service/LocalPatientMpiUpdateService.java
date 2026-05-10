@@ -1,7 +1,5 @@
 package org.openmrs.module.ihmodule.api.patientexchange.service;
 
-import java.io.UnsupportedEncodingException;
-
 import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.Bundle.BundleEntryComponent;
 import org.hl7.fhir.r4.model.CodeableConcept;
@@ -11,13 +9,11 @@ import org.hl7.fhir.r4.model.Identifier;
 import org.hl7.fhir.r4.model.Identifier.IdentifierUse;
 import org.hl7.fhir.r4.model.Patient;
 import org.hl7.fhir.r4.model.Reference;
-import org.openmrs.api.context.Context;
 import org.openmrs.module.ihmodule.api.patientexchange.config.FhirConfig;
-import org.openmrs.module.ihmodule.api.patientexchange.utils.HttpWebClient;
 import org.openmrs.module.ihmodule.api.patientexchange.utils.IHConstant;
 import org.springframework.stereotype.Service;
 
-import ca.uhn.fhir.context.FhirContext;
+import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * Applies MPI identifier changes directly on the facility OpenMRS FHIR2 Patient resource (same
@@ -40,9 +36,8 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 	
 	private static final String OPENMRS_DEFAULT_IDENTIFIER_LOCATION_UUID = "8d6c993e-c2cc-11de-8d13-0010c6dffd0f";
 	
-	private final FhirContext fhirContext = FhirContext.forR4();
-	
-	private FhirConfig firFhirConfig = Context.getRegisteredComponent("fhirConfig", FhirConfig.class);
+	@Autowired
+	private FhirConfig firFhirConfig;
 	
 	/**
 	 * Same rule as patient export scheduling: {@code true} when any identifier's type text equals
@@ -66,8 +61,7 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 		return false;
 	}
 	
-	public void applyMpiIdentifierToLocalPatient(String patientUuid, String mpiIdentifierValue)
-	        throws UnsupportedEncodingException {
+	public void applyMpiIdentifierToLocalPatient(String patientUuid, String mpiIdentifierValue) {
 		if (patientUuid == null || patientUuid.trim().isEmpty()) {
 			throw new IllegalArgumentException("patientUuid is required");
 		}
@@ -76,11 +70,8 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 		}
 		String uuid = patientUuid.trim();
 		String mpiVal = mpiIdentifierValue.trim();
-		
-		String data = HttpWebClient.get(localOpenmrsOpenhimURL, "/ws/fhir2/R4/Patient?_id=" + uuid,
-		    firFhirConfig.getOpenMRSCredentials()[0], firFhirConfig.getOpenMRSCredentials()[1]);
-		
-		Bundle bundle = fhirContext.newJsonParser().parseResource(Bundle.class, data);
+		Bundle bundle = firFhirConfig.getLocalOpenMRSFhirContext().search().byUrl("Patient?_id=" + uuid)
+		        .returnBundle(Bundle.class).execute();
 		if (bundle == null || !bundle.hasEntry()) {
 			throw new IllegalStateException("Local Patient not found for uuid=" + uuid);
 		}

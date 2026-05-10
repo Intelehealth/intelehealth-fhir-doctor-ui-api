@@ -4,11 +4,11 @@ import org.apache.commons.lang3.StringUtils;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
-import org.openmrs.api.context.Context;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import org.hl7.fhir.r4.model.Bundle;
+import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * Intercepts the public entry point that performs validation + send, without modifying
@@ -23,8 +23,8 @@ import org.hl7.fhir.r4.model.Bundle;
 @Order(0)
 public class ResourceValidationAuditAspect {
 	
-	private FhirResourceValidationRecordService validationRecordService = Context.getRegisteredComponent(
-	    "fhirResourceValidationRecordService", FhirResourceValidationRecordService.class);
+	@Autowired
+	private FhirResourceValidationRecordService validationRecordService;
 	
 	@Around("(execution(public * org.openmrs.module.ihmodule.api.patientexchange.scheduler.DataSendToFHIR.sendFHIRBundle(org.hl7.fhir.r4.model.Bundle, java.lang.String)) || execution(public * org.openmrs.module.ihmodule.api.patientexchange.scheduler.DataSendToFHIR.sendFHIRBundle(org.hl7.fhir.r4.model.Bundle, java.lang.String, boolean)))")
 	public Object aroundSendFhirBundle(ProceedingJoinPoint joinPoint) throws Throwable {

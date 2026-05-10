@@ -3,8 +3,6 @@ package org.openmrs.module.ihmodule.api.patientexchange.validationrecord;
 import java.util.UUID;
 
 import javax.persistence.Column;
-import javax.persistence.EnumType;
-import javax.persistence.Enumerated;
 import javax.persistence.GeneratedValue;
 import javax.persistence.GenerationType;
 import javax.persistence.Id;
@@ -31,9 +29,8 @@ public class FhirResourceValidationRecord {
 	@Column(name = "resource_logical_id", length = 256)
 	private String resourceLogicalId;
 	
-	@Enumerated(EnumType.STRING)
 	@Column(name = "outcome", nullable = false, length = 32)
-	private ValidationOutcome outcome;
+	private String outcome;
 	
 	@Lob
 	@Column(name = "message", columnDefinition = "TEXT")
@@ -73,11 +70,11 @@ public class FhirResourceValidationRecord {
 		this.resourceLogicalId = resourceLogicalId;
 	}
 	
-	public ValidationOutcome getOutcome() {
+	public String getOutcome() {
 		return outcome;
 	}
 	
-	public void setOutcome(ValidationOutcome outcome) {
+	public void setOutcome(String outcome) {
 		this.outcome = outcome;
 	}
 	

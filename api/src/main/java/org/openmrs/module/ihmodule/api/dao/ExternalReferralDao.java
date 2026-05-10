@@ -3,7 +3,6 @@ package org.openmrs.module.ihmodule.api.dao;
 import org.hibernate.transform.AliasToBeanResultTransformer;
 import org.hibernate.type.StandardBasicTypes;
 import org.openmrs.api.APIException;
-import org.openmrs.api.context.Context;
 import org.openmrs.api.db.hibernate.DbSession;
 import org.openmrs.api.db.hibernate.DbSessionFactory;
 import org.openmrs.module.ihmodule.ExternalReferral;
@@ -16,10 +15,11 @@ import javax.persistence.EntityNotFoundException;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Autowired;
 
 public class ExternalReferralDao {
 	
-	DbSessionFactory sessionFactory = Context.getRegisteredComponent("dbSessionFactory", DbSessionFactory.class);
+	DbSessionFactory sessionFactory;
 	
 	@Transactional
 	public ExternalReferral save(ExternalReferral referral) throws APIException, DuplicateEntryException {

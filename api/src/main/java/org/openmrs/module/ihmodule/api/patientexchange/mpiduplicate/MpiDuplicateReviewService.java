@@ -1,5 +1,6 @@
 package org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate;
 
+import org.openmrs.module.ihmodule.api.patientexchange.config.FhirContextHolder;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.List;
@@ -15,7 +16,6 @@ import org.hl7.fhir.r4.model.Identifier;
 import org.hl7.fhir.r4.model.Patient;
 import org.hl7.fhir.r4.model.Resource;
 import org.hl7.fhir.r4.model.StringType;
-import org.openmrs.api.context.Context;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,6 +23,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import ca.uhn.fhir.context.FhirContext;
+import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * Persists {@link MpiPatientDuplicateReviewCase} rows when a FHIR Patient search returns more than
@@ -36,10 +37,10 @@ public class MpiDuplicateReviewService {
 	
 	private static final String MPI_TYPE_TEXT = "MPI";
 	
-	private final FhirContext fhirContext = FhirContext.forR4();
+	private final FhirContext fhirContext = FhirContextHolder.R4;
 	
-	private MpiPatientDuplicateReviewCaseRepository caseRepository = Context.getRegisteredComponent(
-	    "mpiPatientDuplicateReviewCaseRepository", MpiPatientDuplicateReviewCaseRepository.class);
+	@Autowired
+	private MpiPatientDuplicateReviewCaseRepository caseRepository;
 	
 	@Value("${intelehealth.fhir.resource.identifier.name}")
 	private String mpiIdentifierTypeText;

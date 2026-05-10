@@ -21,7 +21,12 @@
 		<property name="sourceAddressCountry" type="string" column="source_address_country"/>
 		<property name="sourceAddressSnapshot" type="text" column="source_address_snapshot"/>
 		<property name="candidateCount" type="int" column="candidate_count" not-null="true"/>
-		<property name="reviewStatus" type="string" column="review_status" not-null="true"/>
+		<property name="reviewStatus" column="review_status" not-null="true">
+			<type name="org.hibernate.type.EnumType">
+				<param name="enumClass">org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate.MpiDuplicateReviewStatus</param>
+				<param name="useNamed">true</param>
+			</type>
+		</property>
 		<property name="chosenFhirPatientLogicalId" type="string" column="chosen_fhir_patient_logical_id"/>
 		<property name="chosenMpiIdentifierValue" type="string" column="chosen_mpi_identifier_value"/>
 		<property name="resolutionNotes" type="text" column="resolution_notes"/>
@@ -30,9 +35,9 @@
 		<property name="dateResolved" type="string" column="date_resolved"/>
 		<property name="outboundBundleJson" type="text" column="outbound_bundle_json"/>
 		<property name="searchBundleJson" type="text" column="search_bundle_json"/>
-		<set name="candidates" table="mpi_patient_duplicate_review_candidate" inverse="true" lazy="true" cascade="all-delete-orphan">
+		<bag name="candidates" table="mpi_patient_duplicate_review_candidate" inverse="true" lazy="true" cascade="all-delete-orphan">
 			<key column="review_case_id"/>
 			<one-to-many class="org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate.MpiPatientDuplicateReviewCandidate"/>
-		</set>
+		</bag>
 	</class>
 </hibernate-mapping>

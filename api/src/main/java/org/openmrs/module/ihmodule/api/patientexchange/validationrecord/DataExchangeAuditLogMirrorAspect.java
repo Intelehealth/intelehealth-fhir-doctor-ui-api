@@ -3,10 +3,10 @@ package org.openmrs.module.ihmodule.api.patientexchange.validationrecord;
 import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.annotation.AfterReturning;
 import org.aspectj.lang.annotation.Aspect;
-import org.openmrs.api.context.Context;
 import org.openmrs.module.ihmodule.api.patientexchange.model.DataExchangeAuditLog;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * Fallback recorder that mirrors existing data-exchange audit writes into
@@ -20,8 +20,8 @@ import org.springframework.stereotype.Component;
 @Order(1)
 public class DataExchangeAuditLogMirrorAspect {
 	
-	private FhirResourceValidationRecordService validationRecordService = Context.getRegisteredComponent(
-	    "fhirResourceValidationRecordService", FhirResourceValidationRecordService.class);
+	@Autowired
+	private FhirResourceValidationRecordService validationRecordService;
 	
 	@AfterReturning(pointcut = "execution(public * org.openmrs.module.ihmodule.api.patientexchange.service.DataExchangeAuditLogService.save(..))", returning = "saved")
 	public void afterAuditSave(JoinPoint joinPoint, Object saved) {

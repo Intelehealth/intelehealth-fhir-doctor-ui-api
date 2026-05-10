@@ -5,12 +5,12 @@ import java.net.URI;
 import java.util.Map;
 
 import org.hl7.fhir.r4.model.Patient;
-import org.openmrs.api.context.Context;
 import org.openmrs.module.ihmodule.api.patientexchange.config.FhirConfig;
 import org.openmrs.module.ihmodule.api.patientexchange.service.BundleService;
 import org.openmrs.module.ihmodule.api.patientexchange.utils.HttpWebClient;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * Single entry point for central OpenCR Patient searches (everything that lived in MCI
@@ -19,9 +19,11 @@ import org.springframework.stereotype.Service;
 @Service
 public class CentralPatientSearchService {
 	
-	private FhirConfig fhirConfig = Context.getRegisteredComponent("fhirConfig", FhirConfig.class);
+	@Autowired
+	private FhirConfig fhirConfig;
 	
-	private BundleService bundleService = Context.getRegisteredComponent("bundleService", BundleService.class);
+	@Autowired
+	private BundleService bundleService;
 	
 	@Value("${intelehealth.fhir.mpi.duplicate.precheck.search.count:50}")
 	private int duplicatePrecheckSearchResultCount;

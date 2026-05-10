@@ -1,0 +1,9 @@
+.classpath
+.project
+.settings/
+omod/target
+api/target
+bahmnicustomutil.iml
+api/bahmnicustomutil-api.iml
+omod/bahmnicustomutil-omod.iml
+.idea

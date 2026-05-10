@@ -2,18 +2,17 @@ package org.openmrs.module.ihmodule.api.impl;
 
 import java.util.Map;
 
-import org.openmrs.api.context.Context;
 import org.openmrs.api.impl.BaseOpenmrsService;
 import org.openmrs.module.ihmodule.api.BundleService;
 import org.openmrs.module.ihmodule.utils.DeploymentConfProperties;
 import org.openmrs.module.ihmodule.utils.HttpResponse;
 import org.openmrs.module.ihmodule.utils.HttpService;
 import org.openmrs.module.ihmodule.utils.ReqParam;
+import org.springframework.beans.factory.annotation.Autowired;
 
 public class BundleServiceImpl extends BaseOpenmrsService implements BundleService {
 	
-	DeploymentConfProperties deployConf = Context.getRegisteredComponent("ihmodule.DeploymentConfProperties",
-	    DeploymentConfProperties.class);
+	DeploymentConfProperties deployConf;
 	
 	@Override
 	public HttpResponse getBundle(String resourceType, Map<String, String> reqParam) throws Exception {
