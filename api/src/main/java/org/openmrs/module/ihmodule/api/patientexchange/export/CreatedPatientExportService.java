@@ -29,6 +29,7 @@ import org.hl7.fhir.r4.model.StringType;
 import org.apache.commons.lang3.StringUtils;
 import org.openmrs.module.ihmodule.api.patientexchange.domain.PersonAttribute;
 import org.openmrs.module.ihmodule.api.patientexchange.service.CommonOperationService;
+import org.openmrs.module.ihmodule.api.patientexchange.validation.PersonAttributeToExtensionSuffix;
 import org.openmrs.module.ihmodule.api.patientexchange.utils.HttpWebClient;
 import org.openmrs.module.ihmodule.api.patientexchange.utils.IHConstant;
 import org.openmrs.module.ihmodule.utils.HttpService;
@@ -219,7 +220,7 @@ public class CreatedPatientExportService extends IHConstant {
 		List<PersonAttribute> attributes = commonOperationService.findPersonAttributes(patientUUID);
 		List<Extension> extensionList = new ArrayList<Extension>();
 		for (PersonAttribute attribute : attributes) {
-			String suffix = mapPersonAttributeToExtensionSuffix(attribute.getName());
+			String suffix = PersonAttributeToExtensionSuffix.map(attribute.getName());
 			if (suffix == null) {
 				continue;
 			}
@@ -309,38 +310,6 @@ public class CreatedPatientExportService extends IHConstant {
 		coding.setCode("MR");
 		ensuredType.addCoding(coding);
 		identifier.setType(ensuredType);
-	}
-	
-	private String mapPersonAttributeToExtensionSuffix(String attributeName) {
-		if (attributeName == null) {
-			return null;
-		}
-		String trimmed = attributeName.trim();
-		String normalized = trimmed.toLowerCase().replaceAll("[\\s_-]+", "");
-		switch (normalized) {
-			case "telephonenumber":
-			case "phonenumber":
-				// Primary phone is represented as FHIR Patient.telecom (FHIR2); do not duplicate as Emergency-Contact extension.
-				return null;
-			case "emergencycontactnumber":
-			case "emergencycontactname":
-				return "Emergency-Contact-Number";
-			case "caste":
-				return "Caste";
-			case "economicstatus":
-				return "Economic-Status";
-			case "educationlevel":
-				return "Education-Level";
-			case "occupation":
-				return "occupation";
-			case "nationalid":
-				return "NationalID";
-			case "householdnumber":
-				return "Household-Number";
-			default:
-				// Default behavior: support same-name attribute/extension mapping.
-				return attributeName;
-		}
 	}
 	
 	private boolean isIgnorablePersonAttributeValue(String value) {

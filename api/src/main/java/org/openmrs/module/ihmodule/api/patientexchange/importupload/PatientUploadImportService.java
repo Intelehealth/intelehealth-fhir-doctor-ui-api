@@ -8,12 +8,13 @@ import java.time.ZoneOffset;
 import java.util.Date;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.stream.Collectors;
+
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 
 import org.apache.commons.lang3.StringUtils;
 import org.hl7.fhir.r4.model.Address;
@@ -38,6 +39,9 @@ import org.openmrs.PersonAttributeType;
 import org.openmrs.module.ihmodule.api.patientexchange.config.FhirConfig;
 import org.openmrs.module.ihmodule.api.patientexchange.param.ReuestParam;
 import org.openmrs.module.ihmodule.api.patientexchange.service.CommonOperationService;
+import org.openmrs.module.ihmodule.api.patientexchange.validation.PatientFhirExchangeValidationResult;
+import org.openmrs.module.ihmodule.api.patientexchange.validation.PatientFhirExchangeValidationService;
+import org.openmrs.module.ihmodule.api.patientexchange.validation.PatientProfileExtensionRules;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -45,9 +49,6 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.util.UriUtils;
 
 import ca.uhn.fhir.context.FhirContext;
-import ca.uhn.fhir.validation.FhirValidator;
-import ca.uhn.fhir.validation.ValidationOptions;
-import ca.uhn.fhir.validation.ValidationResult;
 import org.springframework.beans.factory.annotation.Autowired;
 
 @Service
@@ -68,19 +69,16 @@ public class PatientUploadImportService {
 	private static final String OPENMRS_IDENTIFIER_TYPE_CODING_SYSTEM = "http://fhir.openmrs.org/code-system/identifier-type";
 	
 	private static final String GP_PREFERRED_IDENTIFIER_TYPE_UUID = "intelehealth.fhir.patient.import.preferred.identifier.type.uuid";
-
+	
+	/**
+	 * Reference Application OpenMRS ID type; used when {@link #GP_PREFERRED_IDENTIFIER_TYPE_UUID}
+	 * is unset.
+	 */
+	private static final String DEFAULT_PREFERRED_IDENTIFIER_TYPE_UUID = "05a29f94-c0ed-11e2-94be-8c13b969e334";
+	
 	private static final String GP_FHIR2_CONTACT_POINT_ATTRIBUTE_TYPE_UUID = "fhir2.personContactPointAttributeTypeUuid";
 	
 	private static final String MR_IDENTIFIER_CODE = "MR";
-
-	private static final Set<String> PROFILE_EXTENSION_SUFFIX_WHITELIST = new HashSet<>(Arrays.asList(
-	        "Economic-Status",
-	        "Education-Level",
-	        "NationalID",
-	        "occupation",
-	        "Emergency-Contact-Number",
-	        "Household-Number",
-	        "Caste"));
 	
 	private final FhirContext fhirContext = FhirContextHolder.R4;
 	
@@ -89,6 +87,9 @@ public class PatientUploadImportService {
 	
 	@Autowired
 	private CommonOperationService commonOperationService;
+	
+	@Autowired
+	private PatientFhirExchangeValidationService patientFhirExchangeValidationService;
 	
 	public PatientUploadImportResponse importPatientFile(MultipartFile file, String locationUuid) throws Exception {
 		if (file == null || file.isEmpty()) {
@@ -105,13 +106,11 @@ public class PatientUploadImportService {
 		for (Patient patient : patients) {
 			PatientUploadImportItemResult item = new PatientUploadImportItemResult();
 			try {
-				ensurePreferredOpenMrsIdentifier(patient);
+				ensurePreferredOpenMrsIdentifier(patient, effectiveLocationUuid);
 				ensureIdentifierLocation(patient, effectiveLocationUuid);
 				normalizeBirthDateDayPrecision(patient);
 				item.setInputId(correlationIdForImportItem(patient));
-				if (fhirConfig.isPatientImportProfileValidationEnabled()) {
-					validatePatientAgainstProfileBeforeCreate(patient);
-				}
+				validatePatientAgainstProfileBeforeCreate(patient);
 				if (existsByIdentifier(patient)) {
 					item.setStatus("SKIPPED");
 					item.setMessage("Patient already exists by identifier");
@@ -137,7 +136,8 @@ public class PatientUploadImportService {
 						}
 						patient.setId((String) null);
 						String finalPayload = fhirContext.newJsonParser().encodeResourceToString(patient);
-						log.info("Import upload final patient payload for correlationId={}: {}", item.getInputId(), finalPayload);
+						log.info("Import upload final patient payload for correlationId={}: {}", item.getInputId(),
+						    finalPayload);
 						if (fhirConfig.isPatientImportNativeCreateEnabled()) {
 							String createdUuid = createPatientViaOpenmrsNativeApi(patient, effectiveLocationUuid);
 							item.setStatus("CREATED");
@@ -217,7 +217,124 @@ public class PatientUploadImportService {
 		}
 	}
 	
-	private void ensurePreferredOpenMrsIdentifier(Patient patient) {
+	/**
+	 * When JSON has no {@code Patient.identifier}, no OpenMRS-ID slot, or an OpenMRS-ID slot with a
+	 * blank {@code value}, assigns the next identifier from the preferred
+	 * {@link PatientIdentifierType} using the idgen module when installed. Non-empty values from
+	 * JSON are left unchanged.
+	 */
+	private void ensureOpenMrsIdentifierValueFromPreferredTypeIfMissing(Patient patient, String locationUuid) {
+		if (patient == null) {
+			return;
+		}
+		Identifier slot = findOpenMrsIdentifierSlotAllowingBlankValue(patient);
+		if (slot == null) {
+			appendSyntheticOpenMrsIdentifierPlaceholder(patient);
+			slot = findOpenMrsIdentifierSlotAllowingBlankValue(patient);
+		}
+		if (slot == null) {
+			throw new IllegalStateException("Unable to attach OpenMRS ID identifier for import");
+		}
+		if (StringUtils.isNotBlank(StringUtils.trimToNull(slot.getValue()))) {
+			log.debug("Import OpenMRS ID value present in JSON; skipping auto-generation");
+			return;
+		}
+		String generated = generateOpenMrsIdentifierValueUsingPreferredType(locationUuid);
+		slot.setValue(generated);
+		log.info("Import auto-generated OpenMRS ID value='{}' (preferred type uuid={})", generated,
+		    resolvePreferredIdentifierTypeUuid());
+	}
+	
+	private Identifier findOpenMrsIdentifierSlotAllowingBlankValue(Patient patient) {
+		if (patient == null || patient.getIdentifier() == null) {
+			return null;
+		}
+		for (Identifier identifier : patient.getIdentifier()) {
+			if (identifier != null && isOpenMrsIdentifier(identifier)) {
+				return identifier;
+			}
+		}
+		return null;
+	}
+	
+	private void appendSyntheticOpenMrsIdentifierPlaceholder(Patient patient) {
+		Identifier id = new Identifier();
+		id.setUse(Identifier.IdentifierUse.OFFICIAL);
+		org.hl7.fhir.r4.model.CodeableConcept type = new org.hl7.fhir.r4.model.CodeableConcept();
+		type.setText("OpenMRS ID");
+		type.addCoding().setSystem(V2_IDENTIFIER_SYSTEM).setCode(MR_IDENTIFIER_CODE);
+		id.setType(type);
+		id.setSystem(OPENMRS_ID_SYSTEM);
+		id.setValue("");
+		patient.addIdentifier(id);
+	}
+	
+	private String generateOpenMrsIdentifierValueUsingPreferredType(String locationUuid) {
+		String typeUuid = resolvePreferredIdentifierTypeUuid();
+		if (StringUtils.isBlank(typeUuid)) {
+			throw new IllegalArgumentException("Cannot auto-generate OpenMRS ID: preferred identifier type UUID is blank");
+		}
+		PatientIdentifierType idType = Context.getPatientService().getPatientIdentifierTypeByUuid(typeUuid.trim());
+		if (idType == null) {
+			throw new IllegalArgumentException("Patient identifier type not found for UUID: " + typeUuid);
+		}
+		String fromIdgen = invokeIdgenGenerateIdentifier(idType, locationUuid);
+		if (StringUtils.isNotBlank(fromIdgen)) {
+			return fromIdgen.trim();
+		}
+		throw new IllegalArgumentException(
+		        "Cannot auto-generate OpenMRS ID: idgen returned no identifier (install/configure idgen auto-generation for type "
+		                + typeUuid + ") or supply a non-empty identifier.value in JSON.");
+	}
+	
+	@SuppressWarnings("unchecked")
+	private String invokeIdgenGenerateIdentifier(PatientIdentifierType idType, String locationUuid) {
+		try {
+			Class<? extends org.openmrs.api.OpenmrsService> svcClass = (Class<? extends org.openmrs.api.OpenmrsService>) Context
+			        .loadClass("org.openmrs.module.idgen.service.IdentifierSourceService");
+			Object service = Context.getService(svcClass);
+			Location loc = resolveLocationForIdgen(locationUuid);
+			if (loc != null) {
+				try {
+					Method withLoc = svcClass.getMethod("generateIdentifier", PatientIdentifierType.class, Location.class,
+					    String.class);
+					return (String) withLoc.invoke(service, idType, loc, "ihmodule patient import upload");
+				}
+				catch (NoSuchMethodException ignored) {
+					// older idgen without location overload
+				}
+			}
+			Method simple = svcClass.getMethod("generateIdentifier", PatientIdentifierType.class, String.class);
+			return (String) simple.invoke(service, idType, "ihmodule patient import upload");
+		}
+		catch (ClassNotFoundException e) {
+			log.warn("OpenMRS idgen module is not available; cannot auto-generate patient identifiers", e);
+			return null;
+		}
+		catch (InvocationTargetException e) {
+			Throwable cause = e.getCause() != null ? e.getCause() : e;
+			log.error("idgen generateIdentifier failed: {}", cause.getMessage(), cause);
+			return null;
+		}
+		catch (Exception e) {
+			log.error("idgen generateIdentifier failed: {}", e.getMessage(), e);
+			return null;
+		}
+	}
+	
+	private Location resolveLocationForIdgen(String locationUuid) {
+		String uuid = StringUtils.isNotBlank(locationUuid) ? locationUuid.trim() : OPENMRS_DEFAULT_IDENTIFIER_LOCATION_UUID;
+		try {
+			return Context.getLocationService().getLocationByUuid(uuid);
+		}
+		catch (Exception ex) {
+			log.debug("Could not resolve location {} for idgen: {}", uuid, ex.getMessage());
+			return null;
+		}
+	}
+	
+	private void ensurePreferredOpenMrsIdentifier(Patient patient, String locationUuidForIdgen) {
+		ensureOpenMrsIdentifierValueFromPreferredTypeIfMissing(patient, locationUuidForIdgen);
 		if (patient == null || patient.getIdentifier() == null || patient.getIdentifier().isEmpty()) {
 			throw new IllegalArgumentException("OpenMRS ID identifier is required for import");
 		}
@@ -248,8 +365,6 @@ public class PatientUploadImportService {
 				preferredIdentifier.getType().addCoding().setSystem(OPENMRS_IDENTIFIER_TYPE_CODING_SYSTEM)
 						.setCode(resolvedTypeUuid);
 			}
-		} else {
-			log.warn("Import preferred identifier type UUID is blank (property: {}).", GP_PREFERRED_IDENTIFIER_TYPE_UUID);
 		}
 		enforceSinglePreferredIdentifier(patient, preferredIdentifier);
 		log.info("Import identifier-preferred selected OpenMRS ID value='{}' system='{}'",
@@ -270,7 +385,9 @@ public class PatientUploadImportService {
 		catch (Exception ex) {
 			log.warn("Unable to read global property {}", GP_PREFERRED_IDENTIFIER_TYPE_UUID, ex);
 		}
-		return null;
+		log.debug("Using default OpenMRS ID identifier type UUID for import (set {} to override)",
+		    GP_PREFERRED_IDENTIFIER_TYPE_UUID);
+		return DEFAULT_PREFERRED_IDENTIFIER_TYPE_UUID;
 	}
 	
 	private void enforceSinglePreferredIdentifier(Patient patient, Identifier preferredIdentifier) {
@@ -548,7 +665,7 @@ public class PatientUploadImportService {
 		}
 		boolean changed = false;
 		for (Extension extension : sourcePatient.getExtension()) {
-			String suffix = extensionSuffix(extension.getUrl());
+			String suffix = PatientProfileExtensionRules.extensionSuffixFromStructureDefinitionUrl(extension.getUrl());
 			if (StringUtils.isBlank(suffix)) {
 				continue;
 			}
@@ -594,11 +711,12 @@ public class PatientUploadImportService {
 		// Keep date-only value to avoid timezone rollback (e.g. 1996-05-23 -> 1996-05-22).
 		patient.setBirthDateElement(new DateType(birthDateText));
 	}
-
+	
 	/**
-	 * Maps FHIR {@code birthDate} (calendar date) to {@link Date} for OpenMRS {@code person.birthdate}. Raw
-	 * {@link Patient#getBirthDate()} can shift the stored calendar day across JDBC/time zones; parsing the
-	 * normalized yyyy-MM-dd string and anchoring at noon UTC avoids off-by-one dates in the DB.
+	 * Maps FHIR {@code birthDate} (calendar date) to {@link Date} for OpenMRS
+	 * {@code person.birthdate}. Raw {@link Patient#getBirthDate()} can shift the stored calendar
+	 * day across JDBC/time zones; parsing the normalized yyyy-MM-dd string and anchoring at noon
+	 * UTC avoids off-by-one dates in the DB.
 	 */
 	private static Date resolveBirthDateForOpenmrs(Patient fhirPatient) {
 		if (fhirPatient == null || !fhirPatient.hasBirthDate()) {
@@ -619,10 +737,11 @@ public class PatientUploadImportService {
 		}
 		return fhirPatient.getBirthDate();
 	}
-
+	
 	/**
 	 * Persists a new OpenMRS patient from the prepared FHIR resource. Only used when
-	 * {@link FhirConfig#isPatientImportNativeCreateEnabled()} is true; default import continues to use FHIR2 POST.
+	 * {@link FhirConfig#isPatientImportNativeCreateEnabled()} is true; default import continues to
+	 * use FHIR2 POST.
 	 */
 	private String createPatientViaOpenmrsNativeApi(Patient fhirPatient, String locationUuid) {
 		String typeUuid = resolvePreferredIdentifierTypeUuid();
@@ -634,18 +753,20 @@ public class PatientUploadImportService {
 		if (idType == null) {
 			throw new IllegalArgumentException("Patient identifier type not found for UUID: " + typeUuid);
 		}
-		String locUuid = StringUtils.isNotBlank(locationUuid) ? locationUuid.trim() : OPENMRS_DEFAULT_IDENTIFIER_LOCATION_UUID;
+		String locUuid = StringUtils.isNotBlank(locationUuid) ? locationUuid.trim()
+		        : OPENMRS_DEFAULT_IDENTIFIER_LOCATION_UUID;
 		Location location = Context.getLocationService().getLocationByUuid(locUuid);
 		if (location == null) {
 			throw new IllegalArgumentException("Location not found for UUID: " + locUuid);
 		}
+		ensurePreferredOpenMrsIdentifier(fhirPatient, locUuid);
 		Identifier preferred = findOpenMrsIdentifierFromJson(fhirPatient);
 		if (preferred == null || StringUtils.isBlank(preferred.getValue())) {
 			throw new IllegalArgumentException("OpenMRS ID identifier is required for native import");
 		}
-
+		
 		org.openmrs.Patient omrsPatient = new org.openmrs.Patient();
-
+		
 		if (fhirPatient.hasName() && fhirPatient.getNameFirstRep() != null) {
 			HumanName hn = fhirPatient.getNameFirstRep();
 			PersonName pn = new PersonName();
@@ -666,7 +787,7 @@ public class PatientUploadImportService {
 			pn.setPreferred(true);
 			omrsPatient.addName(pn);
 		}
-
+		
 		if (fhirPatient.hasGender()) {
 			String g = fhirPatient.getGender().toCode();
 			if ("male".equalsIgnoreCase(g)) {
@@ -677,11 +798,11 @@ public class PatientUploadImportService {
 				omrsPatient.setGender("U");
 			}
 		}
-
+		
 		if (fhirPatient.hasBirthDate()) {
 			omrsPatient.setBirthdate(resolveBirthDateForOpenmrs(fhirPatient));
 		}
-
+		
 		if (fhirPatient.hasAddress()) {
 			Address fa = fhirPatient.getAddressFirstRep();
 			PersonAddress pa = new PersonAddress();
@@ -714,20 +835,20 @@ public class PatientUploadImportService {
 			pa.setPreferred(true);
 			omrsPatient.addAddress(pa);
 		}
-
+		
 		PatientIdentifier pid = new PatientIdentifier();
 		pid.setIdentifier(preferred.getValue().trim());
 		pid.setIdentifierType(idType);
 		pid.setLocation(location);
 		pid.setPreferred(true);
 		omrsPatient.addIdentifier(pid);
-
+		
 		applyTelecomAsPersonAttributeIfConfigured(omrsPatient, fhirPatient);
-
+		
 		Context.getPatientService().savePatient(omrsPatient);
 		return omrsPatient.getUuid();
 	}
-
+	
 	private void applyTelecomAsPersonAttributeIfConfigured(org.openmrs.Patient omrsPatient, Patient fhirPatient) {
 		String phone = safePhone(fhirPatient);
 		if (StringUtils.isBlank(phone)) {
@@ -761,51 +882,10 @@ public class PatientUploadImportService {
 	}
 	
 	private void validatePatientAgainstProfileBeforeCreate(Patient patient) {
-		assertKnownProfileExtensions(patient);
-		FhirValidator validator = fhirContext.newValidator();
-		validator.setValidateAgainstStandardSchema(false);
-		validator.setValidateAgainstStandardSchematron(false);
-		ValidationOptions options = new ValidationOptions();
-		String profileUrl = fhirConfig.getPatientProfileUrl();
-		if (StringUtils.isNotBlank(profileUrl)) {
-			options.addProfile(profileUrl);
-		}
-		ValidationResult result;
-		try {
-			result = validator.validateWithResult(patient, options);
-		}
-		catch (Exception ex) {
-			if (ex.getMessage() != null && ex.getMessage().contains("HAPI-1758")) {
-				log.warn("FHIR schema resources not available at runtime; skipping schema-based validation");
-				return;
-			}
-			throw new IllegalArgumentException("FHIR validation execution failed: " + ex.getMessage(), ex);
-		}
-		if (result != null && result.isSuccessful()) {
-			return;
-		}
-		String message = result != null ? result.getMessages().stream()
-		        .map(msg -> msg.getSeverity() + ": " + msg.getMessage())
-		        .collect(Collectors.joining(" | "))
-		        : "FHIR profile validation failed";
-		if (StringUtils.isBlank(message)) {
-			message = "FHIR profile validation failed";
-		}
-		throw new IllegalArgumentException(message);
-	}
-
-	private void assertKnownProfileExtensions(Patient patient) {
-		if (patient == null || patient.getExtension() == null) {
-			return;
-		}
-		List<String> unknownUrls = patient.getExtension().stream()
-		        .map(ext -> ext != null ? extensionSuffix(ext.getUrl()) : null)
-		        .filter(StringUtils::isNotBlank)
-		        .filter(suffix -> !PROFILE_EXTENSION_SUFFIX_WHITELIST.contains(suffix))
-		        .map(suffix -> "Unknown extension suffix: " + suffix)
-		        .collect(Collectors.toList());
-		if (!unknownUrls.isEmpty()) {
-			throw new IllegalArgumentException("FHIR profile validation failed: " + String.join("; ", unknownUrls));
+		PatientFhirExchangeValidationResult r = patientFhirExchangeValidationService.validatePatient(fhirContext,
+		    fhirConfig, patient, correlationIdForImportItem(patient));
+		if (!r.isPermitted()) {
+			throw new IllegalArgumentException(r.getFailureReason());
 		}
 	}
 	
@@ -865,14 +945,6 @@ public class PatientUploadImportService {
 			return "";
 		}
 		return name.trim().toLowerCase().replaceAll("[\\s_-]+", "");
-	}
-	
-	private static String extensionSuffix(String url) {
-		if (StringUtils.isBlank(url)) {
-			return null;
-		}
-		int lastSlash = url.lastIndexOf('/');
-		return lastSlash >= 0 ? url.substring(lastSlash + 1) : url;
 	}
 	
 	private static String extensionStringValue(Extension extension) {
@@ -941,8 +1013,11 @@ public class PatientUploadImportService {
 		}
 		return "";
 	}
-
-	/** FHIR logical id if present; otherwise preferred OpenMRS identifier value (upload JSON rarely sets {@code Patient.id}). */
+	
+	/**
+	 * FHIR logical id if present; otherwise preferred OpenMRS identifier value (upload JSON rarely
+	 * sets {@code Patient.id}).
+	 */
 	private static String correlationIdForImportItem(Patient patient) {
 		if (patient == null) {
 			return null;
@@ -956,8 +1031,11 @@ public class PatientUploadImportService {
 		}
 		return null;
 	}
-
-	/** Uses FHIR date element string when present so duplicate SQL matches the JSON calendar day (avoids TZ rollback). */
+	
+	/**
+	 * Uses FHIR date element string when present so duplicate SQL matches the JSON calendar day
+	 * (avoids TZ rollback).
+	 */
 	private static String formatBirthDateYyyyMmDd(Patient patient) {
 		if (patient == null || !patient.hasBirthDate()) {
 			return "";
