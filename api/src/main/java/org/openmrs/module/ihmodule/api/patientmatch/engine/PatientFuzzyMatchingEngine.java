@@ -58,10 +58,47 @@ public class PatientFuzzyMatchingEngine {
 		double baseScore = FuzzyTextUtils.jaroWinklerPercent(request.getName(), candidate.getName());
 		double tokenScore = FuzzyTextUtils.tokenJaccardPercent(request.getName(), candidate.getName());
 		double combined = Math.max(baseScore, ((baseScore * 0.7d) + (tokenScore * 0.3d)));
-		if (config.isPhoneticBoostEnabled() && FuzzyTextUtils.phoneticMatch(request.getName(), candidate.getName())) {
+		double structuredNameScore = structuredNameScore(request, candidate);
+		if (structuredNameScore > 0.0d) {
+			combined = Math.max(combined, structuredNameScore);
+		}
+		if (config.isPhoneticBoostEnabled() && phoneticNameMatch(request, candidate)) {
 			combined = Math.min(100.0d, combined + 10.0d);
 		}
 		return FuzzyTextUtils.round(combined);
+	}
+	
+	private double structuredNameScore(FuzzyPatientMatchRequest request, FuzzyPatientCandidate candidate) {
+		double givenScore = 0.0d;
+		double familyScore = 0.0d;
+		int parts = 0;
+		if (request.hasGivenName() && StringUtils.isNotBlank(candidate.getGivenName())) {
+			givenScore = FuzzyTextUtils.jaroWinklerPercent(request.getGivenName(), candidate.getGivenName());
+			parts++;
+		}
+		if (request.hasFamilyName() && StringUtils.isNotBlank(candidate.getFamilyName())) {
+			familyScore = FuzzyTextUtils.jaroWinklerPercent(request.getFamilyName(), candidate.getFamilyName());
+			parts++;
+		}
+		if (parts == 0) {
+			return 0.0d;
+		}
+		if (parts == 1) {
+			return givenScore > 0.0d ? givenScore : familyScore;
+		}
+		return FuzzyTextUtils.round((givenScore * 0.45d) + (familyScore * 0.55d));
+	}
+	
+	private boolean phoneticNameMatch(FuzzyPatientMatchRequest request, FuzzyPatientCandidate candidate) {
+		if (FuzzyTextUtils.phoneticMatch(request.getName(), candidate.getName())) {
+			return true;
+		}
+		if (request.hasGivenName() && StringUtils.isNotBlank(candidate.getGivenName())
+		        && FuzzyTextUtils.phoneticMatch(request.getGivenName(), candidate.getGivenName())) {
+			return true;
+		}
+		return request.hasFamilyName() && StringUtils.isNotBlank(candidate.getFamilyName())
+		        && FuzzyTextUtils.phoneticMatch(request.getFamilyName(), candidate.getFamilyName());
 	}
 	
 	private double dobScore(FuzzyPatientMatchRequest request, FuzzyPatientCandidate candidate, FuzzyPatientMatchConfig config) {

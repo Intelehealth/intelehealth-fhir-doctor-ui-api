@@ -3,6 +3,7 @@ package org.openmrs.module.ihmodule.web.controller.rest;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
+import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 import org.apache.commons.logging.Log;
@@ -54,6 +55,16 @@ public class FuzzyPatientMatchRestController {
 			writeFhir(response, HttpStatus.INTERNAL_SERVER_ERROR.value(),
 			    fuzzyPatientMatchService.errorOutcome("internal-error", ex.getMessage()));
 		}
+	}
+	
+	@RequestMapping(value = { "module/ihmodule/patientFuzzyMatch.form", "/rest/v1/ihmodule/patient/$match" }, method = {
+	        RequestMethod.GET, RequestMethod.HEAD, RequestMethod.PUT, RequestMethod.PATCH, RequestMethod.DELETE })
+	public void patientMatchMethodNotAllowed(HttpServletRequest request, HttpServletResponse response) throws IOException {
+		String method = request != null ? request.getMethod() : null;
+		log.warn("ihmodule fuzzy patient match does not support HTTP method " + method);
+		response.setHeader("Allow", "POST");
+		writeFhir(response, HttpStatus.METHOD_NOT_ALLOWED.value(),
+		    fuzzyPatientMatchService.errorOutcome("method-not-allowed", "Only POST is supported for this endpoint"));
 	}
 	
 	private void writeFhir(HttpServletResponse response, int statusCode, org.hl7.fhir.r4.model.Resource resource)

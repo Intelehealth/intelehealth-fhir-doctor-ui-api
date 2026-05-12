@@ -12,13 +12,17 @@ package org.openmrs.module.ihmodule;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.openmrs.module.BaseModuleActivator;
+import org.openmrs.module.DaemonToken;
+import org.openmrs.module.DaemonTokenAware;
 
 /**
  * This class contains the logic that is run every time this module is either started or shutdown
  */
-public class APIfordoctorUIActivator extends BaseModuleActivator {
+public class APIfordoctorUIActivator extends BaseModuleActivator implements DaemonTokenAware {
 	
 	private Log log = LogFactory.getLog(this.getClass());
+	
+	private static volatile DaemonToken daemonToken;
 	
 	/**
 	 * @see #started()
@@ -32,6 +36,21 @@ public class APIfordoctorUIActivator extends BaseModuleActivator {
 	 */
 	public void shutdown() {
 		log.info("Shutdown API for doctor UI");
+	}
+	
+	@Override
+	public void stopped() {
+		daemonToken = null;
+		log.info("Stopped API for doctor UI");
+	}
+	
+	@Override
+	public void setDaemonToken(DaemonToken token) {
+		daemonToken = token;
+	}
+	
+	public static DaemonToken getDaemonToken() {
+		return daemonToken;
 	}
 	
 }

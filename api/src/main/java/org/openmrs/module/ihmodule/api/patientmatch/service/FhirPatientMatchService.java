@@ -1,29 +1,22 @@
 package org.openmrs.module.ihmodule.api.patientmatch.service;
 
-import java.math.BigDecimal;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
 import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.Bundle.BundleEntryComponent;
 import org.hl7.fhir.r4.model.CodeType;
 import org.hl7.fhir.r4.model.ContactPoint;
-import org.hl7.fhir.r4.model.DecimalType;
 import org.hl7.fhir.r4.model.Enumerations.AdministrativeGender;
 import org.hl7.fhir.r4.model.Extension;
 import org.hl7.fhir.r4.model.HumanName;
 import org.hl7.fhir.r4.model.Identifier;
 import org.hl7.fhir.r4.model.OperationOutcome;
 import org.hl7.fhir.r4.model.Patient;
-import org.hl7.fhir.r4.model.StringType;
-import org.openmrs.module.ihmodule.api.patientexchange.config.FhirConfig;
 import org.openmrs.module.ihmodule.api.patientmatch.config.FuzzyPatientMatchConfig;
 import org.openmrs.module.ihmodule.api.patientmatch.config.FuzzyPatientMatchConfigService;
 import org.openmrs.module.ihmodule.api.patientmatch.dto.FuzzyPatientCandidate;
@@ -42,11 +35,7 @@ public class FhirPatientMatchService {
 	
 	private static final String EXT_MATCH_GRADE = "http://hl7.org/fhir/StructureDefinition/match-grade";
 	
-	private static final String EXT_MATCH_CONFIDENCE = "http://intelehealth.org/fhir/StructureDefinition/match-confidence";
-	
-	private static final String EXT_FIELD_SCORES = "http://intelehealth.org/fhir/StructureDefinition/match-field-scores";
-	
-	private static final String EXT_MATCHED_FIELDS = "http://intelehealth.org/fhir/StructureDefinition/matched-fields";
+	private final MatchRuleComboEvaluator matchRuleComboEvaluator = new MatchRuleComboEvaluator();
 	
 	@Autowired
 	private FuzzyPatientMatchConfigService configService;
@@ -60,9 +49,6 @@ public class FhirPatientMatchService {
 	@Autowired
 	private PatientFuzzyMatchingEngine matchingEngine;
 	
-	@Autowired
-	private FhirConfig fhirConfig;
-	
 	@Transactional(readOnly = true)
 	public Bundle match(String body) {
 		FuzzyPatientMatchConfig config = configService.getConfig();
@@ -73,11 +59,17 @@ public class FhirPatientMatchService {
 		List<FuzzyPatientCandidate> candidates = candidateSource.findCandidates(request, config);
 		List<FuzzyPatientMatchResult> scored = new ArrayList<FuzzyPatientMatchResult>();
 		for (FuzzyPatientCandidate candidate : candidates) {
-			FuzzyPatientMatchResult result = matchingEngine.score(request, candidate, config);
-			if (result.getOverallMatchScore() < config.getThreshold()) {
+			String comboMatchResult = matchRuleComboEvaluator.resolveMatchResultLabel(request, candidate, config);
+			if (comboMatchResult == null && matchRuleComboEvaluator.hasComboRules(config)) {
 				continue;
 			}
-			if (request.isOnlyCertainMatches() && !"HIGH".equals(result.getConfidence())) {
+			FuzzyPatientMatchResult result = matchingEngine.score(request, candidate, config);
+			result.setRuleMatchResult(comboMatchResult);
+			String matchGrade = toMatchGrade(result, config);
+			if (matchGrade == null) {
+				continue;
+			}
+			if (request.isOnlyCertainMatches() && !"certain".equals(matchGrade)) {
 				continue;
 			}
 			scored.add(result);
@@ -89,7 +81,7 @@ public class FhirPatientMatchService {
 		int fromIndex = Math.min(request.getOffset(), total);
 		int toIndex = Math.min(fromIndex + request.getCount(), total);
 		List<FuzzyPatientMatchResult> page = scored.subList(fromIndex, toIndex);
-		return toBundle(page, total);
+		return toBundle(page, total, config);
 	}
 	
 	public OperationOutcome errorOutcome(String code, String diagnostics) {
@@ -103,7 +95,7 @@ public class FhirPatientMatchService {
 		return fhirContext.newJsonParser().setPrettyPrint(true).encodeResourceToString(resource);
 	}
 	
-	private Bundle toBundle(List<FuzzyPatientMatchResult> matches, int total) {
+	private Bundle toBundle(List<FuzzyPatientMatchResult> matches, int total, FuzzyPatientMatchConfig config) {
 		Bundle bundle = new Bundle();
 		bundle.setType(Bundle.BundleType.SEARCHSET);
 		bundle.setTotal(total);
@@ -111,12 +103,8 @@ public class FhirPatientMatchService {
 			BundleEntryComponent entry = bundle.addEntry();
 			entry.setResource(toPatient(match.getCandidate()));
 			entry.getSearch().setMode(Bundle.SearchEntryMode.MATCH);
-			entry.getSearch().setScore((float) (match.getOverallMatchScore() / 100.0d));
-			entry.getSearch()
-			        .addExtension(new Extension(EXT_MATCH_GRADE, new CodeType(toMatchGrade(match.getConfidence()))));
-			entry.getSearch().addExtension(new Extension(EXT_MATCH_CONFIDENCE, new StringType(match.getConfidence())));
-			entry.getSearch().addExtension(toFieldScoresExtension(match.getFieldScores()));
-			entry.getSearch().addExtension(toMatchedFieldsExtension(match.getMatchedFields()));
+			entry.getSearch().setScore((float) match.getNormalizedMatchScore());
+			entry.getSearch().addExtension(new Extension(EXT_MATCH_GRADE, new CodeType(toMatchGrade(match, config))));
 		}
 		return bundle;
 	}
@@ -124,6 +112,7 @@ public class FhirPatientMatchService {
 	private Patient toPatient(FuzzyPatientCandidate candidate) {
 		Patient patient = new Patient();
 		patient.setId(candidate.getUuid());
+		patient.setActive(true);
 		if (StringUtils.isNotBlank(candidate.getIdentifier())) {
 			Identifier identifier = patient.addIdentifier();
 			identifier.setUse(Identifier.IdentifierUse.OFFICIAL);
@@ -175,38 +164,35 @@ public class FhirPatientMatchService {
 		return AdministrativeGender.UNKNOWN;
 	}
 	
-	private Extension toFieldScoresExtension(Map<String, Double> fieldScores) {
-		Extension extension = new Extension();
-		extension.setUrl(EXT_FIELD_SCORES);
-		Map<String, Double> ordered = new LinkedHashMap<String, Double>(fieldScores);
-		for (Map.Entry<String, Double> entry : ordered.entrySet()) {
-			Extension nested = new Extension();
-			nested.setUrl(entry.getKey());
-			nested.setValue(new DecimalType(BigDecimal.valueOf(entry.getValue().doubleValue())));
-			extension.addExtension(nested);
-		}
-		return extension;
-	}
-	
-	private Extension toMatchedFieldsExtension(List<String> matchedFields) {
-		Extension extension = new Extension();
-		extension.setUrl(EXT_MATCHED_FIELDS);
-		for (String field : matchedFields.stream().distinct().collect(Collectors.toList())) {
-			Extension nested = new Extension();
-			nested.setUrl("field");
-			nested.setValue(new StringType(field));
-			extension.addExtension(nested);
-		}
-		return extension;
-	}
-	
-	private String toMatchGrade(String confidence) {
-		if ("HIGH".equals(confidence)) {
-			return "certain";
-		}
-		if ("MEDIUM".equals(confidence)) {
+	private String toMatchGrade(FuzzyPatientMatchResult match, FuzzyPatientMatchConfig config) {
+		String scoreGrade = toScoreGrade(match, config);
+		String ruleMatchResult = match != null ? StringUtils.upperCase(match.getRuleMatchResult()) : null;
+		if ("MATCH".equals(ruleMatchResult)) {
+			if ("certain".equals(scoreGrade)) {
+				return "certain";
+			}
 			return "probable";
 		}
-		return "possible";
+		if ("POSSIBLE_MATCH".equals(ruleMatchResult)) {
+			return scoreGrade != null ? "possible" : null;
+		}
+		return scoreGrade;
+	}
+	
+	private String toScoreGrade(FuzzyPatientMatchResult match, FuzzyPatientMatchConfig config) {
+		double normalizedScore = match != null ? match.getNormalizedMatchScore() : 0.0d;
+		double certainThreshold = config != null ? config.getCertainMatchThreshold() / 100.0d : 0.95d;
+		double probableThreshold = config != null ? config.getProbableMatchThreshold() / 100.0d : 0.80d;
+		double possibleThreshold = config != null ? config.getPossibleMatchThreshold() / 100.0d : 0.60d;
+		if (normalizedScore >= certainThreshold) {
+			return "certain";
+		}
+		if (normalizedScore >= probableThreshold) {
+			return "probable";
+		}
+		if (normalizedScore >= possibleThreshold) {
+			return "possible";
+		}
+		return null;
 	}
 }

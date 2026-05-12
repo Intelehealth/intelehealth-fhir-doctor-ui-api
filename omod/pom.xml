@@ -272,7 +272,7 @@
 				<groupId>org.openmrs.maven.plugins</groupId>
 				<artifactId>maven-openmrs-plugin</artifactId>
 				<configuration>
-					<configFile>src/main/resources/config.xml</configFile>
+					<configFile>${project.basedir}/src/main/resources/config.xml</configFile>
 				</configuration>
 			</plugin>
 			<plugin>

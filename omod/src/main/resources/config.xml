@@ -92,6 +92,14 @@
 			FHIR sync.
 		</description>
 	</globalProperty>
+	<globalProperty>
+		<property>ihmodule.fhir.patient.match.rules.file</property>
+		<defaultValue></defaultValue>
+		<description>
+			Optional absolute path to a patient match rules JSON file. When blank, the module uses
+			its bundled patient-match-rules.json defaults.
+		</description>
+	</globalProperty>
 	
 	<!--
 	<dwr>

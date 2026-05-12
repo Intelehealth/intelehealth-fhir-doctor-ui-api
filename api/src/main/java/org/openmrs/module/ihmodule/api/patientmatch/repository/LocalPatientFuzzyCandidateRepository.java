@@ -3,7 +3,9 @@ package org.openmrs.module.ihmodule.api.patientmatch.repository;
 import java.sql.Date;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import javax.persistence.EntityManager;
 import javax.persistence.PersistenceContext;
@@ -12,6 +14,7 @@ import javax.persistence.Tuple;
 
 import org.apache.commons.lang3.StringUtils;
 import org.openmrs.module.ihmodule.api.patientmatch.config.FuzzyPatientMatchConfig;
+import org.openmrs.module.ihmodule.api.patientmatch.config.PatientMatchRules;
 import org.openmrs.module.ihmodule.api.patientmatch.dto.FuzzyPatientCandidate;
 import org.openmrs.module.ihmodule.api.patientmatch.dto.FuzzyPatientMatchRequest;
 import org.openmrs.module.ihmodule.api.patientmatch.util.FuzzyPhoneUtils;
@@ -27,6 +30,11 @@ public class LocalPatientFuzzyCandidateRepository implements PatientCandidateSou
 	
 	@Transactional(readOnly = true)
 	public List<FuzzyPatientCandidate> findCandidates(FuzzyPatientMatchRequest request, FuzzyPatientMatchConfig config) {
+		boolean applyDobRepositoryFilter = config.isFieldEnabled("dob") && config.isCandidateSearchParamEnabled("birthdate")
+		        && shouldApplyDobRepositoryFilter(request, config);
+		QueryBinding hardDobBinding = applyDobRepositoryFilter ? buildFieldBinding("birthdate", request, config, "harddob")
+		        : null;
+		
 		StringBuilder sql = new StringBuilder();
 		sql.append("select p.person_id as personId, ");
 		sql.append("       pt.patient_id as patientId, ");
@@ -59,75 +67,39 @@ public class LocalPatientFuzzyCandidateRepository implements PatientCandidateSou
 		sql.append("join patient pt on pt.patient_id = p.person_id and pt.voided = false ");
 		sql.append("where p.voided = false ");
 		
-		if (config.isFieldEnabled("identifier") && request.hasIdentifier()) {
-			sql.append("and exists (select 1 from patient_identifier pi3 ");
-			sql.append("            where pi3.patient_id = pt.patient_id and pi3.voided = false ");
-			sql.append("              and lower(trim(pi3.identifier)) like :identifierPrefix) ");
+		List<QueryBinding> candidateBindings = candidateSearchBindings(request, config);
+		Map<String, Object> queryParameters = new LinkedHashMap<String, Object>();
+		if (!candidateBindings.isEmpty()) {
+			List<String> candidateClauses = new ArrayList<String>();
+			for (QueryBinding binding : candidateBindings) {
+				candidateClauses.add("(" + binding.getClause() + ")");
+				queryParameters.putAll(binding.getParameters());
+			}
+			sql.append("and (").append(String.join(" or ", candidateClauses)).append(") ");
+		} else {
+			QueryBinding fallbackBinding = legacyFallbackBinding(request, config);
+			if (fallbackBinding != null && StringUtils.isNotBlank(fallbackBinding.getClause())) {
+				sql.append("and (").append(fallbackBinding.getClause()).append(") ");
+				queryParameters.putAll(fallbackBinding.getParameters());
+			}
 		}
-		if (config.isFieldEnabled("dob") && request.hasBirthDate()) {
-			sql.append("and date(p.birthdate) = :birthDate ");
-		}
-		if (config.isFieldEnabled("gender") && request.hasGender()) {
-			sql.append("and (lower(trim(p.gender)) = :genderNormalized or lower(trim(p.gender)) = :genderShort) ");
-		}
-		if (config.isFieldEnabled("phone") && request.hasPhone()) {
-			sql.append("and exists (select 1 from person_attribute pa3 ");
-			sql.append("            join person_attribute_type pat3 on pat3.person_attribute_type_id = pa3.person_attribute_type_id ");
-			sql.append("            where pa3.person_id = p.person_id and pa3.voided = false ");
-			sql.append("              and lower(replace(replace(replace(pat3.name,' ',''),'-',''),'_','')) in ('telephonenumber','phonenumber','emergencycontactnumber') ");
-			sql.append("              and lower(trim(pa3.value)) like :phonePrefix) ");
-		}
-		if (config.isFieldEnabled("name") && request.hasName()) {
-			sql.append("and exists (select 1 from person_name pnf ");
-			sql.append("            where pnf.person_id = p.person_id and pnf.voided = false ");
-			sql.append("              and (lower(trim(coalesce(pnf.given_name,''))) like :firstNamePrefix ");
-			sql.append("                   or lower(trim(coalesce(pnf.family_name,''))) like :lastNamePrefix ");
-			sql.append("                   or lower(trim(concat_ws(' ', coalesce(pnf.given_name,''), coalesce(pnf.family_name,'')))) like :fullNamePrefix ");
-			sql.append("                   or soundex(coalesce(pnf.given_name,'')) = soundex(:firstNameToken) ");
-			sql.append("                   or soundex(coalesce(pnf.family_name,'')) = soundex(:lastNameToken))) ");
-		}
-		if (config.isFieldEnabled("address") && request.hasAddress()) {
-			sql.append("and exists (select 1 from person_address ad3 ");
-			sql.append("            where ad3.person_id = p.person_id and ad3.voided = false ");
-			sql.append("              and (lower(trim(coalesce(ad3.city_village,''))) like :addressPrefix ");
-			sql.append("                   or lower(trim(coalesce(ad3.state_province,''))) like :addressPrefix ");
-			sql.append("                   or lower(trim(coalesce(ad3.address1,''))) like :addressPrefix ");
-			sql.append("                   or lower(trim(concat_ws(' ', coalesce(ad3.address1,''), coalesce(ad3.address2,''), ");
-			sql.append("                        coalesce(ad3.city_village,''), coalesce(ad3.state_province,''), coalesce(ad3.country,'')))) like :addressPrefix)) ");
+		if (hardDobBinding != null && StringUtils.isNotBlank(hardDobBinding.getClause())) {
+			sql.append("and ").append(hardDobBinding.getClause()).append(" ");
+			queryParameters.putAll(hardDobBinding.getParameters());
 		}
 		
-		sql.append("order by p.person_id desc");
+		if (request.hasBirthDate()) {
+			sql.append("order by case when date(p.birthdate) = :sortBirthDateExact then 0 else 1 end, p.person_id desc");
+			queryParameters.put("sortBirthDateExact", request.getBirthDate().toString());
+		} else {
+			sql.append("order by p.person_id desc");
+		}
 		
 		Query query = em.createNativeQuery(sql.toString(), Tuple.class);
 		query.setMaxResults(config.getMaxCandidates());
 		
-		if (config.isFieldEnabled("identifier") && request.hasIdentifier()) {
-			query.setParameter("identifierPrefix", FuzzyTextUtils.normalize(request.getIdentifier()) + "%");
-		}
-		if (config.isFieldEnabled("dob") && request.hasBirthDate()) {
-			query.setParameter("birthDate", request.getBirthDate().toString());
-		}
-		if (config.isFieldEnabled("gender") && request.hasGender()) {
-			String normalizedGender = normalizeGender(request.getGender());
-			query.setParameter("genderNormalized", normalizedGender);
-			query.setParameter("genderShort", normalizedGender.length() > 0 ? normalizedGender.substring(0, 1) : "");
-		}
-		if (config.isFieldEnabled("phone") && request.hasPhone()) {
-			String digits = FuzzyPhoneUtils.normalizeDigits(request.getPhone());
-			String prefix = digits.length() >= 5 ? digits.substring(0, 5) : digits;
-			query.setParameter("phonePrefix", prefix + "%");
-		}
-		if (config.isFieldEnabled("name") && request.hasName()) {
-			String firstNameToken = FuzzyTextUtils.firstToken(request.getName());
-			String lastNameToken = FuzzyTextUtils.lastToken(request.getName());
-			query.setParameter("firstNamePrefix", firstNameToken + "%");
-			query.setParameter("lastNamePrefix", lastNameToken + "%");
-			query.setParameter("fullNamePrefix", FuzzyTextUtils.normalize(request.getName()) + "%");
-			query.setParameter("firstNameToken", firstNameToken);
-			query.setParameter("lastNameToken", lastNameToken);
-		}
-		if (config.isFieldEnabled("address") && request.hasAddress()) {
-			query.setParameter("addressPrefix", FuzzyTextUtils.normalize(request.getAddress()) + "%");
+		for (Map.Entry<String, Object> entry : queryParameters.entrySet()) {
+			query.setParameter(entry.getKey(), entry.getValue());
 		}
 		
 		@SuppressWarnings("unchecked")
@@ -187,5 +159,253 @@ public class LocalPatientFuzzyCandidateRepository implements PatientCandidateSou
 			return "female";
 		}
 		return normalized;
+	}
+	
+	boolean shouldApplyDobRepositoryFilter(FuzzyPatientMatchRequest request, FuzzyPatientMatchConfig config) {
+		if (request == null || config == null || !request.hasBirthDate()) {
+			return false;
+		}
+		switch (config.getDobRepositoryFilterMode()) {
+			case ALWAYS:
+				return true;
+			case NEVER:
+				return false;
+			case ONLY_DOB_REQUESTS:
+			default:
+				return !hasNonDobSearchField(request);
+		}
+	}
+	
+	private boolean hasNonDobSearchField(FuzzyPatientMatchRequest request) {
+		return request.hasIdentifier() || request.hasName() || request.hasPhone() || request.hasAddress()
+		        || request.hasGender();
+	}
+	
+	List<String> applicableCandidateSearchRuleKeys(FuzzyPatientMatchRequest request, FuzzyPatientMatchConfig config) {
+		List<String> keys = new ArrayList<String>();
+		PatientMatchRules rules = config != null ? config.getRules() : null;
+		if (rules == null || rules.getCandidateSearchParams() == null) {
+			return keys;
+		}
+		for (PatientMatchRules.CandidateSearchRule rule : rules.getCandidateSearchParams()) {
+			QueryBinding binding = buildCandidateSearchRuleBinding(rule, request, config, "inspect");
+			if (binding != null && StringUtils.isNotBlank(binding.getClause())) {
+				keys.add(String.join(",", rule.getSearchParams()));
+			}
+		}
+		return keys;
+	}
+	
+	private List<QueryBinding> candidateSearchBindings(FuzzyPatientMatchRequest request, FuzzyPatientMatchConfig config) {
+		List<QueryBinding> bindings = new ArrayList<QueryBinding>();
+		PatientMatchRules rules = config != null ? config.getRules() : null;
+		if (rules == null || rules.getCandidateSearchParams() == null) {
+			return bindings;
+		}
+		int ruleIndex = 0;
+		for (PatientMatchRules.CandidateSearchRule rule : rules.getCandidateSearchParams()) {
+			QueryBinding binding = buildCandidateSearchRuleBinding(rule, request, config, "rule" + ruleIndex++);
+			if (binding != null && StringUtils.isNotBlank(binding.getClause())) {
+				bindings.add(binding);
+			}
+		}
+		return bindings;
+	}
+	
+	private QueryBinding buildCandidateSearchRuleBinding(PatientMatchRules.CandidateSearchRule rule,
+	        FuzzyPatientMatchRequest request, FuzzyPatientMatchConfig config, String suffix) {
+		if (rule == null || rule.getSearchParams() == null || rule.getSearchParams().isEmpty()) {
+			return null;
+		}
+		if (StringUtils.isNotBlank(rule.getResourceType()) && !"Patient".equalsIgnoreCase(rule.getResourceType())) {
+			return null;
+		}
+		List<String> clauses = new ArrayList<String>();
+		Map<String, Object> parameters = new LinkedHashMap<String, Object>();
+		int fieldIndex = 0;
+		for (String searchParam : rule.getSearchParams()) {
+			String normalized = normalizeCandidateSearchParam(searchParam);
+			if (!requestHasSearchParam(request, normalized) || !isSearchParamEnabled(config, normalized)) {
+				return null;
+			}
+			QueryBinding fieldBinding = buildFieldBinding(normalized, request, config, suffix + "_" + fieldIndex++);
+			if (fieldBinding == null || StringUtils.isBlank(fieldBinding.getClause())) {
+				return null;
+			}
+			clauses.add(fieldBinding.getClause());
+			parameters.putAll(fieldBinding.getParameters());
+		}
+		return clauses.isEmpty() ? null : new QueryBinding(String.join(" and ", clauses), parameters);
+	}
+	
+	private QueryBinding legacyFallbackBinding(FuzzyPatientMatchRequest request, FuzzyPatientMatchConfig config) {
+		List<String> clauses = new ArrayList<String>();
+		Map<String, Object> parameters = new LinkedHashMap<String, Object>();
+		String[] searchParams = new String[] { "identifier", "name", "phone", "address", "gender" };
+		for (String searchParam : searchParams) {
+			if (!requestHasSearchParam(request, searchParam) || !isSearchParamEnabled(config, searchParam)) {
+				continue;
+			}
+			QueryBinding fieldBinding = buildFieldBinding(searchParam, request, config, "fallback_" + searchParam);
+			if (fieldBinding == null || StringUtils.isBlank(fieldBinding.getClause())) {
+				continue;
+			}
+			clauses.add(fieldBinding.getClause());
+			parameters.putAll(fieldBinding.getParameters());
+		}
+		return clauses.isEmpty() ? null : new QueryBinding(String.join(" and ", clauses), parameters);
+	}
+	
+	private QueryBinding buildFieldBinding(String searchParam, FuzzyPatientMatchRequest request,
+	        FuzzyPatientMatchConfig config, String suffix) {
+		if ("identifier".equals(searchParam) && request.hasIdentifier()) {
+			Map<String, Object> params = new LinkedHashMap<String, Object>();
+			String parameterName = "identifierPrefix_" + suffix;
+			params.put(parameterName, FuzzyTextUtils.normalize(request.getIdentifier()) + "%");
+			return new QueryBinding("exists (select 1 from patient_identifier pi3 "
+			        + "where pi3.patient_id = pt.patient_id and pi3.voided = false "
+			        + "and lower(trim(pi3.identifier)) like :" + parameterName + ")", params);
+		}
+		if ("birthdate".equals(searchParam) && request.hasBirthDate()) {
+			Map<String, Object> params = new LinkedHashMap<String, Object>();
+			if (config.getDobNearMatchDays() > 0) {
+				String fromName = "birthDateFrom_" + suffix;
+				String toName = "birthDateTo_" + suffix;
+				params.put(fromName, request.getBirthDate().minusDays(config.getDobNearMatchDays()).toString());
+				params.put(toName, request.getBirthDate().plusDays(config.getDobNearMatchDays()).toString());
+				return new QueryBinding("date(p.birthdate) between :" + fromName + " and :" + toName, params);
+			}
+			String exactName = "birthDate_" + suffix;
+			params.put(exactName, request.getBirthDate().toString());
+			return new QueryBinding("date(p.birthdate) = :" + exactName, params);
+		}
+		if ("gender".equals(searchParam) && request.hasGender()) {
+			Map<String, Object> params = new LinkedHashMap<String, Object>();
+			String normalizedGender = normalizeGender(request.getGender());
+			String normalizedName = "genderNormalized_" + suffix;
+			String shortName = "genderShort_" + suffix;
+			params.put(normalizedName, normalizedGender);
+			params.put(shortName, normalizedGender.length() > 0 ? normalizedGender.substring(0, 1) : "");
+			return new QueryBinding("(lower(trim(p.gender)) = :" + normalizedName + " or lower(trim(p.gender)) = :"
+			        + shortName + ")", params);
+		}
+		if ("phone".equals(searchParam) && request.hasPhone()) {
+			Map<String, Object> params = new LinkedHashMap<String, Object>();
+			String digits = FuzzyPhoneUtils.normalizeDigits(request.getPhone());
+			String prefix = digits.length() >= 5 ? digits.substring(0, 5) : digits;
+			String parameterName = "phonePrefix_" + suffix;
+			params.put(parameterName, prefix + "%");
+			return new QueryBinding(
+			        "exists (select 1 from person_attribute pa3 "
+			                + "join person_attribute_type pat3 on pat3.person_attribute_type_id = pa3.person_attribute_type_id "
+			                + "where pa3.person_id = p.person_id and pa3.voided = false "
+			                + "and lower(replace(replace(replace(pat3.name,' ',''),'-',''),'_','')) in ('telephonenumber','phonenumber','emergencycontactnumber') "
+			                + "and lower(trim(pa3.value)) like :" + parameterName + ")", params);
+		}
+		if ("name".equals(searchParam) && request.hasName()) {
+			Map<String, Object> params = new LinkedHashMap<String, Object>();
+			String firstNameToken = request.hasGivenName() ? FuzzyTextUtils.normalize(request.getGivenName())
+			        : FuzzyTextUtils.firstToken(request.getName());
+			String lastNameToken = request.hasFamilyName() ? FuzzyTextUtils.normalize(request.getFamilyName())
+			        : FuzzyTextUtils.lastToken(request.getName());
+			String firstPrefix = "firstNamePrefix_" + suffix;
+			String lastPrefix = "lastNamePrefix_" + suffix;
+			String fullPrefix = "fullNamePrefix_" + suffix;
+			String firstTokenName = "firstNameToken_" + suffix;
+			String lastTokenName = "lastNameToken_" + suffix;
+			params.put(firstPrefix, firstNameToken + "%");
+			params.put(lastPrefix, lastNameToken + "%");
+			params.put(fullPrefix, FuzzyTextUtils.normalize(request.getName()) + "%");
+			params.put(firstTokenName, firstNameToken);
+			params.put(lastTokenName, lastNameToken);
+			return new QueryBinding("exists (select 1 from person_name pnf "
+			        + "where pnf.person_id = p.person_id and pnf.voided = false "
+			        + "and (lower(trim(coalesce(pnf.given_name,''))) like :" + firstPrefix
+			        + " or lower(trim(coalesce(pnf.family_name,''))) like :" + lastPrefix
+			        + " or lower(trim(concat_ws(' ', coalesce(pnf.given_name,''), coalesce(pnf.family_name,'')))) like :"
+			        + fullPrefix + " or soundex(coalesce(pnf.given_name,'')) = soundex(:" + firstTokenName
+			        + ") or soundex(coalesce(pnf.family_name,'')) = soundex(:" + lastTokenName + ")))", params);
+		}
+		if ("address".equals(searchParam) && request.hasAddress()) {
+			Map<String, Object> params = new LinkedHashMap<String, Object>();
+			String parameterName = "addressPrefix_" + suffix;
+			params.put(parameterName, FuzzyTextUtils.normalize(request.getAddress()) + "%");
+			return new QueryBinding("exists (select 1 from person_address ad3 "
+			        + "where ad3.person_id = p.person_id and ad3.voided = false "
+			        + "and (lower(trim(coalesce(ad3.city_village,''))) like :" + parameterName
+			        + " or lower(trim(coalesce(ad3.state_province,''))) like :" + parameterName
+			        + " or lower(trim(coalesce(ad3.address1,''))) like :" + parameterName
+			        + " or lower(trim(concat_ws(' ', coalesce(ad3.address1,''), coalesce(ad3.address2,''), "
+			        + "coalesce(ad3.city_village,''), coalesce(ad3.state_province,''), coalesce(ad3.country,'')))) like :"
+			        + parameterName + "))", params);
+		}
+		return null;
+	}
+	
+	private boolean requestHasSearchParam(FuzzyPatientMatchRequest request, String searchParam) {
+		if (request == null || searchParam == null) {
+			return false;
+		}
+		if ("identifier".equals(searchParam)) {
+			return request.hasIdentifier();
+		}
+		if ("name".equals(searchParam)) {
+			return request.hasName();
+		}
+		if ("birthdate".equals(searchParam)) {
+			return request.hasBirthDate();
+		}
+		if ("phone".equals(searchParam)) {
+			return request.hasPhone();
+		}
+		if ("address".equals(searchParam)) {
+			return request.hasAddress();
+		}
+		if ("gender".equals(searchParam)) {
+			return request.hasGender();
+		}
+		return false;
+	}
+	
+	private boolean isSearchParamEnabled(FuzzyPatientMatchConfig config, String searchParam) {
+		if (config == null || searchParam == null) {
+			return false;
+		}
+		if ("birthdate".equals(searchParam)) {
+			return config.isFieldEnabled("dob") && config.isCandidateSearchParamEnabled("birthdate");
+		}
+		return config.isFieldEnabled(searchParam) && config.isCandidateSearchParamEnabled(searchParam);
+	}
+	
+	private String normalizeCandidateSearchParam(String searchParam) {
+		String normalized = StringUtils.trimToNull(searchParam);
+		if (normalized == null) {
+			return null;
+		}
+		normalized = normalized.toLowerCase();
+		if ("telecom".equals(normalized)) {
+			return "phone";
+		}
+		return normalized;
+	}
+	
+	private static final class QueryBinding {
+		
+		private final String clause;
+		
+		private final Map<String, Object> parameters;
+		
+		private QueryBinding(String clause, Map<String, Object> parameters) {
+			this.clause = clause;
+			this.parameters = parameters;
+		}
+		
+		private String getClause() {
+			return clause;
+		}
+		
+		private Map<String, Object> getParameters() {
+			return parameters;
+		}
 	}
 }

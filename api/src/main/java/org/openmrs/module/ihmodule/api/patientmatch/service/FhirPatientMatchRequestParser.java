@@ -40,6 +40,7 @@ public class FhirPatientMatchRequestParser {
 	private FuzzyPatientMatchRequest parseParameters(Parameters parameters) {
 		FuzzyPatientMatchRequest request = new FuzzyPatientMatchRequest();
 		Patient patient = null;
+		String resourceType = null;
 		for (Parameters.ParametersParameterComponent parameter : parameters.getParameter()) {
 			if (parameter == null || StringUtils.isBlank(parameter.getName())) {
 				continue;
@@ -56,10 +57,17 @@ public class FhirPatientMatchRequestParser {
 			if ("onlyCertainMatches".equals(parameter.getName()) && parameter.getValue() instanceof BooleanType) {
 				request.setOnlyCertainMatches(((BooleanType) parameter.getValue()).booleanValue());
 			}
+			if ("resourceType".equals(parameter.getName()) && parameter.getValue() instanceof StringType) {
+				resourceType = StringUtils.trimToNull(((StringType) parameter.getValue()).getValue());
+			}
 		}
 		if (patient == null) {
 			throw new IllegalArgumentException("Parameters.resource Patient is required");
 		}
+		if (StringUtils.isNotBlank(resourceType) && !"Patient".equals(resourceType)) {
+			throw new IllegalArgumentException("Parameters.resourceType must be Patient");
+		}
+		request.setResourceType(StringUtils.defaultIfBlank(resourceType, "Patient"));
 		return fromPatient(patient, request);
 	}
 	
@@ -67,10 +75,14 @@ public class FhirPatientMatchRequestParser {
 		if (patient == null) {
 			throw new IllegalArgumentException("Patient resource is required");
 		}
-		if (patient.hasIdentifier() && patient.getIdentifierFirstRep().hasValue()) {
-			request.setIdentifier(patient.getIdentifierFirstRep().getValue());
-		}
-		request.setName(extractName(patient));
+		request.setResourceType(StringUtils.defaultIfBlank(request.getResourceType(), patient.getResourceType().name()));
+		IdentifierHolder identifierHolder = extractIdentifier(patient);
+		request.setIdentifierSystem(identifierHolder.getSystem());
+		request.setIdentifier(identifierHolder.getValue());
+		NameHolder nameHolder = extractName(patient);
+		request.setGivenName(nameHolder.getGivenName());
+		request.setFamilyName(nameHolder.getFamilyName());
+		request.setName(nameHolder.getDisplayName());
 		request.setBirthDate(extractBirthDate(patient));
 		request.setPhone(extractPhone(patient));
 		request.setAddress(extractAddress(patient));
@@ -83,22 +95,24 @@ public class FhirPatientMatchRequestParser {
 		return request;
 	}
 	
-	private String extractName(Patient patient) {
+	private NameHolder extractName(Patient patient) {
 		if (!patient.hasName()) {
-			return null;
+			return new NameHolder(null, null, null);
 		}
+		String given = StringUtils.trimToNull(patient.getNameFirstRep().getGivenAsSingleString());
+		String family = StringUtils.trimToNull(patient.getNameFirstRep().getFamily());
 		if (StringUtils.isNotBlank(patient.getNameFirstRep().getText())) {
-			return patient.getNameFirstRep().getText();
+			return new NameHolder(given, family, patient.getNameFirstRep().getText());
 		}
 		StringBuilder name = new StringBuilder();
-		for (StringType given : patient.getNameFirstRep().getGiven()) {
-			if (given == null || StringUtils.isBlank(given.getValue())) {
+		for (StringType givenPart : patient.getNameFirstRep().getGiven()) {
+			if (givenPart == null || StringUtils.isBlank(givenPart.getValue())) {
 				continue;
 			}
 			if (name.length() > 0) {
 				name.append(' ');
 			}
-			name.append(given.getValue().trim());
+			name.append(givenPart.getValue().trim());
 		}
 		if (StringUtils.isNotBlank(patient.getNameFirstRep().getFamily())) {
 			if (name.length() > 0) {
@@ -106,7 +120,18 @@ public class FhirPatientMatchRequestParser {
 			}
 			name.append(patient.getNameFirstRep().getFamily().trim());
 		}
-		return name.length() > 0 ? name.toString() : null;
+		return new NameHolder(given, family, name.length() > 0 ? name.toString() : null);
+	}
+	
+	private IdentifierHolder extractIdentifier(Patient patient) {
+		for (org.hl7.fhir.r4.model.Identifier identifier : patient.getIdentifier()) {
+			if (identifier == null || StringUtils.isBlank(identifier.getValue())) {
+				continue;
+			}
+			return new IdentifierHolder(StringUtils.trimToNull(identifier.getSystem()), StringUtils.trimToNull(identifier
+			        .getValue()));
+		}
+		return new IdentifierHolder(null, null);
 	}
 	
 	private LocalDate extractBirthDate(Patient patient) {
@@ -169,5 +194,52 @@ public class FhirPatientMatchRequestParser {
 			sb.append(' ');
 		}
 		sb.append(value.trim());
+	}
+	
+	private static final class IdentifierHolder {
+		
+		private final String system;
+		
+		private final String value;
+		
+		private IdentifierHolder(String system, String value) {
+			this.system = system;
+			this.value = value;
+		}
+		
+		private String getSystem() {
+			return system;
+		}
+		
+		private String getValue() {
+			return value;
+		}
+	}
+	
+	private static final class NameHolder {
+		
+		private final String givenName;
+		
+		private final String familyName;
+		
+		private final String displayName;
+		
+		private NameHolder(String givenName, String familyName, String displayName) {
+			this.givenName = givenName;
+			this.familyName = familyName;
+			this.displayName = displayName;
+		}
+		
+		private String getGivenName() {
+			return givenName;
+		}
+		
+		private String getFamilyName() {
+			return familyName;
+		}
+		
+		private String getDisplayName() {
+			return displayName;
+		}
 	}
 }

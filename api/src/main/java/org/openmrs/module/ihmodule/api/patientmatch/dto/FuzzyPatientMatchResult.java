@@ -17,6 +17,8 @@ public class FuzzyPatientMatchResult {
 	
 	private final List<String> matchedFields;
 	
+	private String ruleMatchResult;
+	
 	public FuzzyPatientMatchResult(FuzzyPatientCandidate candidate, double overallMatchScore, String confidence,
 	    Map<String, Double> fieldScores, List<String> matchedFields) {
 		this.candidate = candidate;
@@ -34,6 +36,10 @@ public class FuzzyPatientMatchResult {
 		return overallMatchScore;
 	}
 	
+	public double getNormalizedMatchScore() {
+		return overallMatchScore / 100.0d;
+	}
+	
 	public String getConfidence() {
 		return confidence;
 	}
@@ -44,5 +50,13 @@ public class FuzzyPatientMatchResult {
 	
 	public List<String> getMatchedFields() {
 		return new ArrayList<String>(matchedFields);
+	}
+	
+	public String getRuleMatchResult() {
+		return ruleMatchResult;
+	}
+	
+	public void setRuleMatchResult(String ruleMatchResult) {
+		this.ruleMatchResult = ruleMatchResult;
 	}
 }

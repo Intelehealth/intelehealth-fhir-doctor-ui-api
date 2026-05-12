@@ -6,7 +6,15 @@ import org.apache.commons.lang3.StringUtils;
 
 public class FuzzyPatientMatchRequest {
 	
+	private String resourceType;
+	
+	private String identifierSystem;
+	
 	private String identifier;
+	
+	private String familyName;
+	
+	private String givenName;
 	
 	private String name;
 	
@@ -24,6 +32,22 @@ public class FuzzyPatientMatchRequest {
 	
 	private boolean onlyCertainMatches;
 	
+	public String getResourceType() {
+		return resourceType;
+	}
+	
+	public void setResourceType(String resourceType) {
+		this.resourceType = trim(resourceType);
+	}
+	
+	public String getIdentifierSystem() {
+		return identifierSystem;
+	}
+	
+	public void setIdentifierSystem(String identifierSystem) {
+		this.identifierSystem = trim(identifierSystem);
+	}
+	
 	public String getIdentifier() {
 		return identifier;
 	}
@@ -32,12 +56,33 @@ public class FuzzyPatientMatchRequest {
 		this.identifier = trim(identifier);
 	}
 	
+	public String getFamilyName() {
+		return familyName;
+	}
+	
+	public void setFamilyName(String familyName) {
+		this.familyName = trim(familyName);
+		rebuildNameFromParts();
+	}
+	
+	public String getGivenName() {
+		return givenName;
+	}
+	
+	public void setGivenName(String givenName) {
+		this.givenName = trim(givenName);
+		rebuildNameFromParts();
+	}
+	
 	public String getName() {
 		return name;
 	}
 	
 	public void setName(String name) {
 		this.name = trim(name);
+		if (this.name == null) {
+			rebuildNameFromParts();
+		}
 	}
 	
 	public LocalDate getBirthDate() {
@@ -104,6 +149,14 @@ public class FuzzyPatientMatchRequest {
 		return StringUtils.isNotBlank(name);
 	}
 	
+	public boolean hasFamilyName() {
+		return StringUtils.isNotBlank(familyName);
+	}
+	
+	public boolean hasGivenName() {
+		return StringUtils.isNotBlank(givenName);
+	}
+	
 	public boolean hasBirthDate() {
 		return birthDate != null;
 	}
@@ -126,5 +179,22 @@ public class FuzzyPatientMatchRequest {
 	
 	private String trim(String value) {
 		return StringUtils.trimToNull(value);
+	}
+	
+	private void rebuildNameFromParts() {
+		if (StringUtils.isNotBlank(name)) {
+			return;
+		}
+		StringBuilder value = new StringBuilder();
+		if (StringUtils.isNotBlank(givenName)) {
+			value.append(givenName);
+		}
+		if (StringUtils.isNotBlank(familyName)) {
+			if (value.length() > 0) {
+				value.append(' ');
+			}
+			value.append(familyName);
+		}
+		name = value.length() > 0 ? value.toString() : null;
 	}
 }

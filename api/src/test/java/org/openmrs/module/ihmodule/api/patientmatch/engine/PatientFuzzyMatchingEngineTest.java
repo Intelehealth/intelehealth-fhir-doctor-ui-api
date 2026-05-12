@@ -5,10 +5,12 @@ import static org.junit.Assert.assertTrue;
 
 import java.lang.reflect.Field;
 import java.time.LocalDate;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.junit.Test;
+import org.openmrs.module.ihmodule.api.patientmatch.config.DobRepositoryFilterMode;
 import org.openmrs.module.ihmodule.api.patientmatch.config.FuzzyPatientMatchConfig;
 import org.openmrs.module.ihmodule.api.patientmatch.dto.FuzzyPatientCandidate;
 import org.openmrs.module.ihmodule.api.patientmatch.dto.FuzzyPatientMatchRequest;
@@ -40,7 +42,8 @@ public class PatientFuzzyMatchingEngineTest {
 		weights.put("identifier", Double.valueOf(0.05d));
 		
 		FuzzyPatientMatchConfig config = new FuzzyPatientMatchConfig(true, 70, 85, 70, 60, 500, "jaro_winkler",
-		        "levenshtein", "token_jaccard", true, 0, enabled, weights);
+		        "levenshtein", "token_jaccard", true, 0, 95, 80, 60, DobRepositoryFilterMode.ONLY_DOB_REQUESTS,
+		        new LinkedHashSet<String>(enabled.keySet()), null, enabled, weights);
 		
 		FuzzyPatientMatchRequest request = new FuzzyPatientMatchRequest();
 		request.setName("John Smith");

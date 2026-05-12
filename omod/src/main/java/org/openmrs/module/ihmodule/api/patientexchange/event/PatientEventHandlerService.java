@@ -2,6 +2,9 @@ package org.openmrs.module.ihmodule.api.patientexchange.event;
 
 import org.apache.commons.lang3.StringUtils;
 import org.openmrs.Patient;
+import org.openmrs.api.context.Daemon;
+import org.openmrs.module.DaemonToken;
+import org.openmrs.module.ihmodule.APIfordoctorUIActivator;
 import org.openmrs.module.ihmodule.api.patientexchange.domain.FhirResponse;
 import org.openmrs.module.ihmodule.api.patientexchange.scheduler.DataSendToFHIR;
 import org.slf4j.Logger;
@@ -72,23 +75,39 @@ public class PatientEventHandlerService {
 		if (!configuration.shouldProcess(eventType)) {
 			return;
 		}
+		final DaemonToken daemonToken = APIfordoctorUIActivator.getDaemonToken();
+		if (daemonToken == null) {
+			log.error("Failed to send patient {} because no OpenMRS daemon token is available", patientUuid);
+			return;
+		}
 		try {
 			log.info("Patient {} event detected for UUID: {}", eventType.getLogLabel(), patientUuid);
 			log.info("Sending patient to FHIR server...");
-			FhirSyncSuppressionContext.runSuppressed(new Runnable() {
+			Daemon.runInDaemonThread(new Runnable() {
 				
 				@Override
 				public void run() {
 					try {
-						FhirResponse result = dataSendToFHIR.send("Patient", patientUuid);
-						log.info("Patient {} sync completed for uuid={} with status={}", eventType.getLogLabel(),
-						    patientUuid, result != null ? result.getStatusCode() : null);
+						FhirSyncSuppressionContext.runSuppressed(new Runnable() {
+							
+							@Override
+							public void run() {
+								try {
+									FhirResponse result = dataSendToFHIR.send("Patient", patientUuid);
+									log.info("Patient {} sync completed for uuid={} with status={}",
+									    eventType.getLogLabel(), patientUuid, result != null ? result.getStatusCode() : null);
+								}
+								catch (Exception ex) {
+									throw new RuntimeException(ex);
+								}
+							}
+						});
 					}
 					catch (Exception ex) {
-						throw new RuntimeException(ex);
+						log.error("Failed to send patient {}", patientUuid, ex);
 					}
 				}
-			});
+			}, daemonToken);
 		}
 		catch (Exception ex) {
 			log.error("Failed to send patient {}", patientUuid, ex);
