@@ -17,8 +17,6 @@ import org.hl7.fhir.r4.model.Address;
 import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.Bundle.BundleEntryComponent;
 import org.hl7.fhir.r4.model.CodeableConcept;
-import org.hl7.fhir.r4.model.ContactPoint;
-import org.hl7.fhir.r4.model.ContactPoint.ContactPointSystem;
 import org.hl7.fhir.r4.model.Coding;
 import org.hl7.fhir.r4.model.Extension;
 import org.hl7.fhir.r4.model.Identifier;
@@ -29,6 +27,7 @@ import org.hl7.fhir.r4.model.StringType;
 import org.apache.commons.lang3.StringUtils;
 import org.openmrs.module.ihmodule.api.patientexchange.domain.PersonAttribute;
 import org.openmrs.module.ihmodule.api.patientexchange.service.CommonOperationService;
+import org.openmrs.module.ihmodule.api.patientexchange.telecom.PatientTelecomMappingUtil;
 import org.openmrs.module.ihmodule.api.patientexchange.validation.PersonAttributeToExtensionSuffix;
 import org.openmrs.module.ihmodule.api.patientexchange.utils.HttpWebClient;
 import org.openmrs.module.ihmodule.api.patientexchange.utils.IHConstant;
@@ -218,6 +217,7 @@ public class CreatedPatientExportService extends IHConstant {
 	
 	private Patient addExtension(Patient patient, String patientUUID) {
 		List<PersonAttribute> attributes = commonOperationService.findPersonAttributes(patientUUID);
+		PatientTelecomMappingUtil.applyRankedPhoneTelecom(patient, attributes);
 		List<Extension> extensionList = new ArrayList<Extension>();
 		for (PersonAttribute attribute : attributes) {
 			String suffix = PersonAttributeToExtensionSuffix.map(attribute.getName());
@@ -253,11 +253,6 @@ public class CreatedPatientExportService extends IHConstant {
 			address.getExtension().clear();
 		}
 
-		if (patient.getTelecom().size() > 0) {
-			ContactPoint contact = patient.getTelecom().get(0);
-			contact.setSystem(ContactPointSystem.PHONE);
-			patient.getTelecom().set(0, contact);
-		}
 		return patient;
 	}
 	

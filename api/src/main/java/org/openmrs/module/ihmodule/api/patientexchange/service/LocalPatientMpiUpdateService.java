@@ -8,6 +8,7 @@ import org.openmrs.Location;
 import org.openmrs.PatientIdentifier;
 import org.openmrs.PatientIdentifierType;
 import org.openmrs.api.context.Context;
+import org.openmrs.module.ihmodule.api.patientexchange.event.FhirSyncSuppressionContext;
 import org.openmrs.module.ihmodule.api.patientexchange.utils.IHConstant;
 import org.springframework.stereotype.Service;
 
@@ -102,7 +103,13 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 			mpi.setPreferred(false);
 			patient.addIdentifier(mpi);
 		}
-		Context.getPatientService().savePatient(patient);
+		FhirSyncSuppressionContext.runSuppressed(new Runnable() {
+			
+			@Override
+			public void run() {
+				Context.getPatientService().savePatient(patient);
+			}
+		});
 	}
 	
 	private boolean patientHasMpiOnNativePatient(org.openmrs.Patient patient) {

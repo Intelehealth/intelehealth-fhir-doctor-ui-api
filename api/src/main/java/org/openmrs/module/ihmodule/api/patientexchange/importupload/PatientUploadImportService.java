@@ -11,8 +11,6 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
-
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
@@ -39,6 +37,8 @@ import org.openmrs.PersonAttributeType;
 import org.openmrs.module.ihmodule.api.patientexchange.config.FhirConfig;
 import org.openmrs.module.ihmodule.api.patientexchange.param.ReuestParam;
 import org.openmrs.module.ihmodule.api.patientexchange.service.CommonOperationService;
+import org.openmrs.module.ihmodule.api.patientexchange.telecom.PatientTelecomMappingUtil;
+import org.openmrs.module.ihmodule.api.patientexchange.telecom.PatientTelecomMappingUtil.TelecomValues;
 import org.openmrs.module.ihmodule.api.patientexchange.validation.PatientFhirExchangeValidationResult;
 import org.openmrs.module.ihmodule.api.patientexchange.validation.PatientFhirExchangeValidationService;
 import org.openmrs.module.ihmodule.api.patientexchange.validation.PatientProfileExtensionRules;
@@ -75,8 +75,6 @@ public class PatientUploadImportService {
 	 * is unset.
 	 */
 	private static final String DEFAULT_PREFERRED_IDENTIFIER_TYPE_UUID = "05a29f94-c0ed-11e2-94be-8c13b969e334";
-	
-	private static final String GP_FHIR2_CONTACT_POINT_ATTRIBUTE_TYPE_UUID = "fhir2.personContactPointAttributeTypeUuid";
 	
 	private static final String MR_IDENTIFIER_CODE = "MR";
 	
@@ -142,14 +140,14 @@ public class PatientUploadImportService {
 							String createdUuid = createPatientViaOpenmrsNativeApi(patient, effectiveLocationUuid);
 							item.setStatus("CREATED");
 							item.setCreatedId(createdUuid);
-							persistImportedPatientExtensions(createdUuid, patient);
+							persistImportedPatientSupplementalAttributes(createdUuid, patient);
 							item.setMessage("Patient created");
 						} else {
 							ca.uhn.fhir.rest.api.MethodOutcome outcome = fhirConfig.getLocalOpenMRSFhirContext().create()
 							        .resource(patient).execute();
 							item.setStatus("CREATED");
 							item.setCreatedId(outcome.getId() != null ? outcome.getId().getIdPart() : null);
-							persistImportedPatientExtensions(item.getCreatedId(), patient);
+							persistImportedPatientSupplementalAttributes(item.getCreatedId(), patient);
 							item.setMessage("Patient created");
 						}
 						response.setCreated(response.getCreated() + 1);
@@ -653,20 +651,36 @@ public class PatientUploadImportService {
 		return maxPages > 0 ? maxPages : 2;
 	}
 	
-	private void persistImportedPatientExtensions(String createdPatientUuid, Patient sourcePatient) {
-		if (StringUtils.isBlank(createdPatientUuid) || sourcePatient == null || sourcePatient.getExtension() == null
-		        || sourcePatient.getExtension().isEmpty()) {
+	private void persistImportedPatientSupplementalAttributes(String createdPatientUuid, Patient sourcePatient) {
+		if (StringUtils.isBlank(createdPatientUuid) || sourcePatient == null) {
 			return;
 		}
 		org.openmrs.Patient createdPatient = Context.getPatientService().getPatientByUuid(createdPatientUuid);
 		if (createdPatient == null) {
-			log.warn("Import extension mapping skipped: local patient not found for uuid={}", createdPatientUuid);
+			log.warn("Import supplemental attribute mapping skipped: local patient not found for uuid={}",
+			    createdPatientUuid);
 			return;
+		}
+		boolean changed = persistImportedPatientExtensions(createdPatient, sourcePatient);
+		changed = persistImportedPatientTelecom(createdPatient, sourcePatient) || changed;
+		if (changed) {
+			Context.getPatientService().savePatient(createdPatient);
+		}
+	}
+	
+	private boolean persistImportedPatientExtensions(org.openmrs.Patient createdPatient, Patient sourcePatient) {
+		if (createdPatient == null || sourcePatient == null || sourcePatient.getExtension() == null
+		        || sourcePatient.getExtension().isEmpty()) {
+			return false;
 		}
 		boolean changed = false;
 		for (Extension extension : sourcePatient.getExtension()) {
 			String suffix = PatientProfileExtensionRules.extensionSuffixFromStructureDefinitionUrl(extension.getUrl());
 			if (StringUtils.isBlank(suffix)) {
+				continue;
+			}
+			if ("Emergency-Contact-Number".equals(suffix)) {
+				log.info("Import extension mapping skipped for suffix={} because telecom now carries that value", suffix);
 				continue;
 			}
 			String value = extensionStringValue(extension);
@@ -695,9 +709,44 @@ public class PatientUploadImportService {
 				changed = true;
 			}
 		}
-		if (changed) {
-			Context.getPatientService().savePatient(createdPatient);
+		return changed;
+	}
+	
+	private boolean persistImportedPatientTelecom(org.openmrs.Patient createdPatient, Patient sourcePatient) {
+		TelecomValues telecomValues = PatientTelecomMappingUtil.extractRankedPhoneTelecom(sourcePatient);
+		boolean changed = false;
+		changed = upsertPersonAttribute(createdPatient, attributeTypeNameCandidatesForTelecom("telephoneNumber"),
+		    telecomValues.getTelephoneNumber(), "telephoneNumber") || changed;
+		changed = upsertPersonAttribute(createdPatient, attributeTypeNameCandidatesForTelecom("emergencycontactnumber"),
+		    telecomValues.getEmergencyContactNumber(), "emergencycontactnumber") || changed;
+		return changed;
+	}
+	
+	private boolean upsertPersonAttribute(org.openmrs.Patient createdPatient, List<String> typeCandidates, String value,
+	        String logicalName) {
+		if (createdPatient == null || StringUtils.isBlank(value)) {
+			return false;
 		}
+		PersonAttributeType type = resolvePersonAttributeType(typeCandidates);
+		if (type == null) {
+			log.warn("Import telecom mapping skipped: no person_attribute_type found for {} using candidates={}",
+			    logicalName, typeCandidates);
+			return false;
+		}
+		org.openmrs.PersonAttribute existing = createdPatient.getAttribute(type);
+		if (existing == null) {
+			createdPatient.addAttribute(new org.openmrs.PersonAttribute(type, value));
+			log.info("Import telecom mapping applied: added person_attribute_type='{}' value='{}'", type.getName(), value);
+			return true;
+		}
+		if (!StringUtils.equals(existing.getValue(), value)) {
+			String previousValue = existing.getValue();
+			existing.setValue(value);
+			log.info("Import telecom mapping applied: updated person_attribute_type='{}' oldValue='{}' newValue='{}'",
+			    type.getName(), previousValue, value);
+			return true;
+		}
+		return false;
 	}
 	
 	private void normalizeBirthDateDayPrecision(Patient patient) {
@@ -843,42 +892,8 @@ public class PatientUploadImportService {
 		pid.setPreferred(true);
 		omrsPatient.addIdentifier(pid);
 		
-		applyTelecomAsPersonAttributeIfConfigured(omrsPatient, fhirPatient);
-		
 		Context.getPatientService().savePatient(omrsPatient);
 		return omrsPatient.getUuid();
-	}
-	
-	private void applyTelecomAsPersonAttributeIfConfigured(org.openmrs.Patient omrsPatient, Patient fhirPatient) {
-		String phone = safePhone(fhirPatient);
-		if (StringUtils.isBlank(phone)) {
-			return;
-		}
-		// Primary patient phone maps to OpenMRS "Telephone Number" (FHIR Patient.telecom); Emergency Contact uses extension only.
-		PersonAttributeType pat = Context.getPersonService().getPersonAttributeTypeByName("Telephone Number");
-		if (pat != null && !pat.getRetired()) {
-			omrsPatient.addAttribute(new org.openmrs.PersonAttribute(pat, phone));
-			return;
-		}
-		String attrUuid = null;
-		try {
-			attrUuid = Context.getAdministrationService().getGlobalProperty(GP_FHIR2_CONTACT_POINT_ATTRIBUTE_TYPE_UUID);
-		}
-		catch (Exception ex) {
-			log.debug("Could not read global property {}", GP_FHIR2_CONTACT_POINT_ATTRIBUTE_TYPE_UUID, ex);
-		}
-		if (StringUtils.isBlank(attrUuid)) {
-			log.info(
-			    "Native import: telecom present but no PersonAttributeType 'Telephone Number' and global property {} is blank; phone skipped",
-			    GP_FHIR2_CONTACT_POINT_ATTRIBUTE_TYPE_UUID);
-			return;
-		}
-		pat = Context.getPersonService().getPersonAttributeTypeByUuid(attrUuid.trim());
-		if (pat == null || pat.getRetired()) {
-			log.warn("Native import: PersonAttributeType not found or retired for uuid={}", attrUuid);
-			return;
-		}
-		omrsPatient.addAttribute(new org.openmrs.PersonAttribute(pat, phone));
 	}
 	
 	private void validatePatientAgainstProfileBeforeCreate(Patient patient) {
@@ -890,28 +905,7 @@ public class PatientUploadImportService {
 	}
 	
 	private PersonAttributeType resolvePersonAttributeTypeForSuffix(String suffix) {
-		List<String> candidates = attributeTypeNameCandidatesForExtensionSuffix(suffix);
-		// Fast path: direct exact-name lookup.
-		for (String candidate : candidates) {
-			PersonAttributeType type = Context.getPersonService().getPersonAttributeTypeByName(candidate);
-			if (type != null && !type.getRetired()) {
-				return type;
-			}
-		}
-		// Fallback: normalize names to handle case/space/hyphen/underscore differences.
-		List<PersonAttributeType> allTypes = Context.getPersonService().getAllPersonAttributeTypes();
-		for (String candidate : candidates) {
-			String normalizedCandidate = normalizeAttributeName(candidate);
-			for (PersonAttributeType type : allTypes) {
-				if (type == null || type.getRetired() || StringUtils.isBlank(type.getName())) {
-					continue;
-				}
-				if (StringUtils.equals(normalizedCandidate, normalizeAttributeName(type.getName()))) {
-					return type;
-				}
-			}
-		}
-		return null;
+		return resolvePersonAttributeType(attributeTypeNameCandidatesForExtensionSuffix(suffix));
 	}
 	
 	private List<String> attributeTypeNameCandidatesForExtensionSuffix(String suffix) {
@@ -938,6 +932,41 @@ public class PatientUploadImportService {
 				// Default behavior: if no static mapping, try same/similar names.
 				return Arrays.asList(defaultName, defaultSpaced, defaultUnderscore);
 		}
+	}
+	
+	private List<String> attributeTypeNameCandidatesForTelecom(String logicalName) {
+		if ("telephoneNumber".equals(logicalName)) {
+			return Arrays.asList("Telephone Number", "Phone Number", "telephoneNumber", "phonenumber");
+		}
+		if ("emergencycontactnumber".equals(logicalName)) {
+			return Arrays.asList("Emergency Contact Number", "Emergency-Contact-Number", "emergencycontactnumber");
+		}
+		return Arrays.asList(logicalName);
+	}
+	
+	private PersonAttributeType resolvePersonAttributeType(List<String> candidates) {
+		if (candidates == null || candidates.isEmpty()) {
+			return null;
+		}
+		for (String candidate : candidates) {
+			PersonAttributeType type = Context.getPersonService().getPersonAttributeTypeByName(candidate);
+			if (type != null && !type.getRetired()) {
+				return type;
+			}
+		}
+		List<PersonAttributeType> allTypes = Context.getPersonService().getAllPersonAttributeTypes();
+		for (String candidate : candidates) {
+			String normalizedCandidate = normalizeAttributeName(candidate);
+			for (PersonAttributeType type : allTypes) {
+				if (type == null || type.getRetired() || StringUtils.isBlank(type.getName())) {
+					continue;
+				}
+				if (StringUtils.equals(normalizedCandidate, normalizeAttributeName(type.getName()))) {
+					return type;
+				}
+			}
+		}
+		return null;
 	}
 	
 	private static String normalizeAttributeName(String name) {
@@ -1000,18 +1029,7 @@ public class PatientUploadImportService {
 	}
 	
 	private static String safePhone(Patient patient) {
-		if (patient == null || patient.getTelecom() == null || patient.getTelecom().isEmpty()) {
-			return "";
-		}
-		for (org.hl7.fhir.r4.model.ContactPoint cp : patient.getTelecom()) {
-			if (cp == null) {
-				continue;
-			}
-			if (cp.hasValue()) {
-				return StringUtils.trimToEmpty(cp.getValue());
-			}
-		}
-		return "";
+		return StringUtils.defaultString(PatientTelecomMappingUtil.extractRankedPhoneTelecom(patient).getTelephoneNumber());
 	}
 	
 	/**

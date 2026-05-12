@@ -24,11 +24,10 @@ public final class PersonAttributeToExtensionSuffix {
 		switch (normalized) {
 			case "telephonenumber":
 			case "phonenumber":
-				// Primary phone is Patient.telecom; do not map to Emergency-Contact extension.
-				return null;
 			case "emergencycontactnumber":
 			case "emergencycontactname":
-				return "Emergency-Contact-Number";
+				// Patient phone numbers are represented in Patient.telecom, not as custom extensions.
+				return null;
 			case "caste":
 				return "Caste";
 			case "economicstatus":

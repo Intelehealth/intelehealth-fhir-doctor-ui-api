@@ -33,7 +33,7 @@ public class AdminList extends AdministrationSectionExt {
 	 * @see org.openmrs.module.web.extension.AdministrationSectionExt#getTitle()
 	 */
 	public String getTitle() {
-		return "ihmodule.title";
+		return "IH Patient Module";
 	}
 	
 	/**
@@ -43,8 +43,7 @@ public class AdminList extends AdministrationSectionExt {
 		
 		Map<String, String> map = new HashMap<String, String>();
 		
-		map.put("module/ihmodule/ihmodule.form", "ihmodule.title");
-		map.put("module/ihmodule/duplicatePatient.form", "Duplicate Patient");
+		//map.put("module/ihmodule/duplicatePatient.form", "Duplicate Patient");
 		map.put("module/ihmodule/patientImportExport.form", "Patient Import / Export");
 		
 		return map;

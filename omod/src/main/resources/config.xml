@@ -30,6 +30,11 @@
 		<class>org.openmrs.module.ihmodule.extension.html.AdminList</class>
 	</extension>
 
+	<advice>
+		<point>org.openmrs.api.PatientService</point>
+		<class>org.openmrs.module.ihmodule.api.patientexchange.event.PatientEventListener</class>
+	</advice>
+
 	<aware_of_modules>
 		<aware_of_module>org.openmrs.module.legacyui</aware_of_module>
 	</aware_of_modules>
@@ -63,17 +68,30 @@
 	 /Required Privileges -->
 
 
-	<!-- Required Global Properties 
 	<globalProperty>
-		<property>@MODULE_ID@.someProperty</property>
-		<defaultValue></defaultValue>
+		<property>ihmodule.fhir.event.listener.enabled</property>
+		<defaultValue>true</defaultValue>
 		<description>
-			A description of the global property goes here.  The description
-			should explain enough for administrators to understand the purpose
-			and possible values for the global property.
+			Master toggle for async event-driven patient FHIR sync on PatientService.savePatient.
+			When false, patient create/update save events do not trigger outbound FHIR sends.
 		</description>
 	</globalProperty>
-	/Required Global Properties -->
+	<globalProperty>
+		<property>ihmodule.fhir.event.listener.create.enabled</property>
+		<defaultValue>true</defaultValue>
+		<description>
+			When true and the master toggle is enabled, patient create events trigger outbound
+			FHIR sync.
+		</description>
+	</globalProperty>
+	<globalProperty>
+		<property>ihmodule.fhir.event.listener.update.enabled</property>
+		<defaultValue>true</defaultValue>
+		<description>
+			When true and the master toggle is enabled, patient update events trigger outbound
+			FHIR sync.
+		</description>
+	</globalProperty>
 	
 	<!--
 	<dwr>

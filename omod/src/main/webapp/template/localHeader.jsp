@@ -55,12 +55,7 @@
     <div class="collapse navbar-collapse show" id="navbarMenu">
       <ul class="navbar-nav flex-row flex-wrap align-items-center mb-0">
 
-        <li class="nav-item">
-          <a class="nav-link${fn:contains(ihNavUri, 'duplicatePatient') ? ' active' : ''}"
-             href="${pageContext.request.contextPath}/module/ihmodule/duplicatePatient.form">
-            Duplicate Patient
-          </a>
-        </li>
+       
         <li class="nav-item">
           <a class="nav-link${fn:contains(ihNavUri, 'patientImportExport') ? ' active' : ''}"
              href="${pageContext.request.contextPath}/module/ihmodule/patientImportExport.form">

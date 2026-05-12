@@ -4,10 +4,8 @@ import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.text.ParseException;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -18,8 +16,6 @@ import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.Bundle.BundleEntryComponent;
 import org.hl7.fhir.r4.model.Bundle.BundleEntryResponseComponent;
 import org.hl7.fhir.r4.model.CodeableConcept;
-import org.hl7.fhir.r4.model.ContactPoint;
-import org.hl7.fhir.r4.model.ContactPoint.ContactPointSystem;
 import org.hl7.fhir.r4.model.Coding;
 import org.hl7.fhir.r4.model.Extension;
 import org.hl7.fhir.r4.model.Identifier;
@@ -48,6 +44,7 @@ import org.openmrs.module.ihmodule.api.patientexchange.service.DataExchangeAudit
 import org.openmrs.module.ihmodule.api.patientexchange.service.IHMarkerService;
 import org.openmrs.module.ihmodule.api.patientexchange.service.LocalPatientMpiUpdateService;
 import org.openmrs.module.ihmodule.api.patientexchange.service.PatientDataService;
+import org.openmrs.module.ihmodule.api.patientexchange.telecom.PatientTelecomMappingUtil;
 import org.openmrs.module.ihmodule.api.patientexchange.utils.DateUtils;
 import org.openmrs.module.ihmodule.api.patientexchange.utils.HttpWebClient;
 import org.openmrs.module.ihmodule.api.patientexchange.utils.IHConstant;
@@ -63,7 +60,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import ca.uhn.fhir.context.ConfigurationException;
 import ca.uhn.fhir.context.FhirContext;
@@ -74,8 +70,6 @@ import org.openmrs.module.ihmodule.api.patientexchange.config.FhirContextHolder;
 public class DataSendToFHIR extends IHConstant {
 	
 	private static final Logger LOGGER = LoggerFactory.getLogger(DataSendToFHIR.class);
-	
-	private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 	
 	private static final String OPENMRS_ID_TYPE_TEXT = "OpenMRS ID";
 	
@@ -248,7 +242,7 @@ public class DataSendToFHIR extends IHConstant {
 		}
 	}
 	
-	private FhirResponse send(String resourceType, String uuid) throws ParseException, DataFormatException, JSONException,
+	public FhirResponse send(String resourceType, String uuid) throws ParseException, DataFormatException, JSONException,
 	        ConfigurationException, IOException {
 		ensureDependencies();
 		System.err.println("resourceType => " + resourceType + " => " + uuid);
@@ -525,7 +519,7 @@ public class DataSendToFHIR extends IHConstant {
 			normalizePatientForLatestIg(patient);
 			normalizeIdentifierStandards(patient);
 			
-			String payload = buildMediatorCreatePayload(patient);
+			String payload = fhirContext.newJsonParser().encodeResourceToString(patient);
 			String[] credentials = firFhirConfig.getOpenCRCredentials();
 			FhirResponse createResponse = HttpWebClient.postWithBasicAuth(opencrOpenhimURL, "", credentials[0],
 			    credentials[1], payload);
@@ -547,54 +541,6 @@ public class DataSendToFHIR extends IHConstant {
 			response.setMessage(e.getMessage());
 			response.setResponse("");
 			return response;
-		}
-	}
-	
-	private String buildMediatorCreatePayload(Patient patient) throws JsonProcessingException {
-		Map<String, Object> root = new LinkedHashMap<>();
-		Map<String, Object> patientNode = new LinkedHashMap<>();
-		root.put("patient", patientNode);
-		if (patient != null && patient.getIdElement() != null && patient.getIdElement().hasIdPart()) {
-			patientNode.put("uuid", patient.getIdElement().getIdPart());
-		}
-		Map<String, Object> personNode = new LinkedHashMap<>();
-		patientNode.put("person", personNode);
-		if (patient != null && patient.hasGender()) {
-			personNode.put("gender", toMediatorGender(patient));
-		}
-		if (patient != null && patient.hasBirthDateElement() && patient.getBirthDateElement().hasValue()) {
-			personNode.put("birthdate", patient.getBirthDateElement().asStringValue());
-		}
-		if (patient != null && patient.hasName()) {
-			Map<String, Object> preferredName = new LinkedHashMap<>();
-			if (patient.getNameFirstRep().hasGiven() && !patient.getNameFirstRep().getGiven().isEmpty()
-			        && patient.getNameFirstRep().getGiven().get(0).hasValue()) {
-				preferredName.put("givenName", patient.getNameFirstRep().getGiven().get(0).getValue());
-			}
-			if (patient.getNameFirstRep().hasFamily()) {
-				preferredName.put("familyName", patient.getNameFirstRep().getFamily());
-			}
-			if (!preferredName.isEmpty()) {
-				personNode.put("preferredName", preferredName);
-			}
-		}
-		return OBJECT_MAPPER.writeValueAsString(root);
-	}
-	
-	private String toMediatorGender(Patient patient) {
-		if (patient == null || !patient.hasGender()) {
-			return null;
-		}
-		switch (patient.getGender()) {
-			case MALE:
-				return "M";
-			case FEMALE:
-				return "F";
-			case OTHER:
-				return "O";
-			case UNKNOWN:
-			default:
-				return "U";
 		}
 	}
 	
@@ -824,6 +770,7 @@ public class DataSendToFHIR extends IHConstant {
 	
 	private Patient addExtension(Patient patient, String patientUUID) {
 		List<PersonAttribute> attributes = commonOperationService.findPersonAttributes(patientUUID);
+		PatientTelecomMappingUtil.applyRankedPhoneTelecom(patient, attributes);
 		// System.err.println("Person attributes found : " + attributes.size());
 
 		List<Extension> extensionList = new ArrayList<Extension>();
@@ -864,13 +811,6 @@ public class DataSendToFHIR extends IHConstant {
 		    address.getLine().clear();
 		    address.getLine().addAll(newLines);
 		    address.getExtension().clear();
-		}
-
-
-		if (patient.getTelecom().size() > 0) {
-			ContactPoint contact = patient.getTelecom().get(0);
-			contact.setSystem(ContactPointSystem.PHONE);
-			patient.getTelecom().set(0, contact);
 		}
 
 		return patient;
