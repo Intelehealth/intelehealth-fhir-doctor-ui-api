@@ -1,23 +1,18 @@
 package org.openmrs.module.ihmodule.api.patientexchange.service;
 
-import org.hl7.fhir.r4.model.Bundle;
-import org.hl7.fhir.r4.model.Bundle.BundleEntryComponent;
-import org.hl7.fhir.r4.model.CodeableConcept;
-import org.hl7.fhir.r4.model.Coding;
-import org.hl7.fhir.r4.model.Extension;
+import java.util.List;
+
 import org.hl7.fhir.r4.model.Identifier;
-import org.hl7.fhir.r4.model.Identifier.IdentifierUse;
 import org.hl7.fhir.r4.model.Patient;
-import org.hl7.fhir.r4.model.Reference;
-import org.openmrs.module.ihmodule.api.patientexchange.config.FhirConfig;
+import org.openmrs.Location;
+import org.openmrs.PatientIdentifier;
+import org.openmrs.PatientIdentifierType;
+import org.openmrs.api.context.Context;
 import org.openmrs.module.ihmodule.api.patientexchange.utils.IHConstant;
 import org.springframework.stereotype.Service;
 
-import org.springframework.beans.factory.annotation.Autowired;
-
 /**
- * Applies MPI identifier changes directly on the facility OpenMRS FHIR2 Patient resource (same
- * database as the scheduler export source).
+ * Applies MPI identifier changes on the facility OpenMRS patient record.
  */
 @Service
 public class LocalPatientMpiUpdateService extends IHConstant {
@@ -30,14 +25,7 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 	
 	private static final String MPI_TYPE_TEXT = "MPI";
 	
-	private static final String V2_0203_SYSTEM = "http://terminology.hl7.org/CodeSystem/v2-0203";
-	
-	private static final String OPENMRS_IDENTIFIER_LOCATION_EXTENSION_URL = "http://fhir.openmrs.org/ext/patient/identifier#location";
-	
 	private static final String OPENMRS_DEFAULT_IDENTIFIER_LOCATION_UUID = "8d6c993e-c2cc-11de-8d13-0010c6dffd0f";
-	
-	@Autowired
-	private FhirConfig firFhirConfig;
 	
 	/**
 	 * Same rule as patient export scheduling: {@code true} when any identifier's type text equals
@@ -62,89 +50,109 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 	}
 	
 	public void applyMpiIdentifierToLocalPatient(String patientUuid, String mpiIdentifierValue) {
+		org.openmrs.Patient patient = loadLocalPatientOrThrow(patientUuid);
+		if (patientHasMpiOnNativePatient(patient)) {
+			throw new LocalMpiAlreadySetException();
+		}
+		upsertMpiIdentifierOnNativePatient(patient, mpiIdentifierValue, false);
+	}
+	
+	/**
+	 * Scheduler/transfer path: add MPI when absent or update existing MPI to the supplied value.
+	 */
+	public void upsertMpiIdentifierToLocalPatient(String patientUuid, String mpiIdentifierValue) {
+		org.openmrs.Patient patient = loadLocalPatientOrThrow(patientUuid);
+		upsertMpiIdentifierOnNativePatient(patient, mpiIdentifierValue, true);
+	}
+	
+	private org.openmrs.Patient loadLocalPatientOrThrow(String patientUuid) {
 		if (patientUuid == null || patientUuid.trim().isEmpty()) {
 			throw new IllegalArgumentException("patientUuid is required");
 		}
+		org.openmrs.Patient patient = Context.getPatientService().getPatientByUuid(patientUuid.trim());
+		if (patient == null) {
+			throw new IllegalStateException("Local Patient not found for uuid=" + patientUuid.trim());
+		}
+		return patient;
+	}
+	
+	private void upsertMpiIdentifierOnNativePatient(org.openmrs.Patient patient, String mpiIdentifierValue,
+	        boolean allowOverwriteExisting) {
 		if (mpiIdentifierValue == null || mpiIdentifierValue.trim().isEmpty()) {
 			throw new IllegalArgumentException("mpiIdentifierValue is required");
 		}
-		String uuid = patientUuid.trim();
 		String mpiVal = mpiIdentifierValue.trim();
-		Bundle bundle = firFhirConfig.getLocalOpenMRSFhirContext().search().byUrl("Patient?_id=" + uuid)
-		        .returnBundle(Bundle.class).execute();
-		if (bundle == null || !bundle.hasEntry()) {
-			throw new IllegalStateException("Local Patient not found for uuid=" + uuid);
+		PatientIdentifierType mpiType = resolveMpiIdentifierType();
+		Location location = resolveIdentifierLocation();
+		PatientIdentifier existing = findExistingMpiIdentifier(patient);
+		if (existing != null) {
+			if (!allowOverwriteExisting) {
+				throw new LocalMpiAlreadySetException();
+			}
+			existing.setIdentifier(mpiVal);
+			existing.setIdentifierType(mpiType);
+			if (existing.getLocation() == null && location != null) {
+				existing.setLocation(location);
+			}
+		} else {
+			PatientIdentifier mpi = new PatientIdentifier();
+			mpi.setIdentifier(mpiVal);
+			mpi.setIdentifierType(mpiType);
+			mpi.setLocation(location);
+			mpi.setPreferred(false);
+			patient.addIdentifier(mpi);
 		}
-		
-		BundleEntryComponent first = bundle.getEntryFirstRep();
-		if (!(first.getResource() instanceof Patient)) {
-			throw new IllegalStateException("Expected Patient resource in bundle for uuid=" + uuid);
-		}
-		
-		Patient patient = (Patient) first.getResource();
-		if (patientHasMpiPerSchedulerExportRule(patient)) {
-			throw new LocalMpiAlreadySetException();
-		}
-		upsertMpiIdentifier(patient, mpiVal);
-		
-		ensureIdentifierLocationForOpenmrsUpdate(patient);
-		
-		firFhirConfig.getLocalOpenMRSFhirContext().update().resource(patient).execute();
+		Context.getPatientService().savePatient(patient);
 	}
 	
-	private void upsertMpiIdentifier(Patient patient, String mpiVal) {
-		for (Identifier identifier : patient.getIdentifier()) {
-			if (!identifier.hasType()) {
+	private boolean patientHasMpiOnNativePatient(org.openmrs.Patient patient) {
+		return findExistingMpiIdentifier(patient) != null;
+	}
+	
+	private PatientIdentifier findExistingMpiIdentifier(org.openmrs.Patient patient) {
+		if (patient == null || patient.getIdentifiers() == null) {
+			return null;
+		}
+		for (PatientIdentifier identifier : patient.getIdentifiers()) {
+			if (identifier == null || identifier.getVoided() || identifier.getIdentifierType() == null) {
 				continue;
 			}
-			String text = identifier.getType().getText();
-			if (text != null && (text.equalsIgnoreCase(globalIdentifierName) || MPI_TYPE_TEXT.equalsIgnoreCase(text))) {
-				ensureMpiIdentifierShape(identifier, mpiVal);
-				return;
+			String typeName = identifier.getIdentifierType().getName();
+			if (typeName != null
+			        && (typeName.equalsIgnoreCase(globalIdentifierName) || MPI_TYPE_TEXT.equalsIgnoreCase(typeName))) {
+				return identifier;
 			}
 		}
-		
-		Identifier mpi = new Identifier();
-		mpi.setUse(IdentifierUse.OFFICIAL);
-		CodeableConcept type = new CodeableConcept();
-		type.setText(globalIdentifierName);
-		Coding coding = new Coding();
-		coding.setSystem(V2_0203_SYSTEM);
-		coding.setCode("MR");
-		type.addCoding(coding);
-		mpi.setType(type);
-		mpi.setSystem(null);
-		mpi.setValue(mpiVal);
-		patient.addIdentifier(mpi);
+		return null;
 	}
 	
-	private void ensureMpiIdentifierShape(Identifier identifier, String mpiVal) {
-		identifier.setValue(mpiVal);
-		identifier.setUse(IdentifierUse.OFFICIAL);
-		if (!identifier.hasType()) {
-			identifier.setType(new CodeableConcept());
+	private PatientIdentifierType resolveMpiIdentifierType() {
+		PatientIdentifierType type = Context.getPatientService().getPatientIdentifierTypeByName(globalIdentifierName);
+		if (type != null && !type.getRetired()) {
+			return type;
 		}
-		identifier.getType().setText(globalIdentifierName);
-		if (!identifier.getType().hasCoding()) {
-			identifier.getType().addCoding().setSystem(V2_0203_SYSTEM).setCode("MR");
+		type = Context.getPatientService().getPatientIdentifierTypeByName(MPI_TYPE_TEXT);
+		if (type != null && !type.getRetired()) {
+			return type;
 		}
-		identifier.setSystem(null);
-	}
-	
-	private void ensureIdentifierLocationForOpenmrsUpdate(Patient patient) {
-		if (patient == null || patient.getIdentifier() == null) {
-			return;
-		}
-		for (Identifier identifier : patient.getIdentifier()) {
-			boolean hasLocation = identifier.getExtension().stream()
-					.anyMatch(ext -> OPENMRS_IDENTIFIER_LOCATION_EXTENSION_URL.equals(ext.getUrl()));
-			if (hasLocation) {
+		List<PatientIdentifierType> allTypes = Context.getPatientService().getAllPatientIdentifierTypes();
+		for (PatientIdentifierType candidate : allTypes) {
+			if (candidate == null || candidate.getRetired() || candidate.getName() == null) {
 				continue;
 			}
-			Extension locationExtension = new Extension();
-			locationExtension.setUrl(OPENMRS_IDENTIFIER_LOCATION_EXTENSION_URL);
-			locationExtension.setValue(new Reference("Location/" + OPENMRS_DEFAULT_IDENTIFIER_LOCATION_UUID));
-			identifier.getExtension().add(locationExtension);
+			if (candidate.getName().equalsIgnoreCase(globalIdentifierName)
+			        || candidate.getName().equalsIgnoreCase(MPI_TYPE_TEXT)) {
+				return candidate;
+			}
 		}
+		throw new IllegalStateException("Patient identifier type not found for MPI name=" + globalIdentifierName);
+	}
+	
+	private Location resolveIdentifierLocation() {
+		Location location = Context.getLocationService().getLocationByUuid(OPENMRS_DEFAULT_IDENTIFIER_LOCATION_UUID);
+		if (location != null) {
+			return location;
+		}
+		throw new IllegalStateException("Location not found for UUID: " + OPENMRS_DEFAULT_IDENTIFIER_LOCATION_UUID);
 	}
 }

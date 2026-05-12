@@ -4,12 +4,15 @@ import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.text.ParseException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import org.hl7.fhir.instance.model.api.IBaseResource;
 import org.hl7.fhir.r4.model.Address;
 import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.Bundle.BundleEntryComponent;
@@ -46,6 +49,7 @@ import org.openmrs.module.ihmodule.api.patientexchange.service.IHMarkerService;
 import org.openmrs.module.ihmodule.api.patientexchange.service.LocalPatientMpiUpdateService;
 import org.openmrs.module.ihmodule.api.patientexchange.service.PatientDataService;
 import org.openmrs.module.ihmodule.api.patientexchange.utils.DateUtils;
+import org.openmrs.module.ihmodule.api.patientexchange.utils.HttpWebClient;
 import org.openmrs.module.ihmodule.api.patientexchange.utils.IHConstant;
 import org.openmrs.module.ihmodule.api.patientexchange.validation.PatientFhirExchangeValidationService;
 import org.openmrs.module.ihmodule.api.patientexchange.validation.PatientProfileExtensionRules;
@@ -56,16 +60,14 @@ import org.openmrs.module.ihmodule.api.patientexchange.validationrecord.FhirReso
 import org.json.JSONException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import ca.uhn.fhir.context.ConfigurationException;
 import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.parser.DataFormatException;
-import ca.uhn.fhir.rest.api.MethodOutcome;
-import ca.uhn.fhir.rest.api.PreferReturnEnum;
 import org.openmrs.module.ihmodule.api.patientexchange.config.FhirContextHolder;
 
 @Component
@@ -73,9 +75,13 @@ public class DataSendToFHIR extends IHConstant {
 	
 	private static final Logger LOGGER = LoggerFactory.getLogger(DataSendToFHIR.class);
 	
+	private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+	
 	private static final String OPENMRS_ID_TYPE_TEXT = "OpenMRS ID";
 	
 	private static final String MPI_TYPE_TEXT = "MPI";
+	
+	private static final String HAPI_MDM_GOLDEN_ENTERPRISE_ID_SYSTEM = "http://hapifhir.io/fhir/NamingSystem/mdm-golden-resource-enterprise-id";
 	
 	private static final String V2_0203_SYSTEM = "http://terminology.hl7.org/CodeSystem/v2-0203";
 	
@@ -177,7 +183,10 @@ public class DataSendToFHIR extends IHConstant {
 
 			for (String patient : patientIdList) {
 				try {
-					send("Patient", patient);
+					FhirResponse result = send("Patient", patient);
+					if (!isSuccessfulStatus(result != null ? result.getStatusCode() : null)) {
+						patientSendingError++;
+					}
 				} catch (Exception e) {
 					System.err.println(e);
 					patientSendingError++;
@@ -216,7 +225,10 @@ public class DataSendToFHIR extends IHConstant {
 
 			for (String patient : patientIdList) {
 				try {
-					send("Patient", patient);
+					FhirResponse result = send("Patient", patient);
+					if (!isSuccessfulStatus(result != null ? result.getStatusCode() : null)) {
+						patientSendingError++;
+					}
 				} catch (Exception e) {
 					System.err.println(e);
 					patientSendingError++;
@@ -296,7 +308,7 @@ public class DataSendToFHIR extends IHConstant {
 			return skipped;
 		}
 		
-		return sendFHIRBundle(theBundle, "Patient", true);
+		return sendFHIRBundle(theBundle, "Patient", false);
 	}
 	
 	public FhirResponse sendFHIRBundle(Bundle localTaskBundle, String resourceType) throws ParseException,
@@ -321,8 +333,6 @@ public class DataSendToFHIR extends IHConstant {
 			Patient localPatient = null;
 			transactionBundle.setType(Bundle.BundleType.TRANSACTION);
 			for (BundleEntryComponent bundleEntry : localTaskBundle.getEntry()) {
-				
-				Resource resource = (Resource) bundleEntry.getResource();
 				
 				localPatient = (Patient) bundleEntry.getResource();
 				localPatientUUID = localPatient.getIdElement().getIdPart();
@@ -354,57 +364,42 @@ public class DataSendToFHIR extends IHConstant {
 			        .toString();
 			
 			Optional<MpiPatientDuplicateReviewCase> duplicateReview = Optional.empty();
-			if (!skipCentralMpiDuplicateSearch) {
-				// Central OpenCR demographic search (scheduler path only). Force-sync passes skipCentralMpiDuplicateSearch=true.
-				duplicateReview = centralPatientDuplicateMatcher.persistIfCentralSearchHasMultipleMatches(localPatient,
-				    localPatientUUID, payload);
-				if (!hasMPI(localPatient) && duplicateReview.isPresent()) {
-					MpiPatientDuplicateReviewCase reviewCase = duplicateReview.get();
-					LOGGER.warn("Skipping MCI save for patient uuid=" + localPatientUUID + ": "
-					        + reviewCase.getCandidateCount()
-					        + " duplicate MPI candidates stored for manual review (case_uuid=" + reviewCase.getCaseUuid()
-					        + ")");
-					DataExchangeAuditLog deferLog = new DataExchangeAuditLog();
-					deferLog.setResourceName(resourceType);
-					deferLog.setResourceUuid(localPatientUUID);
-					deferLog.setRequest(payload);
-					deferLog.setRequestUrl(mciURL + "rest/v1/patient/save");
-					deferLog.setResponse("Deferred pending duplicate MPI review: case_uuid=" + reviewCase.getCaseUuid());
-					deferLog.setResponseStatus("409");
-					deferLog.setStatus(false);
-					try {
-						DataExchangeAuditLog savedDeferLog = dataExchangeService.save(deferLog);
-						savedDeferLog.setChangedBy(1);
-						savedDeferLog.setDateChanged(DateUtils.toFormattedDateNow());
-						dataExchangeService.update(savedDeferLog);
-					}
-					catch (Exception ex) {
-						LOGGER.error(
-						    "Unable to persist deferred audit log for patient uuid=" + localPatientUUID + ": "
-						            + ex.getMessage(), ex);
-					}
-					FhirResponse deferResponse = new FhirResponse();
-					deferResponse.setStatusCode("409");
-					deferResponse.setResponse(deferLog.getResponse());
-					return deferResponse;
-				}
-				
-				if (duplicateReview.isPresent()) {
-					LOGGER.info(
-					    "MPI duplicate review case {} present for patient uuid={}; continuing MCI sync because patient already has MPI",
-					    duplicateReview.get().getCaseUuid(), localPatientUUID);
-				}
-			} else {
-				LOGGER.info(
-				    "Central MPI duplicate search skipped for patient uuid={} (operator force-sync); proceeding to central FHIR",
-				    localPatientUUID);
-			}
+			/*
+			 * if (!skipCentralMpiDuplicateSearch) { duplicateReview =
+			 * centralPatientDuplicateMatcher.persistIfCentralSearchHasMultipleMatches(
+			 * localPatient, localPatientUUID, payload); if (!hasMPI(localPatient) &&
+			 * duplicateReview.isPresent()) { MpiPatientDuplicateReviewCase reviewCase =
+			 * duplicateReview.get(); LOGGER.warn("Skipping MCI save for patient uuid=" +
+			 * localPatientUUID + ": " + reviewCase.getCandidateCount() +
+			 * " duplicate MPI candidates stored for manual review (case_uuid=" +
+			 * reviewCase.getCaseUuid() + ")"); DataExchangeAuditLog deferLog = new
+			 * DataExchangeAuditLog(); deferLog.setResourceName(resourceType);
+			 * deferLog.setResourceUuid(localPatientUUID); deferLog.setRequest(payload);
+			 * deferLog.setRequestUrl(mciURL + "rest/v1/patient/save");
+			 * deferLog.setResponse("Deferred pending duplicate MPI review: case_uuid=" +
+			 * reviewCase.getCaseUuid()); deferLog.setResponseStatus("409");
+			 * deferLog.setStatus(false); try { DataExchangeAuditLog savedDeferLog =
+			 * dataExchangeService.save(deferLog); savedDeferLog.setChangedBy(1);
+			 * savedDeferLog.setDateChanged(DateUtils.toFormattedDateNow());
+			 * dataExchangeService.update(savedDeferLog); } catch (Exception ex) {
+			 * LOGGER.error( "Unable to persist deferred audit log for patient uuid=" +
+			 * localPatientUUID + ": " + ex.getMessage(), ex); } FhirResponse deferResponse
+			 * = new FhirResponse(); deferResponse.setStatusCode("409");
+			 * deferResponse.setResponse(deferLog.getResponse()); return deferResponse; }
+			 * 
+			 * if (duplicateReview.isPresent()) { LOGGER.info(
+			 * "MPI duplicate review case {} present for patient uuid={}; continuing MCI sync because patient already has MPI"
+			 * , duplicateReview.get().getCaseUuid(), localPatientUUID); } } else {
+			 * LOGGER.info(
+			 * "Central MPI duplicate search skipped for patient uuid={} (operator force-sync); proceeding to central FHIR"
+			 * , localPatientUUID); }
+			 */
 			
 			DataExchangeAuditLog log = new DataExchangeAuditLog();
 			log.setResourceName(resourceType);
 			log.setResourceUuid(localPatientUUID);
 			log.setRequest(payload);
-			log.setRequestUrl(opencrOpenhimURL + "/Patient");
+			log.setRequestUrl(opencrOpenhimURL);
 			
 			DataExchangeAuditLog uLog = null;
 			try {
@@ -428,24 +423,31 @@ public class DataSendToFHIR extends IHConstant {
 			 * firFhirConfig.getOpenMRSCredentials()[1], payload);
 			 */
 			FhirResponse res = sendPatientToCentral(localPatient);
-			
+			LOGGER.error("res MDM  uuid={}", res);
 			if (uLog != null) {
 				uLog.setResponse(res.getResponse());
 				uLog.setResponseStatus(res.getStatusCode());
 			}
-			if ("200".equals(res.getStatusCode())) {
-				Bundle remoteBundle = fhirContext.newJsonParser().parseResource(Bundle.class, res.getResponse());
+			if (isSuccessfulStatus(res.getStatusCode())) {
+				Patient remotePatient = parseCentralResponsePatient(res.getResponse());
 				System.err.println("Response from central fhir: " + res.getResponse());
-				syncPatientToLocal(remoteBundle, localPatient);
-				if (uLog != null) {
-					uLog.setFhirId(extractResourceId(remoteBundle));
+				String returnedMpi = extractReturnedMpiValue(remotePatient);
+				if (remotePatient == null) {
+					throw new IllegalStateException("Central FHIR response did not contain a Patient resource");
+				}
+				if (returnedMpi == null || returnedMpi.trim().isEmpty()) {
+					throw new IllegalStateException("Central FHIR response did not contain an MPI identifier value");
+				}
+				localPatientMpiUpdateService.upsertMpiIdentifierToLocalPatient(localPatientUUID, returnedMpi.trim());
+				if (uLog != null && remotePatient.getIdElement() != null && remotePatient.getIdElement().hasIdPart()) {
+					uLog.setFhirId(remotePatient.getIdElement().getIdPart());
 				}
 				if (skipCentralMpiDuplicateSearch) {
 					String resolvedBy = ForceSyncDuplicateResolutionContext.peekResolvedBy();
 					if (resolvedBy != null) {
 						try {
 							mpiDuplicateReviewResolutionService.resolvePendingCaseAfterSuccessfulForceSync(localPatientUUID,
-							    remoteBundle, resolvedBy);
+							    singlePatientBundle(remotePatient), resolvedBy);
 						}
 						catch (RuntimeException ex) {
 							LOGGER.warn("Duplicate-review resolution after force-sync failed for patient "
@@ -499,9 +501,6 @@ public class DataSendToFHIR extends IHConstant {
 				}
 			}
 			
-			String payload = fhirContext.newJsonParser().setPrettyPrint(true).encodeResourceToString(localPatient);
-			
-			//System.err.println("Local patient update:  >>>>>> " + payload);
 			ensureIdentifierLocationForOpenmrsUpdate(localPatient);
 			
 			firFhirConfig.getLocalOpenMRSFhirContext().update().resource(localPatient).execute();
@@ -526,28 +525,21 @@ public class DataSendToFHIR extends IHConstant {
 			normalizePatientForLatestIg(patient);
 			normalizeIdentifierStandards(patient);
 			
-			String existingMpi = getMpiFromPatient(patient);
-			if (existingMpi != null) {
-				Bundle remoteBundle = putPatientWithMpiId(patient, existingMpi);
-				response.setStatusCode("200");
-				response.setResponse(fhirContext.newJsonParser().encodeResourceToString(remoteBundle));
-				response.setMessage("Patient updated in central FHIR using MPI id");
-				return response;
+			String payload = buildMediatorCreatePayload(patient);
+			String[] credentials = firFhirConfig.getOpenCRCredentials();
+			FhirResponse createResponse = HttpWebClient.postWithBasicAuth(opencrOpenhimURL, "", credentials[0],
+			    credentials[1], payload);
+			if (isSuccessfulStatus(createResponse.getStatusCode())) {
+				Patient createdPatient = parseCentralResponsePatient(createResponse.getResponse());
+				String createdMpi = extractReturnedMpiValue(createdPatient);
+				if (createdPatient == null || createdMpi == null || createdMpi.trim().isEmpty()) {
+					response.setStatusCode("502");
+					response.setMessage("Patient create succeeded but MPI id was not returned by central FHIR");
+					response.setResponse(createResponse.getResponse());
+					return response;
+				}
 			}
-			
-			Bundle createResponse = postCreatePatient(patient);
-			String createdMpi = extractResponseId(createResponse);
-			if (createdMpi == null || createdMpi.trim().isEmpty()) {
-				response.setStatusCode("502");
-				response.setMessage("Patient create succeeded but MPI id was not returned by central FHIR");
-				response.setResponse(fhirContext.newJsonParser().encodeResourceToString(createResponse));
-				return response;
-			}
-			Bundle mirroredBundle = buildMirroredCreatedPatientBundle(patient, createdMpi.trim());
-			response.setStatusCode("200");
-			response.setResponse(fhirContext.newJsonParser().encodeResourceToString(mirroredBundle));
-			response.setMessage("Patient created in central FHIR");
-			return response;
+			return createResponse;
 		}
 		catch (Exception e) {
 			LOGGER.error("Central patient write failed: {}", e.getMessage(), e);
@@ -558,38 +550,52 @@ public class DataSendToFHIR extends IHConstant {
 		}
 	}
 	
-	/**
-	 * Single-resource {@code POST /Patient} via OpenHIM (no FHIR transaction bundle, no MDM
-	 * operation). The returned {@link Bundle} mimics a transaction-response shape so
-	 * {@link #extractResponseId(Bundle)} keeps working for the caller.
-	 */
-	private Bundle postCreatePatient(Patient patient) {
-		MethodOutcome outcome = firFhirConfig.getOpenCRFhirContext().create().resource(patient)
-		        .prefer(PreferReturnEnum.REPRESENTATION).execute();
-		Bundle responseBundle = new Bundle();
-		responseBundle.setType(Bundle.BundleType.TRANSACTIONRESPONSE);
-		Bundle.BundleEntryComponent entry = responseBundle.addEntry();
-		if (outcome != null && outcome.getResource() instanceof Resource) {
-			entry.setResource((Resource) outcome.getResource());
+	private String buildMediatorCreatePayload(Patient patient) throws JsonProcessingException {
+		Map<String, Object> root = new LinkedHashMap<>();
+		Map<String, Object> patientNode = new LinkedHashMap<>();
+		root.put("patient", patientNode);
+		if (patient != null && patient.getIdElement() != null && patient.getIdElement().hasIdPart()) {
+			patientNode.put("uuid", patient.getIdElement().getIdPart());
 		}
-		BundleEntryResponseComponent responseComponent = entry.getResponse();
-		String createdId = (outcome != null && outcome.getId() != null) ? outcome.getId().getIdPart() : null;
-		if (createdId != null && !createdId.isEmpty()) {
-			responseComponent.setLocation("Patient/" + createdId);
+		Map<String, Object> personNode = new LinkedHashMap<>();
+		patientNode.put("person", personNode);
+		if (patient != null && patient.hasGender()) {
+			personNode.put("gender", toMediatorGender(patient));
 		}
-		responseComponent.setStatus("201 Created");
-		return responseBundle;
+		if (patient != null && patient.hasBirthDateElement() && patient.getBirthDateElement().hasValue()) {
+			personNode.put("birthdate", patient.getBirthDateElement().asStringValue());
+		}
+		if (patient != null && patient.hasName()) {
+			Map<String, Object> preferredName = new LinkedHashMap<>();
+			if (patient.getNameFirstRep().hasGiven() && !patient.getNameFirstRep().getGiven().isEmpty()
+			        && patient.getNameFirstRep().getGiven().get(0).hasValue()) {
+				preferredName.put("givenName", patient.getNameFirstRep().getGiven().get(0).getValue());
+			}
+			if (patient.getNameFirstRep().hasFamily()) {
+				preferredName.put("familyName", patient.getNameFirstRep().getFamily());
+			}
+			if (!preferredName.isEmpty()) {
+				personNode.put("preferredName", preferredName);
+			}
+		}
+		return OBJECT_MAPPER.writeValueAsString(root);
 	}
 	
-	/**
-	 * Single-resource {@code PUT /Patient/ mpiId} via OpenHIM (no FHIR transaction bundle, no MDM
-	 * operation).
-	 */
-	private Bundle putPatientWithMpiId(Patient patient, String mpiId) {
-		Patient toUpdate = patient.copy();
-		toUpdate.setId(mpiId);
-		firFhirConfig.getOpenCRFhirContext().update().resource(toUpdate).withId(mpiId).execute();
-		return singlePatientBundle(toUpdate);
+	private String toMediatorGender(Patient patient) {
+		if (patient == null || !patient.hasGender()) {
+			return null;
+		}
+		switch (patient.getGender()) {
+			case MALE:
+				return "M";
+			case FEMALE:
+				return "F";
+			case OTHER:
+				return "O";
+			case UNKNOWN:
+			default:
+				return "U";
+		}
 	}
 	
 	private Bundle buildMirroredCreatedPatientBundle(Patient patient, String mpiId) {
@@ -641,23 +647,6 @@ public class DataSendToFHIR extends IHConstant {
 		return mpi;
 	}
 	
-	private String getMpiFromPatient(Patient patient) {
-		if (patient == null || !patient.hasIdentifier()) {
-			return null;
-		}
-		for (Identifier identifier : patient.getIdentifier()) {
-			if (!identifier.hasType() || !identifier.getType().hasText()) {
-				continue;
-			}
-			String typeText = identifier.getType().getText();
-			if ((globalIdentifierName.equalsIgnoreCase(typeText) || MPI_TYPE_TEXT.equalsIgnoreCase(typeText))
-			        && identifier.hasValue()) {
-				return identifier.getValue();
-			}
-		}
-		return null;
-	}
-	
 	private void normalizeIdentifierStandards(Patient patient) {
 		for (Identifier identifier : patient.getIdentifier()) {
 			String typeText = identifier.hasType() ? identifier.getType().getText() : null;
@@ -692,6 +681,62 @@ public class DataSendToFHIR extends IHConstant {
 		}
 		String[] parts = response.getLocation().split("/");
 		return parts.length > 1 ? parts[1] : null;
+	}
+	
+	private Patient parseCentralResponsePatient(String responseBody) {
+		if (responseBody == null || responseBody.trim().isEmpty()) {
+			return null;
+		}
+		IBaseResource parsed = fhirContext.newJsonParser().parseResource(responseBody);
+		if (parsed instanceof Patient) {
+			return (Patient) parsed;
+		}
+		if (parsed instanceof Bundle) {
+			return extractPatientFromBundle((Bundle) parsed);
+		}
+		return null;
+	}
+	
+	private Patient extractPatientFromBundle(Bundle bundle) {
+		if (bundle == null || !bundle.hasEntry()) {
+			return null;
+		}
+		for (BundleEntryComponent entry : bundle.getEntry()) {
+			if (entry.getResource() instanceof Patient) {
+				return (Patient) entry.getResource();
+			}
+		}
+		return null;
+	}
+	
+	private String extractReturnedMpiValue(Patient patient) {
+		if (patient == null || !patient.hasIdentifier()) {
+			return null;
+		}
+		for (Identifier identifier : patient.getIdentifier()) {
+			if (identifier == null || !identifier.hasValue()) {
+				continue;
+			}
+			if (HAPI_MDM_GOLDEN_ENTERPRISE_ID_SYSTEM.equals(identifier.getSystem())) {
+				return identifier.getValue();
+			}
+		}
+		for (Identifier identifier : patient.getIdentifier()) {
+			if (identifier == null || !identifier.hasValue()) {
+				continue;
+			}
+			if (identifier.hasType() && identifier.getType().hasText()) {
+				String text = identifier.getType().getText();
+				if (text != null && (text.equalsIgnoreCase(globalIdentifierName) || text.equalsIgnoreCase(MPI_TYPE_TEXT))) {
+					return identifier.getValue();
+				}
+			}
+		}
+		return patient.getIdentifier().size() == 1 ? patient.getIdentifierFirstRep().getValue() : null;
+	}
+	
+	private boolean isSuccessfulStatus(String statusCode) {
+		return statusCode != null && statusCode.startsWith("2");
 	}
 	
 	private String extractResourceId(Bundle bundle) {

@@ -26,6 +26,8 @@ public class MpiDuplicateReviewResolutionService {
 	
 	private static final String MPI_TYPE_TEXT = "MPI";
 	
+	private static final String HAPI_MDM_GOLDEN_ENTERPRISE_ID_SYSTEM = "http://hapifhir.io/fhir/NamingSystem/mdm-golden-resource-enterprise-id";
+	
 	@Autowired
 	private MpiPatientDuplicateReviewCaseRepository caseRepository;
 	
@@ -114,6 +116,12 @@ public class MpiDuplicateReviewResolutionService {
 			return null;
 		}
 		for (Identifier identifier : patient.getIdentifier()) {
+			if (identifier.hasSystem() && HAPI_MDM_GOLDEN_ENTERPRISE_ID_SYSTEM.equals(identifier.getSystem())
+			        && identifier.hasValue()) {
+				return identifier.getValue();
+			}
+		}
+		for (Identifier identifier : patient.getIdentifier()) {
 			if (!identifier.hasType()) {
 				continue;
 			}
@@ -125,6 +133,7 @@ public class MpiDuplicateReviewResolutionService {
 				return identifier.getValue();
 			}
 		}
-		return null;
+		return patient.getIdentifier().size() == 1 && patient.getIdentifierFirstRep().hasValue() ? patient
+		        .getIdentifierFirstRep().getValue() : null;
 	}
 }
