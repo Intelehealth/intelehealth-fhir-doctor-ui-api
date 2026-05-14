@@ -9,8 +9,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Event-driven alternative to scheduled patient export: intercepts successful
- * {@code PatientService.savePatient(...)} calls and dispatches async FHIR sync.
+ * Intercepts successful {@link org.openmrs.api.PatientService#savePatient(org.openmrs.Patient)} and
+ * dispatches async FHIR sync for both <strong>create</strong> and <strong>update</strong> flows.
  */
 public class PatientEventListener implements MethodInterceptor {
 	
@@ -25,7 +25,7 @@ public class PatientEventListener implements MethodInterceptor {
 			return invocation.proceed();
 		}
 		Patient incoming = extractPatient(invocation.getArguments());
-		boolean createEvent = incoming != null && incoming.getPatientId() == null && incoming.getId() == null;
+		boolean createEvent = isCreateEvent(incoming);
 		Object result = invocation.proceed();
 		if (FhirSyncSuppressionContext.isSuppressed()) {
 			return result;
@@ -35,13 +35,45 @@ public class PatientEventListener implements MethodInterceptor {
 			return result;
 		}
 		try {
+			PatientEventType eventType = createEvent ? PatientEventType.CREATE : PatientEventType.UPDATE;
+			log.debug("Dispatching patient {} for uuid={}", eventType.getLogLabel(), savedPatient.getUuid());
 			Context.getRegisteredComponent("patientEventHandlerService", PatientEventHandlerService.class).handleAfterSave(
-			    savedPatient, createEvent ? PatientEventType.CREATE : PatientEventType.UPDATE);
+			    savedPatient, eventType);
 		}
 		catch (Exception ex) {
 			log.error("Unable to dispatch patient save event for uuid={}", savedPatient.getUuid(), ex);
 		}
 		return result;
+	}
+	
+	/**
+	 * {@code true} for first-time insert (no PK / Hibernate id and no existing row for UUID).
+	 * Otherwise {@link PatientEventType#UPDATE} is used so edits to existing patients always sync
+	 * when {@code ihmodule.fhir.event.listener.update.enabled} is true.
+	 */
+	private boolean isCreateEvent(Patient incoming) {
+		if (incoming == null) {
+			return false;
+		}
+		if (incoming.getPatientId() != null) {
+			return false;
+		}
+		if (incoming.getId() != null) {
+			return false;
+		}
+		String uuid = incoming.getUuid();
+		if (StringUtils.isBlank(uuid)) {
+			return true;
+		}
+		try {
+			if (Context.isSessionOpen() && Context.getPatientService().getPatientByUuid(uuid.trim()) != null) {
+				return false;
+			}
+		}
+		catch (Exception ex) {
+			log.debug("Could not resolve patient by uuid for create/update classification: {}", ex.getMessage());
+		}
+		return true;
 	}
 	
 	private Patient extractPatient(Object[] arguments) {

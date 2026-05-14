@@ -112,6 +112,59 @@ public class HttpWebClient {
 			response.setResponse(entityResponse.getBody());
 			response.setStatusCode(String.valueOf(entityResponse.getStatusCode().value()));
 			response.setMessage(null);
+			URI loc = entityResponse.getHeaders().getLocation();
+			if (loc != null) {
+				response.setResponseLocation(loc.toString());
+			} else {
+				String cl = entityResponse.getHeaders().getFirst(HttpHeaders.CONTENT_LOCATION);
+				if (cl != null && !cl.trim().isEmpty()) {
+					response.setResponseLocation(cl.trim());
+				}
+			}
+		}
+		catch (HttpStatusCodeException e) {
+			System.err.println(e);
+			System.err.println(e.getStatusCode());
+			System.err.println(e.getResponseBodyAsString());
+			response.setMessage(e.getMessage());
+			response.setStatusCode(String.valueOf(e.getStatusCode().value()));
+			response.setResponse(e.getResponseBodyAsString());
+		}
+		catch (Exception e) {
+			System.err.println("Unexpected error: " + e.getMessage());
+			response.setMessage(e.getMessage());
+			response.setStatusCode("500");
+			response.setResponse(null);
+		}
+		return response;
+	}
+	
+	/**
+	 * PUT with JSON body (e.g. FHIR {@code Patient} update) and basic auth.
+	 */
+	public static FhirResponse putWithBasicAuth(String baseURL, String APIURL, String username, String password,
+	        String payload) {
+		String url = concatBaseAndPath(baseURL, APIURL);
+		HttpHeaders headers = new HttpHeaders();
+		headers.setContentType(MediaType.APPLICATION_JSON);
+		headers.setBasicAuth(username, password, StandardCharsets.UTF_8);
+		HttpEntity<String> entity = new HttpEntity<>(payload, headers);
+		
+		FhirResponse response = new FhirResponse();
+		try {
+			ResponseEntity<String> entityResponse = REST_TEMPLATE.exchange(url, HttpMethod.PUT, entity, String.class);
+			response.setResponse(entityResponse.getBody());
+			response.setStatusCode(String.valueOf(entityResponse.getStatusCode().value()));
+			response.setMessage(null);
+			URI loc = entityResponse.getHeaders().getLocation();
+			if (loc != null) {
+				response.setResponseLocation(loc.toString());
+			} else {
+				String cl = entityResponse.getHeaders().getFirst(HttpHeaders.CONTENT_LOCATION);
+				if (cl != null && !cl.trim().isEmpty()) {
+					response.setResponseLocation(cl.trim());
+				}
+			}
 		}
 		catch (HttpStatusCodeException e) {
 			System.err.println(e);

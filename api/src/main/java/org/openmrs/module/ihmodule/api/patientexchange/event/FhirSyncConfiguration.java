@@ -28,7 +28,7 @@ public class FhirSyncConfiguration {
 	}
 	
 	public boolean isEventListenerEnabled() {
-		return resolveBooleanGlobalProperty(GP_EVENT_LISTENER_ENABLED, false);
+		return resolveBooleanGlobalProperty(GP_EVENT_LISTENER_ENABLED, true);
 	}
 	
 	public boolean isCreateEnabled() {

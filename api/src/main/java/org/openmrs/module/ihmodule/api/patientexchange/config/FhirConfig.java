@@ -26,6 +26,14 @@ public class FhirConfig extends IHConstant {
 		return opencrOpenhimURL;
 	}
 	
+	/**
+	 * Effective OpenCR / OpenHIM URL after global property resolution (same input as
+	 * {@link #getOpenCRFhirContext()}).
+	 */
+	public String getResolvedOpenCrOpenhimUrl() {
+		return resolveStringProperty(opencrOpenhimURL, "opencr.openhim.url", "intelehealth.fhir.opencr.openhim.url");
+	}
+	
 	public IGenericClient getOpenCRFhirContext() {
 		String resolvedOpencrUrl = resolveStringProperty(opencrOpenhimURL, "opencr.openhim.url",
 		    "intelehealth.fhir.opencr.openhim.url");

@@ -17,7 +17,9 @@ public class DataExchangeAuditLogRepository {
 	
 	public DataExchangeAuditLog save(DataExchangeAuditLog auditLog) {
 		try {
-			sessionFactory.getCurrentSession().saveOrUpdate(auditLog);
+			// Explicit entity name matches patientDataExchangeDataExchangeAuditLog.hbm.xml (avoids
+			// "Unknown entity" when the session factory resolves mappings by entity-name).
+			sessionFactory.getCurrentSession().saveOrUpdate("PatientExchangeDataExchangeAuditLog", auditLog);
 		}
 		catch (Exception ex) {
 			// In some deployments this entity mapping is not available; do not break sync flow for audit failure.
