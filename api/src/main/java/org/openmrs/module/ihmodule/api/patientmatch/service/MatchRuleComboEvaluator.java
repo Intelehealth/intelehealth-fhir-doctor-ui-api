@@ -11,10 +11,27 @@ import org.openmrs.module.ihmodule.api.patientmatch.config.FuzzyPatientMatchConf
 import org.openmrs.module.ihmodule.api.patientmatch.config.PatientMatchRules;
 import org.openmrs.module.ihmodule.api.patientmatch.dto.FuzzyPatientCandidate;
 import org.openmrs.module.ihmodule.api.patientmatch.dto.FuzzyPatientMatchRequest;
+import org.openmrs.module.ihmodule.api.patientmatch.phonetic.PhoneticAlgorithm;
+import org.openmrs.module.ihmodule.api.patientmatch.phonetic.PhoneticEncodingService;
 import org.openmrs.module.ihmodule.api.patientmatch.util.FuzzyPhoneUtils;
 import org.openmrs.module.ihmodule.api.patientmatch.util.FuzzyTextUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 final class MatchRuleComboEvaluator {
+	
+	private static final Logger log = LoggerFactory.getLogger(MatchRuleComboEvaluator.class);
+	
+	private final PhoneticEncodingService phoneticEncodingService;
+	
+	MatchRuleComboEvaluator() {
+		this(new PhoneticEncodingService());
+	}
+	
+	MatchRuleComboEvaluator(PhoneticEncodingService phoneticEncodingService) {
+		this.phoneticEncodingService = phoneticEncodingService != null ? phoneticEncodingService
+		        : new PhoneticEncodingService();
+	}
 	
 	boolean isEligible(FuzzyPatientMatchRequest request, FuzzyPatientCandidate candidate, FuzzyPatientMatchConfig config) {
 		PatientMatchRules rules = config != null ? config.getRules() : null;
@@ -166,8 +183,8 @@ final class MatchRuleComboEvaluator {
 			return false;
 		}
 		String algorithm = algorithm(rule);
-		if ("metaphone".equals(algorithm) || "soundex".equals(algorithm)) {
-			return FuzzyTextUtils.phoneticMatch(left, right);
+		if (PhoneticAlgorithm.isPhonetic(algorithm)) {
+			return phoneticMatchForRule(left, right, algorithm, rule);
 		}
 		if ("token_jaccard".equals(algorithm)) {
 			return FuzzyTextUtils.tokenJaccardPercent(left, right) >= thresholdPercent(rule, config);
@@ -184,8 +201,8 @@ final class MatchRuleComboEvaluator {
 			return false;
 		}
 		String algorithm = algorithm(rule);
-		if ("metaphone".equals(algorithm) || "soundex".equals(algorithm)) {
-			return phoneticNamePartMatch(left, right);
+		if (PhoneticAlgorithm.isPhonetic(algorithm)) {
+			return phoneticMatchForRule(left, right, algorithm, rule);
 		}
 		if ("token_jaccard".equals(algorithm)) {
 			return bestTokenJaccardPercent(left, right) >= thresholdPercent(rule, config);
@@ -196,13 +213,28 @@ final class MatchRuleComboEvaluator {
 		return bestTokenJaroWinklerPercent(left, right) >= thresholdPercent(rule, config);
 	}
 	
-	private boolean phoneticNamePartMatch(String left, String right) {
-		if (FuzzyTextUtils.phoneticMatch(left, right)) {
+	private boolean phoneticMatchForRule(String left, String right, String rawAlgorithm,
+	        PatientMatchRules.MatchFieldRule rule) {
+		try {
+			PhoneticAlgorithm phonetic = PhoneticAlgorithm.fromConfig(rawAlgorithm);
+			log.debug("Applying phonetic algorithm {} from config for match rule '{}'", phonetic,
+			    rule != null ? rule.getName() : "?");
+			return phoneticNamePartMatch(left, right, phonetic);
+		}
+		catch (IllegalArgumentException ex) {
+			log.warn("Unsupported phonetic algorithm '{}' on match rule '{}': {}", rawAlgorithm,
+			    rule != null ? rule.getName() : "?", ex.getMessage());
+			return false;
+		}
+	}
+	
+	private boolean phoneticNamePartMatch(String left, String right, PhoneticAlgorithm algorithm) {
+		if (phoneticEncodingService.phoneticMatch(left, right, algorithm)) {
 			return true;
 		}
 		for (String leftToken : FuzzyTextUtils.tokenize(left)) {
 			for (String rightToken : FuzzyTextUtils.tokenize(right)) {
-				if (FuzzyTextUtils.phoneticMatch(leftToken, rightToken)) {
+				if (phoneticEncodingService.phoneticMatch(leftToken, rightToken, algorithm)) {
 					return true;
 				}
 			}

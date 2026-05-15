@@ -9,16 +9,25 @@ import org.openmrs.module.ihmodule.api.patientmatch.config.FuzzyPatientMatchConf
 import org.openmrs.module.ihmodule.api.patientmatch.dto.FuzzyPatientCandidate;
 import org.openmrs.module.ihmodule.api.patientmatch.dto.FuzzyPatientMatchRequest;
 import org.openmrs.module.ihmodule.api.patientmatch.dto.FuzzyPatientMatchResult;
+import org.openmrs.module.ihmodule.api.patientmatch.phonetic.PhoneticAlgorithm;
+import org.openmrs.module.ihmodule.api.patientmatch.phonetic.PhoneticEncodingService;
 import org.openmrs.module.ihmodule.api.patientmatch.util.FuzzyPhoneUtils;
 import org.openmrs.module.ihmodule.api.patientmatch.util.FuzzyTextUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
 public class PatientFuzzyMatchingEngine {
 	
+	private static final Logger log = LoggerFactory.getLogger(PatientFuzzyMatchingEngine.class);
+	
 	@Autowired
 	private WeightedScoreAggregator weightedScoreAggregator;
+	
+	@Autowired
+	private PhoneticEncodingService phoneticEncodingService;
 	
 	public FuzzyPatientMatchResult score(FuzzyPatientMatchRequest request, FuzzyPatientCandidate candidate,
 	        FuzzyPatientMatchConfig config) {
@@ -62,7 +71,7 @@ public class PatientFuzzyMatchingEngine {
 		if (structuredNameScore > 0.0d) {
 			combined = Math.max(combined, structuredNameScore);
 		}
-		if (config.isPhoneticBoostEnabled() && phoneticNameMatch(request, candidate)) {
+		if (config.isPhoneticBoostEnabled() && phoneticNameMatch(request, candidate, config)) {
 			combined = Math.min(100.0d, combined + 10.0d);
 		}
 		return FuzzyTextUtils.round(combined);
@@ -89,16 +98,27 @@ public class PatientFuzzyMatchingEngine {
 		return FuzzyTextUtils.round((givenScore * 0.45d) + (familyScore * 0.55d));
 	}
 	
-	private boolean phoneticNameMatch(FuzzyPatientMatchRequest request, FuzzyPatientCandidate candidate) {
-		if (FuzzyTextUtils.phoneticMatch(request.getName(), candidate.getName())) {
+	private boolean phoneticNameMatch(FuzzyPatientMatchRequest request, FuzzyPatientCandidate candidate,
+	        FuzzyPatientMatchConfig config) {
+		PhoneticAlgorithm algorithm = resolvePhoneticBoostAlgorithm(config);
+		log.debug("Phonetic name-score boost using algorithm={} from config", algorithm);
+		if (phoneticEncodingService.phoneticMatch(request.getName(), candidate.getName(), algorithm)) {
 			return true;
 		}
 		if (request.hasGivenName() && StringUtils.isNotBlank(candidate.getGivenName())
-		        && FuzzyTextUtils.phoneticMatch(request.getGivenName(), candidate.getGivenName())) {
+		        && phoneticEncodingService.phoneticMatch(request.getGivenName(), candidate.getGivenName(), algorithm)) {
 			return true;
 		}
 		return request.hasFamilyName() && StringUtils.isNotBlank(candidate.getFamilyName())
-		        && FuzzyTextUtils.phoneticMatch(request.getFamilyName(), candidate.getFamilyName());
+		        && phoneticEncodingService.phoneticMatch(request.getFamilyName(), candidate.getFamilyName(), algorithm);
+	}
+	
+	private PhoneticAlgorithm resolvePhoneticBoostAlgorithm(FuzzyPatientMatchConfig config) {
+		String raw = config != null ? config.getPhoneticBoostAlgorithm() : null;
+		if (StringUtils.isBlank(raw)) {
+			return PhoneticAlgorithm.DOUBLE_METAPHONE;
+		}
+		return PhoneticAlgorithm.fromConfig(raw);
 	}
 	
 	private double dobScore(FuzzyPatientMatchRequest request, FuzzyPatientCandidate candidate, FuzzyPatientMatchConfig config) {

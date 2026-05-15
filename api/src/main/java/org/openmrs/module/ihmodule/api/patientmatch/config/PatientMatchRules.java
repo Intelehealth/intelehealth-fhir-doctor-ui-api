@@ -211,6 +211,8 @@ public class PatientMatchRules {
 		
 		private Boolean phoneticBoostEnabled;
 		
+		private String phoneticBoostAlgorithm;
+		
 		private Integer dobNearMatchDays;
 		
 		private String dobRepositoryFilterMode;
@@ -247,6 +249,14 @@ public class PatientMatchRules {
 		
 		public void setPhoneticBoostEnabled(Boolean phoneticBoostEnabled) {
 			this.phoneticBoostEnabled = phoneticBoostEnabled;
+		}
+		
+		public String getPhoneticBoostAlgorithm() {
+			return phoneticBoostAlgorithm;
+		}
+		
+		public void setPhoneticBoostAlgorithm(String phoneticBoostAlgorithm) {
+			this.phoneticBoostAlgorithm = phoneticBoostAlgorithm;
 		}
 		
 		public Integer getDobNearMatchDays() {

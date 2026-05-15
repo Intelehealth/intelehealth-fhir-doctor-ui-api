@@ -27,6 +27,8 @@ public class FuzzyPatientMatchConfig {
 	
 	private final boolean phoneticBoostEnabled;
 	
+	private final String phoneticBoostAlgorithm;
+	
 	private final int dobNearMatchDays;
 	
 	private final int certainMatchThreshold;
@@ -47,7 +49,8 @@ public class FuzzyPatientMatchConfig {
 	
 	public FuzzyPatientMatchConfig(boolean enabled, int threshold, int confidenceHighThreshold,
 	        int confidenceMediumThreshold, int fieldMatchThreshold, int maxCandidates, String nameAlgorithm,
-	        String phoneAlgorithm, String addressAlgorithm, boolean phoneticBoostEnabled, int dobNearMatchDays,
+	        String phoneAlgorithm, String addressAlgorithm, boolean phoneticBoostEnabled, String phoneticBoostAlgorithm,
+	        int dobNearMatchDays,
 	        int certainMatchThreshold, int probableMatchThreshold, int possibleMatchThreshold,
 	        DobRepositoryFilterMode dobRepositoryFilterMode, Set<String> candidateSearchParams,
 	        PatientMatchRules rules, Map<String, Boolean> fieldEnabled, Map<String, Double> fieldWeight) {
@@ -61,6 +64,7 @@ public class FuzzyPatientMatchConfig {
 		this.phoneAlgorithm = phoneAlgorithm;
 		this.addressAlgorithm = addressAlgorithm;
 		this.phoneticBoostEnabled = phoneticBoostEnabled;
+		this.phoneticBoostAlgorithm = phoneticBoostAlgorithm;
 		this.dobNearMatchDays = dobNearMatchDays;
 		this.certainMatchThreshold = certainMatchThreshold;
 		this.probableMatchThreshold = probableMatchThreshold;
@@ -112,6 +116,10 @@ public class FuzzyPatientMatchConfig {
 	
 	public boolean isPhoneticBoostEnabled() {
 		return phoneticBoostEnabled;
+	}
+	
+	public String getPhoneticBoostAlgorithm() {
+		return phoneticBoostAlgorithm;
 	}
 	
 	public int getDobNearMatchDays() {

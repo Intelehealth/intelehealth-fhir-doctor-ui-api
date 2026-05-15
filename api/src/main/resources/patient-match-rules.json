@@ -61,7 +61,7 @@
       "resourceType": "Patient",
       "resourcePath": "name.given",
       "matcher": {
-        "algorithm": "METAPHONE"
+        "algorithm": "DOUBLE_METAPHONE"
       }
     },
     {
@@ -106,6 +106,7 @@
     "maxCandidates": 500,
     "fieldMatchThreshold": 60,
     "phoneticBoostEnabled": true,
+    "phoneticBoostAlgorithm": "DOUBLE_METAPHONE",
     "dobNearMatchDays": 0,
     "dobRepositoryFilterMode": "ONLY_DOB_REQUESTS",
     "matchGradeThresholds": {

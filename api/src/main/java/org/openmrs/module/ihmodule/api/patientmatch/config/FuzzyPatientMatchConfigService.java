@@ -14,6 +14,7 @@ import java.util.Set;
 import org.apache.commons.lang3.StringUtils;
 import org.openmrs.api.context.Context;
 import org.openmrs.module.ihmodule.api.patientexchange.utils.ModuleClasspathPropertiesLoader;
+import org.openmrs.module.ihmodule.api.patientmatch.phonetic.PhoneticAlgorithm;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -85,6 +86,8 @@ public class FuzzyPatientMatchConfigService {
 		String phoneAlgorithm = resolveString("intelehealth.fhir.patient.match.algorithm.phone", "levenshtein");
 		String addressAlgorithm = resolveString("intelehealth.fhir.patient.match.algorithm.address", "token_jaccard");
 		boolean phoneticBoostEnabled = resolveBoolean("intelehealth.fhir.patient.match.algorithm.phonetic.boost.enabled", true);
+		String phoneticBoostAlgorithm = resolveString("intelehealth.fhir.patient.match.algorithm.phonetic.boost",
+		    "DOUBLE_METAPHONE");
 		int dobNearMatchDays = Math.max(0, resolveInt("intelehealth.fhir.patient.match.dob.near.match.days", 0));
 		int certainMatchThreshold = 95;
 		int probableMatchThreshold = 80;
@@ -107,6 +110,9 @@ public class FuzzyPatientMatchConfigService {
 				if (rules.getSettings().getPhoneticBoostEnabled() != null) {
 					phoneticBoostEnabled = rules.getSettings().getPhoneticBoostEnabled().booleanValue();
 				}
+				if (StringUtils.isNotBlank(rules.getSettings().getPhoneticBoostAlgorithm())) {
+					phoneticBoostAlgorithm = rules.getSettings().getPhoneticBoostAlgorithm().trim();
+				}
 				if (rules.getSettings().getDobNearMatchDays() != null) {
 					dobNearMatchDays = Math.max(0, rules.getSettings().getDobNearMatchDays().intValue());
 				}
@@ -123,11 +129,12 @@ public class FuzzyPatientMatchConfigService {
 			}
 			applyCandidateSearchRules(rules.getCandidateSearchParams(), candidateSearchParams);
 			ResolvedFieldRules resolvedFieldRules = applyFieldRules(rules.getMatchFields(), fieldEnabled, fieldWeight,
-			    nameAlgorithm, phoneAlgorithm, addressAlgorithm, phoneticBoostEnabled);
+			    nameAlgorithm, phoneAlgorithm, addressAlgorithm, phoneticBoostEnabled, phoneticBoostAlgorithm);
 			nameAlgorithm = resolvedFieldRules.getNameAlgorithm();
 			phoneAlgorithm = resolvedFieldRules.getPhoneAlgorithm();
 			addressAlgorithm = resolvedFieldRules.getAddressAlgorithm();
 			phoneticBoostEnabled = resolvedFieldRules.isPhoneticBoostEnabled();
+			phoneticBoostAlgorithm = resolvedFieldRules.getPhoneticBoostAlgorithm();
 			certainMatchThreshold = resolveRuleThreshold(rules.getMatchResultMap(), "certain", certainMatchThreshold);
 			probableMatchThreshold = resolveRuleThreshold(rules.getMatchResultMap(), "probable", probableMatchThreshold);
 			possibleMatchThreshold = resolveRuleThreshold(rules.getMatchResultMap(), "possible", possibleMatchThreshold);
@@ -141,8 +148,10 @@ public class FuzzyPatientMatchConfigService {
 		}
 		normalizeWeights(fieldWeight, fieldEnabled);
 		
+		phoneticBoostAlgorithm = validatePhoneticBoostAlgorithm(phoneticBoostAlgorithm);
 		return new FuzzyPatientMatchConfig(enabled, threshold, confidenceHigh, confidenceMedium, fieldMatchThreshold,
-		        maxCandidates, nameAlgorithm, phoneAlgorithm, addressAlgorithm, phoneticBoostEnabled, dobNearMatchDays,
+		        maxCandidates, nameAlgorithm, phoneAlgorithm, addressAlgorithm, phoneticBoostEnabled, phoneticBoostAlgorithm,
+		        dobNearMatchDays,
 		        certainMatchThreshold, probableMatchThreshold, possibleMatchThreshold, dobRepositoryFilterMode,
 		        candidateSearchParams, rules, fieldEnabled, fieldWeight);
 	}
@@ -302,9 +311,9 @@ public class FuzzyPatientMatchConfigService {
 	
 	private ResolvedFieldRules applyFieldRules(List<PatientMatchRules.MatchFieldRule> rules,
 	        Map<String, Boolean> fieldEnabled, Map<String, Double> fieldWeight, String nameAlgorithm,
-	        String phoneAlgorithm, String addressAlgorithm, boolean phoneticBoostEnabled) {
+	        String phoneAlgorithm, String addressAlgorithm, boolean phoneticBoostEnabled, String phoneticBoostAlgorithm) {
 		ResolvedFieldRules resolved = new ResolvedFieldRules(nameAlgorithm, phoneAlgorithm, addressAlgorithm,
-		        phoneticBoostEnabled);
+		        phoneticBoostEnabled, phoneticBoostAlgorithm);
 		Set<String> weightedFieldsTouched = new LinkedHashSet<String>();
 		if (rules == null) {
 			return resolved;
@@ -327,8 +336,13 @@ public class FuzzyPatientMatchConfigService {
 			}
 			String algorithm = normalizeAlgorithm(extractAlgorithm(rule));
 			if ("name".equals(fieldName) && algorithm != null) {
-				if (isPhoneticAlgorithm(algorithm)) {
+				if (PhoneticAlgorithm.isPhonetic(algorithm)) {
 					resolved.setPhoneticBoostEnabled(true);
+					if (resolved.getPhoneticBoostAlgorithm() == null) {
+						resolved.setPhoneticBoostAlgorithm(algorithm);
+						log.info("Resolved phonetic boost algorithm from match field rule '{}': {}", rule.getName(),
+						    algorithm);
+					}
 				} else {
 					resolved.setNameAlgorithm(algorithm);
 				}
@@ -423,8 +437,10 @@ public class FuzzyPatientMatchConfigService {
 		return algorithm.trim().toLowerCase().replace('-', '_');
 	}
 	
-	private boolean isPhoneticAlgorithm(String algorithm) {
-		return "metaphone".equalsIgnoreCase(algorithm) || "soundex".equalsIgnoreCase(algorithm);
+	private String validatePhoneticBoostAlgorithm(String algorithm) {
+		PhoneticAlgorithm resolved = PhoneticAlgorithm.fromConfig(algorithm);
+		log.info("Fuzzy patient match phonetic boost algorithm: {}", resolved);
+		return resolved.name();
 	}
 	
 	private Properties getModuleProperties() {
@@ -451,12 +467,15 @@ public class FuzzyPatientMatchConfigService {
 		
 		private boolean phoneticBoostEnabled;
 		
+		private String phoneticBoostAlgorithm;
+		
 		private ResolvedFieldRules(String nameAlgorithm, String phoneAlgorithm, String addressAlgorithm,
-		        boolean phoneticBoostEnabled) {
+		        boolean phoneticBoostEnabled, String phoneticBoostAlgorithm) {
 			this.nameAlgorithm = nameAlgorithm;
 			this.phoneAlgorithm = phoneAlgorithm;
 			this.addressAlgorithm = addressAlgorithm;
 			this.phoneticBoostEnabled = phoneticBoostEnabled;
+			this.phoneticBoostAlgorithm = phoneticBoostAlgorithm;
 		}
 		
 		private String getNameAlgorithm() {
@@ -489,6 +508,14 @@ public class FuzzyPatientMatchConfigService {
 		
 		private void setPhoneticBoostEnabled(boolean phoneticBoostEnabled) {
 			this.phoneticBoostEnabled = phoneticBoostEnabled;
+		}
+		
+		private String getPhoneticBoostAlgorithm() {
+			return phoneticBoostAlgorithm;
+		}
+		
+		private void setPhoneticBoostAlgorithm(String phoneticBoostAlgorithm) {
+			this.phoneticBoostAlgorithm = phoneticBoostAlgorithm;
 		}
 	}
 }

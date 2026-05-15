@@ -92,7 +92,8 @@ public class LocalPatientFuzzyCandidateRepositoryTest {
 		weights.put("gender", Double.valueOf(0.05d));
 		weights.put("identifier", Double.valueOf(0.05d));
 		return new FuzzyPatientMatchConfig(true, 60, 85, 70, 60, 500, "jaro_winkler", "levenshtein", "token_jaccard", true,
-		        0, 95, 80, 60, mode, new LinkedHashSet<String>(enabled.keySet()), rules(), enabled, weights);
+		        "DOUBLE_METAPHONE", 0, 95, 80, 60, mode, new LinkedHashSet<String>(enabled.keySet()), rules(), enabled,
+		        weights);
 	}
 	
 	private PatientMatchRules rules() {

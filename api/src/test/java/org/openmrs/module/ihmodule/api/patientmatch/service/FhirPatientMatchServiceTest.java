@@ -124,8 +124,8 @@ public class FhirPatientMatchServiceTest {
 		weights.put("gender", Double.valueOf(0.05d));
 		weights.put("identifier", Double.valueOf(0.05d));
 		return new FuzzyPatientMatchConfig(true, possible, 85, 70, 60, 500, "jaro_winkler", "levenshtein", "token_jaccard",
-		        true, 0, certain, probable, possible, DobRepositoryFilterMode.ONLY_DOB_REQUESTS, new LinkedHashSet<String>(
-		                enabled.keySet()), rules(), enabled, weights);
+		        true, "DOUBLE_METAPHONE", 0, certain, probable, possible, DobRepositoryFilterMode.ONLY_DOB_REQUESTS,
+		        new LinkedHashSet<String>(enabled.keySet()), rules(), enabled, weights);
 	}
 	
 	private PatientMatchRules rules() {

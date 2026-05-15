@@ -15,6 +15,7 @@ import org.openmrs.module.ihmodule.api.patientmatch.config.FuzzyPatientMatchConf
 import org.openmrs.module.ihmodule.api.patientmatch.dto.FuzzyPatientCandidate;
 import org.openmrs.module.ihmodule.api.patientmatch.dto.FuzzyPatientMatchRequest;
 import org.openmrs.module.ihmodule.api.patientmatch.dto.FuzzyPatientMatchResult;
+import org.openmrs.module.ihmodule.api.patientmatch.phonetic.PhoneticEncodingService;
 
 public class PatientFuzzyMatchingEngineTest {
 	
@@ -24,6 +25,9 @@ public class PatientFuzzyMatchingEngineTest {
 		Field aggregatorField = PatientFuzzyMatchingEngine.class.getDeclaredField("weightedScoreAggregator");
 		aggregatorField.setAccessible(true);
 		aggregatorField.set(engine, new WeightedScoreAggregator());
+		Field phoneticField = PatientFuzzyMatchingEngine.class.getDeclaredField("phoneticEncodingService");
+		phoneticField.setAccessible(true);
+		phoneticField.set(engine, new PhoneticEncodingService());
 		
 		Map<String, Boolean> enabled = new LinkedHashMap<String, Boolean>();
 		enabled.put("name", Boolean.TRUE);
@@ -42,8 +46,9 @@ public class PatientFuzzyMatchingEngineTest {
 		weights.put("identifier", Double.valueOf(0.05d));
 		
 		FuzzyPatientMatchConfig config = new FuzzyPatientMatchConfig(true, 70, 85, 70, 60, 500, "jaro_winkler",
-		        "levenshtein", "token_jaccard", true, 0, 95, 80, 60, DobRepositoryFilterMode.ONLY_DOB_REQUESTS,
-		        new LinkedHashSet<String>(enabled.keySet()), null, enabled, weights);
+		        "levenshtein", "token_jaccard", true, "DOUBLE_METAPHONE", 0, 95, 80, 60,
+		        DobRepositoryFilterMode.ONLY_DOB_REQUESTS, new LinkedHashSet<String>(enabled.keySet()), null, enabled,
+		        weights);
 		
 		FuzzyPatientMatchRequest request = new FuzzyPatientMatchRequest();
 		request.setName("John Smith");

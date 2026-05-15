@@ -106,8 +106,8 @@ public class MatchRuleComboEvaluatorTest {
 		weights.put("gender", Double.valueOf(0.05d));
 		weights.put("identifier", Double.valueOf(0.05d));
 		return new FuzzyPatientMatchConfig(true, 60, 85, 70, 60, 500, "jaro_winkler", "levenshtein", "token_jaccard", true,
-		        0, 95, 80, 60, DobRepositoryFilterMode.ONLY_DOB_REQUESTS, new LinkedHashSet<String>(enabled.keySet()),
-		        rules(), enabled, weights);
+		        "DOUBLE_METAPHONE", 0, 95, 80, 60, DobRepositoryFilterMode.ONLY_DOB_REQUESTS, new LinkedHashSet<String>(
+		                enabled.keySet()), rules(), enabled, weights);
 	}
 	
 	private PatientMatchRules rules() {
@@ -159,8 +159,8 @@ public class MatchRuleComboEvaluatorTest {
 		weights.put("gender", Double.valueOf(0.05d));
 		weights.put("identifier", Double.valueOf(0.05d));
 		return new FuzzyPatientMatchConfig(true, 60, 85, 70, 60, 500, "jaro_winkler", "levenshtein", "token_jaccard", true,
-		        1, 95, 80, 60, DobRepositoryFilterMode.ONLY_DOB_REQUESTS, new LinkedHashSet<String>(enabled.keySet()),
-		        rules(), enabled, weights);
+		        "DOUBLE_METAPHONE", 1, 95, 80, 60, DobRepositoryFilterMode.ONLY_DOB_REQUESTS, new LinkedHashSet<String>(
+		                enabled.keySet()), rules(), enabled, weights);
 	}
 	
 	private FuzzyPatientMatchConfig matchAndPossibleConfig() {
@@ -184,7 +184,7 @@ public class MatchRuleComboEvaluatorTest {
 		matchResultMap.put("firstname-jaro,lastname-jaro,birthday", "MATCH");
 		rules.setMatchResultMap(matchResultMap);
 		return new FuzzyPatientMatchConfig(true, 60, 85, 70, 60, 500, "jaro_winkler", "levenshtein", "token_jaccard", true,
-		        1, 95, 80, 60, DobRepositoryFilterMode.ONLY_DOB_REQUESTS, new LinkedHashSet<String>(enabled.keySet()),
-		        rules, enabled, weights);
+		        "DOUBLE_METAPHONE", 1, 95, 80, 60, DobRepositoryFilterMode.ONLY_DOB_REQUESTS, new LinkedHashSet<String>(
+		                enabled.keySet()), rules, enabled, weights);
 	}
 }

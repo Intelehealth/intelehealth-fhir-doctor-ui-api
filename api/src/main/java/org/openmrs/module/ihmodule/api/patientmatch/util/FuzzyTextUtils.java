@@ -5,18 +5,16 @@ import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Set;
 
-import org.apache.commons.codec.language.DoubleMetaphone;
-import org.apache.commons.codec.language.Soundex;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.text.similarity.JaroWinklerSimilarity;
+import org.openmrs.module.ihmodule.api.patientmatch.phonetic.PhoneticAlgorithm;
+import org.openmrs.module.ihmodule.api.patientmatch.phonetic.PhoneticEncodingService;
 
 public final class FuzzyTextUtils {
 	
 	private static final JaroWinklerSimilarity JARO_WINKLER = new JaroWinklerSimilarity();
 	
-	private static final DoubleMetaphone DOUBLE_METAPHONE = new DoubleMetaphone();
-	
-	private static final Soundex SOUNDEX = new Soundex();
+	private static final PhoneticEncodingService PHONETIC_ENCODING = new PhoneticEncodingService();
 	
 	private FuzzyTextUtils() {
 	}
@@ -61,21 +59,24 @@ public final class FuzzyTextUtils {
 		return similarity != null ? round(similarity.doubleValue() * 100.0d) : 0.0d;
 	}
 	
+	/**
+	 * @deprecated Use
+	 *             {@link PhoneticEncodingService#phoneticMatch(String, String, PhoneticAlgorithm)}
+	 *             with {@link PhoneticAlgorithm#DOUBLE_METAPHONE}.
+	 */
+	@Deprecated
 	public static boolean phoneticMatch(String left, String right) {
-		String a = normalize(left);
-		String b = normalize(right);
-		if (StringUtils.isBlank(a) || StringUtils.isBlank(b)) {
-			return false;
-		}
-		try {
-			if (StringUtils.equals(SOUNDEX.encode(a), SOUNDEX.encode(b))) {
-				return true;
-			}
-		}
-		catch (IllegalArgumentException ignored) {
-			// Soundex can reject some strings; DoubleMetaphone is still attempted.
-		}
-		return StringUtils.equals(DOUBLE_METAPHONE.doubleMetaphone(a), DOUBLE_METAPHONE.doubleMetaphone(b));
+		return PHONETIC_ENCODING.phoneticMatch(left, right, PhoneticAlgorithm.DOUBLE_METAPHONE);
+	}
+	
+	/**
+	 * @deprecated Use
+	 *             {@link PhoneticEncodingService#phoneticMatch(String, String, PhoneticAlgorithm)}
+	 *             with {@link PhoneticAlgorithm#DOUBLE_METAPHONE}.
+	 */
+	@Deprecated
+	public static boolean doubleMetaphoneMatch(String left, String right) {
+		return PHONETIC_ENCODING.phoneticMatch(left, right, PhoneticAlgorithm.DOUBLE_METAPHONE);
 	}
 	
 	public static double tokenJaccardPercent(String left, String right) {
