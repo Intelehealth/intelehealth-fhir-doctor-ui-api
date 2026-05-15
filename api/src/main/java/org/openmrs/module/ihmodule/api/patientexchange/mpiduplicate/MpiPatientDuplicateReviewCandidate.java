@@ -72,6 +72,14 @@ public class MpiPatientDuplicateReviewCandidate {
 	@Column(name = "patient_resource_json", columnDefinition = "LONGTEXT")
 	private String patientResourceJson;
 	
+	/** FHIR {@code Bundle.entry.search.score} when present. */
+	@Column(name = "match_score")
+	private Double matchScore;
+	
+	/** {@code openmrs} (local fuzzy $match) or {@code fhir} (central $mdm-match / OpenCR search). */
+	@Column(name = "match_source", length = 32)
+	private String matchSource;
+	
 	public Long getId() {
 		return id;
 	}
@@ -206,5 +214,21 @@ public class MpiPatientDuplicateReviewCandidate {
 	
 	public void setPatientResourceJson(String patientResourceJson) {
 		this.patientResourceJson = patientResourceJson;
+	}
+	
+	public Double getMatchScore() {
+		return matchScore;
+	}
+	
+	public void setMatchScore(Double matchScore) {
+		this.matchScore = matchScore;
+	}
+	
+	public String getMatchSource() {
+		return matchSource;
+	}
+	
+	public void setMatchSource(String matchSource) {
+		this.matchSource = matchSource;
 	}
 }

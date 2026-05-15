@@ -447,4 +447,45 @@
 		</createTable>
 	</changeSet>
 
+	<changeSet id="mpi-duplicate-review-case-source-of-patient-1.0.0" author="ihmodule">
+		<preConditions onFail="MARK_RAN">
+			<not>
+				<columnExists tableName="mpi_patient_duplicate_review_case" columnName="source_of_patient"/>
+			</not>
+		</preConditions>
+		<comment>Legacy: duplicate origin was first modeled on the case row; prefer mpi_patient_duplicate_review_candidate.match_source for new data.</comment>
+		<addColumn tableName="mpi_patient_duplicate_review_case">
+			<column name="source_of_patient" type="varchar(32)">
+				<constraints nullable="true"/>
+			</column>
+		</addColumn>
+	</changeSet>
+
+	<changeSet id="mpi-duplicate-review-candidate-match-score-source-1.0.0" author="ihmodule">
+		<preConditions onFail="MARK_RAN">
+			<not>
+				<columnExists tableName="mpi_patient_duplicate_review_candidate" columnName="match_score"/>
+			</not>
+		</preConditions>
+		<comment>FHIR Bundle.entry.search.score and which API produced the candidate (openmrs vs fhir MDM).</comment>
+		<addColumn tableName="mpi_patient_duplicate_review_candidate">
+			<column name="match_score" type="double">
+				<constraints nullable="true"/>
+			</column>
+		</addColumn>
+	</changeSet>
+
+	<changeSet id="mpi-duplicate-review-candidate-match-source-1.0.0" author="ihmodule">
+		<preConditions onFail="MARK_RAN">
+			<not>
+				<columnExists tableName="mpi_patient_duplicate_review_candidate" columnName="match_source"/>
+			</not>
+		</preConditions>
+		<addColumn tableName="mpi_patient_duplicate_review_candidate">
+			<column name="match_source" type="varchar(32)">
+				<constraints nullable="true"/>
+			</column>
+		</addColumn>
+	</changeSet>
+
 </databaseChangeLog>

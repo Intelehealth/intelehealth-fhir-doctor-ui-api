@@ -1,11 +1,12 @@
 package org.openmrs.module.ihmodule.api.patientexchange.config;
 
 import org.openmrs.module.ihmodule.api.patientexchange.utils.IHConstant;
+import org.openmrs.module.ihmodule.api.patientexchange.utils.ModuleClasspathPropertiesLoader;
+import org.openmrs.module.ihmodule.api.patientexchange.utils.OpenhimUrlAuthorityExtractor;
 import org.openmrs.api.context.Context;
 import org.springframework.stereotype.Component;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import java.io.InputStream;
 import java.util.Properties;
 
 import ca.uhn.fhir.context.FhirContext;
@@ -124,6 +125,23 @@ public class FhirConfig extends IHConstant {
 		return resolveBooleanProperty("intelehealth.fhir.patient.import.native.create.enabled", false);
 	}
 	
+	/**
+	 * When {@code true}, patient upload import uses OpenMRS fuzzy {@code $match} plus central FHIR
+	 * {@code $mdm-match} instead of exact identifier / demographic duplicate checks. Default
+	 * {@code false} preserves legacy import behaviour.
+	 */
+	public boolean isPatientImportFuzzyMatchEnabled() {
+		return resolveBooleanProperty("mpi.import.fuzzy.match.enabled", false);
+	}
+	
+	/**
+	 * Authority-only base (scheme + host + port) from {@link #getResolvedOpenCrOpenhimUrl()} for
+	 * POST {@code /fhir/$mdm-match}. Does not use the full OpenHIM patient-create URL.
+	 */
+	public String resolveMdmMatchAuthorityBaseUrl() {
+		return OpenhimUrlAuthorityExtractor.extractAuthorityBase(getResolvedOpenCrOpenhimUrl());
+	}
+	
 	public String getPatientProfileUrl() {
 		return patientProfileUrl;
 	}
@@ -219,29 +237,12 @@ public class FhirConfig extends IHConstant {
 			if (cachedModuleProperties != null) {
 				return cachedModuleProperties;
 			}
-			cachedModuleProperties = loadFirstAvailableProperties("ihmodule.properties",
+			cachedModuleProperties = ModuleClasspathPropertiesLoader.loadMergedInOrder("ihmodule.properties",
 			    "patientdataexchange-application.properties");
+			if (cachedModuleProperties == null) {
+				log.warn("No module classpath properties merged (ihmodule.properties / patientdataexchange-application.properties)");
+			}
 			return cachedModuleProperties;
 		}
-	}
-	
-	private Properties loadFirstAvailableProperties(String... resourceNames) {
-		ClassLoader cl = Thread.currentThread().getContextClassLoader();
-		for (String resource : resourceNames) {
-			try (InputStream in = cl.getResourceAsStream(resource)) {
-				if (in == null) {
-					continue;
-				}
-				Properties p = new Properties();
-				p.load(in);
-				log.info("Loaded module properties fallback from classpath resource '{}'", resource);
-				return p;
-			}
-			catch (Exception ex) {
-				log.warn("Unable to load module properties fallback resource '{}': {}", resource, ex.getMessage());
-			}
-		}
-		log.warn("No module properties fallback resource found in classpath");
-		return null;
 	}
 }

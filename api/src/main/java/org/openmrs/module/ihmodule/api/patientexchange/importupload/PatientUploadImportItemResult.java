@@ -10,6 +10,14 @@ public class PatientUploadImportItemResult {
 	
 	private String createdId;
 	
+	private String duplicateReviewCaseUuid;
+	
+	/**
+	 * Comma-separated distinct {@code match_source} values from saved candidates (e.g. {@code fhir}
+	 * , {@code openmrs}).
+	 */
+	private String duplicateDetectedSource;
+	
 	public String getInputId() {
 		return inputId;
 	}
@@ -40,5 +48,21 @@ public class PatientUploadImportItemResult {
 	
 	public void setCreatedId(String createdId) {
 		this.createdId = createdId;
+	}
+	
+	public String getDuplicateReviewCaseUuid() {
+		return duplicateReviewCaseUuid;
+	}
+	
+	public void setDuplicateReviewCaseUuid(String duplicateReviewCaseUuid) {
+		this.duplicateReviewCaseUuid = duplicateReviewCaseUuid;
+	}
+	
+	public String getDuplicateDetectedSource() {
+		return duplicateDetectedSource;
+	}
+	
+	public void setDuplicateDetectedSource(String duplicateDetectedSource) {
+		this.duplicateDetectedSource = duplicateDetectedSource;
 	}
 }

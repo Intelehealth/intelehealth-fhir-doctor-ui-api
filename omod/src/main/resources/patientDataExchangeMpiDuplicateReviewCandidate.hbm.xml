@@ -22,5 +22,7 @@
 		<property name="candidateAddressCountry" type="string" column="candidate_address_country"/>
 		<property name="candidateAddressSnapshot" type="text" column="candidate_address_snapshot"/>
 		<property name="patientResourceJson" type="text" column="patient_resource_json"/>
+		<property name="matchScore" type="java.lang.Double" column="match_score"/>
+		<property name="matchSource" type="string" column="match_source" length="32"/>
 	</class>
 </hibernate-mapping>

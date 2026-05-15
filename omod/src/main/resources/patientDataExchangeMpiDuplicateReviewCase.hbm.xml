@@ -35,6 +35,7 @@
 		<property name="dateResolved" type="string" column="date_resolved"/>
 		<property name="outboundBundleJson" type="text" column="outbound_bundle_json"/>
 		<property name="searchBundleJson" type="text" column="search_bundle_json"/>
+		<property name="sourceOfPatient" type="string" column="source_of_patient" length="32"/>
 		<bag name="candidates" table="mpi_patient_duplicate_review_candidate" inverse="true" lazy="true" cascade="all-delete-orphan">
 			<key column="review_case_id"/>
 			<one-to-many class="org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate.MpiPatientDuplicateReviewCandidate"/>

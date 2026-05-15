@@ -33,6 +33,12 @@ public class MpiDuplicateReviewCaseSummaryDto {
 	
 	private String dateCreated;
 	
+	/**
+	 * Legacy case-level field; may be null. Prefer candidate-level {@code matchSource} in API
+	 * extensions.
+	 */
+	private String sourceOfPatient;
+	
 	public Long getId() {
 		return id;
 	}
@@ -127,5 +133,13 @@ public class MpiDuplicateReviewCaseSummaryDto {
 	
 	public void setDateCreated(String dateCreated) {
 		this.dateCreated = dateCreated;
+	}
+	
+	public String getSourceOfPatient() {
+		return sourceOfPatient;
+	}
+	
+	public void setSourceOfPatient(String sourceOfPatient) {
+		this.sourceOfPatient = sourceOfPatient;
 	}
 }

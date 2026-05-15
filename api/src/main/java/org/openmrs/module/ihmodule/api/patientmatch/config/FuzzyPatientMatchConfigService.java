@@ -13,6 +13,7 @@ import java.util.Set;
 
 import org.apache.commons.lang3.StringUtils;
 import org.openmrs.api.context.Context;
+import org.openmrs.module.ihmodule.api.patientexchange.utils.ModuleClasspathPropertiesLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -434,28 +435,10 @@ public class FuzzyPatientMatchConfigService {
 			if (cachedModuleProperties != null) {
 				return cachedModuleProperties;
 			}
-			cachedModuleProperties = loadFirstAvailableProperties("ihmodule.properties",
+			cachedModuleProperties = ModuleClasspathPropertiesLoader.loadMergedInOrder("ihmodule.properties",
 			    "patientdataexchange-application.properties");
 			return cachedModuleProperties;
 		}
-	}
-	
-	private Properties loadFirstAvailableProperties(String... resourceNames) {
-		ClassLoader cl = Thread.currentThread().getContextClassLoader();
-		for (String resource : resourceNames) {
-			try (InputStream in = cl.getResourceAsStream(resource)) {
-				if (in == null) {
-					continue;
-				}
-				Properties p = new Properties();
-				p.load(in);
-				return p;
-			}
-			catch (Exception ex) {
-				log.warn("Unable to load fuzzy patient match properties '{}': {}", resource, ex.getMessage());
-			}
-		}
-		return null;
 	}
 	
 	private static final class ResolvedFieldRules {

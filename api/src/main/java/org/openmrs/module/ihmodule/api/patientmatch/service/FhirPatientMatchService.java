@@ -28,10 +28,17 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import ca.uhn.fhir.context.FhirContext;
 
 @Service
 public class FhirPatientMatchService {
+	
+	private static final Logger log = LoggerFactory.getLogger(FhirPatientMatchService.class);
+	
+	private static final String FUZZY_MATCH_DEBUG = "FUZZY_MATCH_DEBUG";
 	
 	private static final String EXT_MATCH_GRADE = "http://hl7.org/fhir/StructureDefinition/match-grade";
 	
@@ -51,12 +58,19 @@ public class FhirPatientMatchService {
 	
 	@Transactional(readOnly = true)
 	public Bundle match(String body) {
+		log.error("{} match() start rawBodyLength={} bodyPreview={}", FUZZY_MATCH_DEBUG,
+		    body != null ? body.length() : -1, truncateForDebug(body, 800));
 		FuzzyPatientMatchConfig config = configService.getConfig();
 		if (!config.isEnabled()) {
+			log.error("{} match() aborted: fuzzy patient match disabled in module config", FUZZY_MATCH_DEBUG);
 			throw new IllegalStateException("FHIR fuzzy patient match is disabled");
 		}
 		FuzzyPatientMatchRequest request = requestParser.parse(body);
+		log.error("{} match() parsed offset={} count={} onlyCertainMatches={} hasIdentifier={} hasNameFields={}",
+		    FUZZY_MATCH_DEBUG, request.getOffset(), request.getCount(), request.isOnlyCertainMatches(),
+		    StringUtils.isNotBlank(request.getIdentifier()), request.hasAnySearchField());
 		List<FuzzyPatientCandidate> candidates = candidateSource.findCandidates(request, config);
+		log.error("{} match() candidateSource returned poolSize={}", FUZZY_MATCH_DEBUG, candidates.size());
 		List<FuzzyPatientMatchResult> scored = new ArrayList<FuzzyPatientMatchResult>();
 		for (FuzzyPatientCandidate candidate : candidates) {
 			String comboMatchResult = matchRuleComboEvaluator.resolveMatchResultLabel(request, candidate, config);
@@ -81,7 +95,18 @@ public class FhirPatientMatchService {
 		int fromIndex = Math.min(request.getOffset(), total);
 		int toIndex = Math.min(fromIndex + request.getCount(), total);
 		List<FuzzyPatientMatchResult> page = scored.subList(fromIndex, toIndex);
-		return toBundle(page, total, config);
+		Bundle out = toBundle(page, total, config);
+		log.error("{} match() done scoredAfterRules={} bundleTotal={} entriesReturned={}", FUZZY_MATCH_DEBUG, total,
+		    out.getTotal(), out.hasEntry() ? out.getEntry().size() : 0);
+		return out;
+	}
+	
+	private static String truncateForDebug(String s, int max) {
+		if (s == null) {
+			return "<null>";
+		}
+		String t = s.replace('\n', ' ').replace('\r', ' ').trim();
+		return t.length() <= max ? t : t.substring(0, max) + "...(truncated)";
 	}
 	
 	public OperationOutcome errorOutcome(String code, String diagnostics) {

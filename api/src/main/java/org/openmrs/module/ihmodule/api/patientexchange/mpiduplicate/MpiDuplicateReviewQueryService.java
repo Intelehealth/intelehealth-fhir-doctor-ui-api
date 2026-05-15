@@ -60,6 +60,7 @@ public class MpiDuplicateReviewQueryService {
 		d.setCandidateCount(c.getCandidateCount());
 		d.setReviewStatus(c.getReviewStatus() != null ? c.getReviewStatus().name() : null);
 		d.setDateCreated(c.getDateCreated());
+		d.setSourceOfPatient(c.getSourceOfPatient());
 		return d;
 	}
 	
@@ -75,6 +76,8 @@ public class MpiDuplicateReviewQueryService {
 		d.setCandidateTelecom(c.getCandidateTelecom());
 		d.setCandidateAddressCity(c.getCandidateAddressCity());
 		d.setCandidateAddressSnapshot(truncate(c.getCandidateAddressSnapshot(), 4000));
+		d.setMatchScore(c.getMatchScore());
+		d.setMatchSource(c.getMatchSource());
 		return d;
 	}
 	

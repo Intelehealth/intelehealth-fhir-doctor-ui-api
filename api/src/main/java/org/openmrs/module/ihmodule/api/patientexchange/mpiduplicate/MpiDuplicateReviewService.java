@@ -122,6 +122,8 @@ public class MpiDuplicateReviewService {
 			fillCandidateDemographics(match, row);
 			fillCandidateAddress(match, row);
 			row.setPatientResourceJson(fhirContext.newJsonParser().setPrettyPrint(false).encodeResourceToString(match));
+			row.setMatchScore(bundleEntryMatchScore(entry));
+			row.setMatchSource(MpiImportDuplicateReviewSource.FHIR.getValue());
 			reviewCase.addCandidate(row);
 		}
 		
@@ -241,6 +243,88 @@ public class MpiDuplicateReviewService {
 		if (value != null && !value.isEmpty()) {
 			sb.append(label).append(": ").append(value).append("\n");
 		}
+	}
+	
+	/**
+	 * Patient import fuzzy path: persists a duplicate-review case when at least one candidate
+	 * Patient was returned from OpenMRS fuzzy match and/or FHIR MDM {@code $mdm-match}. Unlike
+	 * {@link #persistIfAmbiguous(String, Patient, Bundle, String)}, this triggers on a single match
+	 * or more.
+	 */
+	@Transactional
+	public Optional<MpiPatientDuplicateReviewCase> persistImportFuzzyDuplicateIfMatches(String importCorrelationLocalKey,
+	        Patient sourcePatient, String outboundImportPatientJson,
+	        List<MpiDuplicateReviewCandidateMatchRow> mergedMatchRows, String searchAuditsJson) {
+		if (importCorrelationLocalKey == null || importCorrelationLocalKey.isEmpty()) {
+			LOGGER.warn("MPI import duplicate review: missing import correlation key; skipping persistence");
+			return Optional.empty();
+		}
+		if (mergedMatchRows == null || mergedMatchRows.isEmpty()) {
+			return Optional.empty();
+		}
+		Optional<MpiPatientDuplicateReviewCase> pendingExisting = caseRepository
+		        .findFirstByLocalPatientUuidAndReviewStatusOrderByIdDesc(importCorrelationLocalKey,
+		            MpiDuplicateReviewStatus.PENDING);
+		if (pendingExisting.isPresent()) {
+			LOGGER.info("MPI import duplicate review: reuse pending case_uuid={} for correlation {}", pendingExisting.get()
+			        .getCaseUuid(), importCorrelationLocalKey);
+			return pendingExisting;
+		}
+		MpiPatientDuplicateReviewCase reviewCase = new MpiPatientDuplicateReviewCase();
+		reviewCase.setLocalPatientUuid(importCorrelationLocalKey);
+		reviewCase.setCandidateCount(mergedMatchRows.size());
+		reviewCase.setReviewStatus(MpiDuplicateReviewStatus.PENDING);
+		reviewCase.setOutboundBundleJson(outboundImportPatientJson);
+		reviewCase.setSearchBundleJson(searchAuditsJson);
+		reviewCase.setSourceOfPatient(null);
+		fillSourceDemographics(sourcePatient, reviewCase);
+		fillSourceAddress(sourcePatient, reviewCase);
+		int idx = 0;
+		for (MpiDuplicateReviewCandidateMatchRow matchRow : mergedMatchRows) {
+			Patient match = matchRow.getPatient();
+			MpiPatientDuplicateReviewCandidate row = new MpiPatientDuplicateReviewCandidate();
+			String logicalId = resolveImportCandidateLogicalId(match, idx);
+			row.setFhirPatientLogicalId(logicalId);
+			row.setMpiIdentifierValue(logicalId);
+			fillCandidateDemographics(match, row);
+			fillCandidateAddress(match, row);
+			row.setPatientResourceJson(fhirContext.newJsonParser().setPrettyPrint(false).encodeResourceToString(match));
+			row.setMatchScore(matchRow.getMatchScore());
+			row.setMatchSource(matchRow.getMatchSource());
+			reviewCase.addCandidate(row);
+			idx++;
+		}
+		MpiPatientDuplicateReviewCase saved = caseRepository.saveAndFlush(reviewCase);
+		LOGGER.info("MPI import duplicate review: saved case_uuid={} correlation={} candidates={}", saved.getCaseUuid(),
+		    importCorrelationLocalKey, saved.getCandidateCount());
+		return Optional.of(saved);
+	}
+	
+	private String resolveImportCandidateLogicalId(Patient patient, int fallbackIndex) {
+		if (patient != null && patient.getIdElement() != null && patient.getIdElement().hasIdPart()) {
+			String id = patient.getIdElement().getIdPart().trim();
+			if (!id.isEmpty()) {
+				return id.length() > 128 ? id.substring(0, 128) : id;
+			}
+		}
+		if (patient != null && patient.hasIdentifier()) {
+			for (Identifier identifier : patient.getIdentifier()) {
+				if (identifier != null && identifier.getValue() != null && !identifier.getValue().trim().isEmpty()) {
+					String v = identifier.getValue().trim();
+					String candidate = "idval:" + v;
+					return candidate.length() > 128 ? candidate.substring(0, 128) : candidate;
+				}
+			}
+		}
+		String synthetic = "import-candidate:" + fallbackIndex;
+		return synthetic.length() > 128 ? synthetic.substring(0, 128) : synthetic;
+	}
+	
+	private static Double bundleEntryMatchScore(BundleEntryComponent entry) {
+		if (entry == null || !entry.hasSearch() || !entry.getSearch().hasScore()) {
+			return null;
+		}
+		return entry.getSearch().getScore().doubleValue();
 	}
 	
 	private List<BundleEntryComponent> extractPatientEntries(Bundle searchBundle) {

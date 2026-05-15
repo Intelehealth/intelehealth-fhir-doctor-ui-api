@@ -11,6 +11,9 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.stream.Collectors;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
@@ -42,6 +45,7 @@ import org.openmrs.module.ihmodule.api.patientexchange.telecom.PatientTelecomMap
 import org.openmrs.module.ihmodule.api.patientexchange.validation.PatientFhirExchangeValidationResult;
 import org.openmrs.module.ihmodule.api.patientexchange.validation.PatientFhirExchangeValidationService;
 import org.openmrs.module.ihmodule.api.patientexchange.validation.PatientProfileExtensionRules;
+import org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate.MpiPatientDuplicateReviewCase;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -89,6 +93,9 @@ public class PatientUploadImportService {
 	@Autowired
 	private PatientFhirExchangeValidationService patientFhirExchangeValidationService;
 	
+	@Autowired
+	private ImportPatientFuzzyDuplicateDetectionService importPatientFuzzyDuplicateDetectionService;
+	
 	public PatientUploadImportResponse importPatientFile(MultipartFile file, String locationUuid) throws Exception {
 		if (file == null || file.isEmpty()) {
 			throw new IllegalArgumentException("File is empty");
@@ -100,6 +107,9 @@ public class PatientUploadImportService {
 		
 		PatientUploadImportResponse response = new PatientUploadImportResponse();
 		response.setTotal(patients.size());
+		log.error(
+		    "IMPORT_UPLOAD_DEBUG batch start patientCount={} mpi.import.fuzzy.match.effective={} (GP overrides classpath; merged ihmodule+patientdataexchange)",
+		    patients.size(), fhirConfig.isPatientImportFuzzyMatchEnabled());
 		
 		for (Patient patient : patients) {
 			PatientUploadImportItemResult item = new PatientUploadImportItemResult();
@@ -109,13 +119,32 @@ public class PatientUploadImportService {
 				normalizeBirthDateDayPrecision(patient);
 				item.setInputId(correlationIdForImportItem(patient));
 				validatePatientAgainstProfileBeforeCreate(patient);
-				if (existsByIdentifier(patient)) {
-					item.setStatus("SKIPPED");
-					item.setMessage("Patient already exists by identifier");
-					response.setSkipped(response.getSkipped() + 1);
+				String outboundSnapshotForDuplicateReview = fhirContext.newJsonParser().encodeResourceToString(patient);
+				if (fhirConfig.isPatientImportFuzzyMatchEnabled()) {
+					String importCorrelationKey = buildImportDuplicateCorrelationKey(patient);
+					Optional<MpiPatientDuplicateReviewCase> fuzzyDup = importPatientFuzzyDuplicateDetectionService
+					        .evaluateAndPersistIfDuplicate(patient, outboundSnapshotForDuplicateReview, importCorrelationKey);
+					if (fuzzyDup.isPresent()) {
+						item.setStatus("DUPLICATE_REVIEW");
+						item.setDuplicateReviewCaseUuid(fuzzyDup.get().getCaseUuid());
+						item.setDuplicateDetectedSource(fuzzyDup.get().getCandidates().stream()
+						    .map(c -> c.getMatchSource()).filter(Objects::nonNull).distinct().sorted()
+						    .collect(Collectors.joining(", ")));
+						item.setMessage("Fuzzy duplicate detected; patient not imported. case_uuid="
+						        + fuzzyDup.get().getCaseUuid());
+						response.setDuplicateReviewDeferred(response.getDuplicateReviewDeferred() + 1);
+						response.getItems().add(item);
+						continue;
+					}
 				} else {
+					if (existsByIdentifier(patient)) {
+						item.setStatus("SKIPPED");
+						item.setMessage("Patient already exists by identifier");
+						response.setSkipped(response.getSkipped() + 1);
+						response.getItems().add(item);
+						continue;
+					}
 					boolean demographicDuplicateCheckEnabled = fhirConfig.isPatientImportDemographicDuplicateCheckEnabled();
-					
 					if (demographicDuplicateCheckEnabled && existsByDemographics(patient)) {
 						item.setStatus("SKIPPED");
 						item.setMessage("Patient already exists (same family, given, gender, birth date)");
@@ -123,36 +152,36 @@ public class PatientUploadImportService {
 						log.info(
 						    "Import duplicate-check: skipped — demographic match in DB (identifier search did not fire first). correlationId={}, family={}, given={}, birthDate={}",
 						    item.getInputId(), safeFamily(patient), safeGiven(patient), formatBirthDateYyyyMmDd(patient));
-					} else {
-						if (!demographicDuplicateCheckEnabled) {
-							log.debug(
-							    "Import duplicate-check disabled by config intelehealth.fhir.patient.import.demographic.duplicate.check.enabled for correlationId={}",
-							    item.getInputId());
-						}
-						if (!hasPreferredIdentifier(patient)) {
-							throw new IllegalArgumentException("No preferred identifier available for create");
-						}
-						patient.setId((String) null);
-						String finalPayload = fhirContext.newJsonParser().encodeResourceToString(patient);
-						log.info("Import upload final patient payload for correlationId={}: {}", item.getInputId(),
-						    finalPayload);
-						if (fhirConfig.isPatientImportNativeCreateEnabled()) {
-							String createdUuid = createPatientViaOpenmrsNativeApi(patient, effectiveLocationUuid);
-							item.setStatus("CREATED");
-							item.setCreatedId(createdUuid);
-							persistImportedPatientSupplementalAttributes(createdUuid, patient);
-							item.setMessage("Patient created");
-						} else {
-							ca.uhn.fhir.rest.api.MethodOutcome outcome = fhirConfig.getLocalOpenMRSFhirContext().create()
-							        .resource(patient).execute();
-							item.setStatus("CREATED");
-							item.setCreatedId(outcome.getId() != null ? outcome.getId().getIdPart() : null);
-							persistImportedPatientSupplementalAttributes(item.getCreatedId(), patient);
-							item.setMessage("Patient created");
-						}
-						response.setCreated(response.getCreated() + 1);
+						response.getItems().add(item);
+						continue;
+					}
+					if (!demographicDuplicateCheckEnabled) {
+						log.debug(
+						    "Import duplicate-check disabled by config intelehealth.fhir.patient.import.demographic.duplicate.check.enabled for correlationId={}",
+						    item.getInputId());
 					}
 				}
+				if (!hasPreferredIdentifier(patient)) {
+					throw new IllegalArgumentException("No preferred identifier available for create");
+				}
+				patient.setId((String) null);
+				String finalPayload = fhirContext.newJsonParser().encodeResourceToString(patient);
+				log.info("Import upload final patient payload for correlationId={}: {}", item.getInputId(), finalPayload);
+				if (fhirConfig.isPatientImportNativeCreateEnabled()) {
+					String createdUuid = createPatientViaOpenmrsNativeApi(patient, effectiveLocationUuid);
+					item.setStatus("CREATED");
+					item.setCreatedId(createdUuid);
+					persistImportedPatientSupplementalAttributes(createdUuid, patient);
+					item.setMessage("Patient created");
+				} /*
+					 * else { ca.uhn.fhir.rest.api.MethodOutcome outcome =
+					 * fhirConfig.getLocalOpenMRSFhirContext().create()
+					 * .resource(patient).execute(); item.setStatus("CREATED");
+					 * item.setCreatedId(outcome.getId() != null ? outcome.getId().getIdPart() :
+					 * null); persistImportedPatientSupplementalAttributes(item.getCreatedId(),
+					 * patient); item.setMessage("Patient created"); }
+					 */
+				response.setCreated(response.getCreated() + 1);
 			}
 			catch (Exception e) {
 				log.error("Import upload failed for inputId={} with message={}", item.getInputId(), e.getMessage(), e);
@@ -1030,6 +1059,16 @@ public class PatientUploadImportService {
 	
 	private static String safePhone(Patient patient) {
 		return StringUtils.defaultString(PatientTelecomMappingUtil.extractRankedPhoneTelecom(patient).getTelephoneNumber());
+	}
+	
+	/**
+	 * Stable key for {@code mpi_patient_duplicate_review_case.local_patient_uuid} before an OpenMRS
+	 * patient row exists (import pending).
+	 */
+	private static String buildImportDuplicateCorrelationKey(Patient patient) {
+		String suffix = StringUtils.trimToNull(correlationIdForImportItem(patient));
+		String raw = "import-upload:" + StringUtils.defaultString(suffix, "unknown");
+		return raw.length() > 128 ? raw.substring(0, 128) : raw;
 	}
 	
 	/**

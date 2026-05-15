@@ -25,6 +25,10 @@ public class MpiDuplicateReviewCandidateDto {
 	
 	private String candidateAddressSnapshot;
 	
+	private Double matchScore;
+	
+	private String matchSource;
+	
 	public Long getId() {
 		return id;
 	}
@@ -103,5 +107,21 @@ public class MpiDuplicateReviewCandidateDto {
 	
 	public void setCandidateAddressSnapshot(String candidateAddressSnapshot) {
 		this.candidateAddressSnapshot = candidateAddressSnapshot;
+	}
+	
+	public Double getMatchScore() {
+		return matchScore;
+	}
+	
+	public void setMatchScore(Double matchScore) {
+		this.matchScore = matchScore;
+	}
+	
+	public String getMatchSource() {
+		return matchSource;
+	}
+	
+	public void setMatchSource(String matchSource) {
+		this.matchSource = matchSource;
 	}
 }

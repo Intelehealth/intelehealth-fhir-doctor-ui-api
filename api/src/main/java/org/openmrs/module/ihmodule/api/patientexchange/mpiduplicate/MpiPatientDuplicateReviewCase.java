@@ -111,6 +111,13 @@ public class MpiPatientDuplicateReviewCase {
 	@Lob
 	@Column(name = "search_bundle_json", columnDefinition = "LONGTEXT")
 	private String searchBundleJson;
+	
+	/**
+	 * Legacy: duplicate detector first hit; new import rows leave this null — use
+	 * {@link MpiPatientDuplicateReviewCandidate#getMatchSource()} per candidate instead.
+	 */
+	@Column(name = "source_of_patient", length = 32)
+	private String sourceOfPatient;
 
 	@OneToMany(mappedBy = "reviewCase", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
 	private List<MpiPatientDuplicateReviewCandidate> candidates = new ArrayList<>();
@@ -313,6 +320,14 @@ public class MpiPatientDuplicateReviewCase {
 
 	public void setSearchBundleJson(String searchBundleJson) {
 		this.searchBundleJson = searchBundleJson;
+	}
+	
+	public String getSourceOfPatient() {
+		return sourceOfPatient;
+	}
+	
+	public void setSourceOfPatient(String sourceOfPatient) {
+		this.sourceOfPatient = sourceOfPatient;
 	}
 
 	public List<MpiPatientDuplicateReviewCandidate> getCandidates() {

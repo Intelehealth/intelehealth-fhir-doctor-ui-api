@@ -2,13 +2,12 @@ package org.openmrs.module.ihmodule.api.patientexchange.utils;
 
 import org.apache.commons.lang3.StringUtils;
 
-import java.io.InputStream;
 import java.util.Properties;
 
 public abstract class IHConstant {
 	
-	private static final Properties MODULE_PROPERTIES = loadFirstAvailableProperties("ihmodule.properties",
-	    "patientdataexchange-application.properties");
+	private static final Properties MODULE_PROPERTIES = ModuleClasspathPropertiesLoader.loadMergedInOrder(
+	    "ihmodule.properties", "patientdataexchange-application.properties");
 	
 	protected String importLocation = resolveProperty("intelehealth.fhir.resource.location.import", null);
 	
@@ -76,21 +75,4 @@ public abstract class IHConstant {
 		return StringUtils.defaultIfBlank(StringUtils.trimToEmpty(value), defaultValue);
 	}
 	
-	private static Properties loadFirstAvailableProperties(String... resourceNames) {
-		ClassLoader cl = Thread.currentThread().getContextClassLoader();
-		for (String resource : resourceNames) {
-			try (InputStream in = cl.getResourceAsStream(resource)) {
-				if (in == null) {
-					continue;
-				}
-				Properties properties = new Properties();
-				properties.load(in);
-				return properties;
-			}
-			catch (Exception ignored) {
-				// Keep trying next fallback resource
-			}
-		}
-		return null;
-	}
 }
