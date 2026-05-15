@@ -488,4 +488,32 @@
 		</addColumn>
 	</changeSet>
 
+	<changeSet id="mpi-duplicate-review-candidate-match-type-1.0.0" author="ihmodule">
+		<preConditions onFail="MARK_RAN">
+			<not>
+				<columnExists tableName="mpi_patient_duplicate_review_candidate" columnName="match_type"/>
+			</not>
+		</preConditions>
+		<comment>FHIR Bundle.entry.search extension match-grade valueCode (e.g. certain, probable, possible).</comment>
+		<addColumn tableName="mpi_patient_duplicate_review_candidate">
+			<column name="match_type" type="varchar(32)">
+				<constraints nullable="true"/>
+			</column>
+		</addColumn>
+	</changeSet>
+
+	<changeSet id="mpi-duplicate-review-candidate-review-status-1.0.0" author="ihmodule">
+		<preConditions onFail="MARK_RAN">
+			<not>
+				<columnExists tableName="mpi_patient_duplicate_review_candidate" columnName="review_status"/>
+			</not>
+		</preConditions>
+		<comment>Per-candidate outcome for duplicate-review UI (PENDING implied when null; COMPLETED/SKIPPED).</comment>
+		<addColumn tableName="mpi_patient_duplicate_review_candidate">
+			<column name="review_status" type="varchar(32)">
+				<constraints nullable="true"/>
+			</column>
+		</addColumn>
+	</changeSet>
+
 </databaseChangeLog>

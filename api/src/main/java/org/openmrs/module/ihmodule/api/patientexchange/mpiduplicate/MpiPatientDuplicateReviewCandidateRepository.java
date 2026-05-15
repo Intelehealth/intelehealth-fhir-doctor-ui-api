@@ -18,4 +18,16 @@ public class MpiPatientDuplicateReviewCandidateRepository {
 		        .createQuery("from MpiPatientDuplicateReviewCandidate where reviewCase.id = :reviewCaseId order by id asc")
 		        .setParameter("reviewCaseId", reviewCaseId).list();
 	}
+	
+	public MpiPatientDuplicateReviewCandidate findById(Long id) {
+		if (id == null) {
+			return null;
+		}
+		return (MpiPatientDuplicateReviewCandidate) sessionFactory.getCurrentSession().get(
+		    MpiPatientDuplicateReviewCandidate.class, id);
+	}
+	
+	public void saveOrUpdate(MpiPatientDuplicateReviewCandidate row) {
+		sessionFactory.getCurrentSession().saveOrUpdate(row);
+	}
 }

@@ -43,6 +43,8 @@ import org.openmrs.module.ihmodule.api.patientexchange.service.CommonOperationSe
 import org.openmrs.module.ihmodule.api.patientexchange.service.ConfigDataSyncService;
 import org.openmrs.module.ihmodule.api.patientexchange.service.DataExchangeAuditLogService;
 import org.openmrs.module.ihmodule.api.patientexchange.service.IHMarkerService;
+import org.openmrs.module.ihmodule.api.patientexchange.importupload.OpenmrsPatientUpsertResult;
+import org.openmrs.module.ihmodule.api.patientexchange.importupload.PatientUploadImportService;
 import org.openmrs.module.ihmodule.api.patientexchange.service.LocalPatientMpiUpdateService;
 import org.openmrs.module.ihmodule.api.patientexchange.service.PatientDataService;
 import org.openmrs.module.ihmodule.api.patientexchange.telecom.PatientTelecomMappingUtil;
@@ -121,6 +123,8 @@ public class DataSendToFHIR extends IHConstant {
 	
 	private PatientFhirExchangeValidationService patientFhirExchangeValidationService;
 	
+	private PatientUploadImportService patientUploadImportService;
+	
 	private void ensureDependencies() {
 		if (firFhirConfig == null) {
 			firFhirConfig = Context.getRegisteredComponent("fhirConfig", FhirConfig.class);
@@ -160,6 +164,10 @@ public class DataSendToFHIR extends IHConstant {
 		if (patientFhirExchangeValidationService == null) {
 			patientFhirExchangeValidationService = Context.getRegisteredComponent("patientFhirExchangeValidationService",
 			    PatientFhirExchangeValidationService.class);
+		}
+		if (patientUploadImportService == null) {
+			patientUploadImportService = Context.getRegisteredComponent("patientUploadImportService",
+			    PatientUploadImportService.class);
 		}
 	}
 	
@@ -272,10 +280,9 @@ public class DataSendToFHIR extends IHConstant {
 	}
 	
 	/**
-	 * Operator export: same steps as {@link #send(String, String)} but performs <strong>no</strong>
-	 * central OpenCR demographic duplicate search (no {@link CentralPatientDuplicateMatcher}).
-	 * Still loads the Patient via local FHIR {@code GET Patient?_id=} — that read-by-id is required
-	 * and is not an MPI duplicate search.
+	 * Operator add-patient / legacy force-sync: upsert into the <strong>local</strong> OpenMRS DB
+	 * only (no central FHIR write). Loads the existing row by UUID, then create-or-update via
+	 * identifier rules in {@link PatientUploadImportService}.
 	 */
 	public FhirResponse forceSendPatientToCentralByUuid(String patientUuid) throws ParseException, DataFormatException,
 	        JSONException, ConfigurationException, IOException {
@@ -284,39 +291,13 @@ public class DataSendToFHIR extends IHConstant {
 			throw new IllegalArgumentException("patientUuid is required");
 		}
 		String uuid = patientUuid.trim();
-		System.err.println("resourceType => Patient => " + uuid + " (force-sync, skip central duplicate search)");
-		String localBaseUrl = firFhirConfig.getResolvedLocalOpenmrsBaseUrl();
-		LOGGER.error("force-sync config check localOpenmrsOpenhimURL='{}'", localBaseUrl);
-		if (localBaseUrl == null || localBaseUrl.trim().isEmpty() || localBaseUrl.contains("${")) {
-			throw new IllegalStateException(
-			        "Invalid local OpenMRS base URL config: local.openmrs.openhim.url is blank or unresolved");
-		}
-		Bundle localBundle = firFhirConfig.getLocalOpenMRSFhirContext().search().byUrl("Patient?_id=" + uuid)
-		        .returnBundle(Bundle.class).execute();
-		String data = fhirContext.newJsonParser().encodeResourceToString(localBundle);
-		
-		System.err.println("Local Fhir Bundle => " + data);
-		
-		Bundle theBundle = fhirContext.newJsonParser().parseResource(Bundle.class, data);
-		
-		if (!theBundle.hasEntry()) {
-			throw new IllegalArgumentException("Local Patient bundle empty for uuid=" + uuid);
-		}
-		Resource firstRes = theBundle.getEntryFirstRep().getResource();
-		if (!(firstRes instanceof Patient)) {
-			throw new IllegalArgumentException("Local FHIR entry is not a Patient for uuid=" + uuid);
-		}
-		Patient localPatientFromFetch = (Patient) firstRes;
-		if (localPatientMpiUpdateService.patientHasMpiPerSchedulerExportRule(localPatientFromFetch)) {
-			LOGGER.info("Force sync skipped for patient uuid={}: local MPI identifier already present", uuid);
-			FhirResponse skipped = new FhirResponse();
-			skipped.setStatusCode("skipped");
-			skipped.setMessage(LocalPatientMpiUpdateService.MESSAGE_MPI_ALREADY_SET_FORCE_SYNC);
-			skipped.setResponse(null);
-			return skipped;
-		}
-		
-		return sendFHIRBundle(theBundle, "Patient", false);
+		LOGGER.info("Local OpenMRS upsert for patient uuid={} (no central FHIR sync)", uuid);
+		OpenmrsPatientUpsertResult result = patientUploadImportService.forceSyncLocalOpenmrsPatientByUuid(uuid);
+		FhirResponse response = new FhirResponse();
+		response.setStatusCode("200");
+		response.setMessage(result.getMessage());
+		response.setResponse(result.getPatientUuid());
+		return response;
 	}
 	
 	public FhirResponse sendFHIRBundle(Bundle localTaskBundle, String resourceType) throws ParseException,
@@ -515,6 +496,31 @@ public class DataSendToFHIR extends IHConstant {
 			
 		}
 		return null;
+	}
+	
+	/**
+	 * Exposes success check for central write responses (HTTP status string starting with {@code 2}
+	 * ).
+	 */
+	public boolean isSuccessfulFhirWrite(FhirResponse res) {
+		return res != null && isSuccessfulStatus(res.getStatusCode());
+	}
+	
+	/**
+	 * Sends one FHIR Patient through the same central pipeline as {@link #sendFHIRBundle}, with
+	 * {@code skipCentralMpiDuplicateSearch=true}. Does not alter {@link #sendPatientToCentral}
+	 * implementation.
+	 */
+	public FhirResponse sendSinglePatientTransactionToCentralSkipMpiDuplicateSearch(Patient patient) throws ParseException,
+	        DataFormatException, JSONException, ConfigurationException, IOException {
+		if (patient == null) {
+			throw new IllegalArgumentException("Patient is required");
+		}
+		Bundle b = new Bundle();
+		b.setType(Bundle.BundleType.TRANSACTION);
+		BundleEntryComponent e = b.addEntry();
+		e.setResource(patient);
+		return sendFHIRBundle(b, "Patient", true);
 	}
 	
 	private void syncPatientToLocal(Bundle remotePatientBundle, Patient localPatient) throws JsonProcessingException,

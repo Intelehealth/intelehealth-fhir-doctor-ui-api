@@ -24,5 +24,12 @@
 		<property name="patientResourceJson" type="text" column="patient_resource_json"/>
 		<property name="matchScore" type="java.lang.Double" column="match_score"/>
 		<property name="matchSource" type="string" column="match_source" length="32"/>
+		<property name="matchType" type="string" column="match_type" length="32"/>
+		<property name="reviewStatus" column="review_status">
+			<type name="org.hibernate.type.EnumType">
+				<param name="enumClass">org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate.MpiDuplicateReviewStatus</param>
+				<param name="useNamed">true</param>
+			</type>
+		</property>
 	</class>
 </hibernate-mapping>

@@ -1,9 +1,12 @@
 package org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.apache.commons.lang3.StringUtils;
 import org.openmrs.module.ihmodule.api.patientexchange.api.dto.MpiDuplicateReviewCandidateDto;
+import org.openmrs.module.ihmodule.api.patientexchange.api.dto.MpiDuplicateReviewCandidatesResponse;
 import org.openmrs.module.ihmodule.api.patientexchange.api.dto.MpiDuplicateReviewCaseSummaryDto;
 import org.openmrs.module.ihmodule.api.patientexchange.api.dto.MpiDuplicateReviewStatisticsDto;
 import org.springframework.stereotype.Service;
@@ -38,12 +41,29 @@ public class MpiDuplicateReviewQueryService {
 	}
 	
 	@Transactional(readOnly = true)
-	public List<MpiDuplicateReviewCandidateDto> listCandidatesForCaseUuid(String caseUuid) {
-		return caseRepository.findByCaseUuid(caseUuid)
-				.map(c -> candidateRepository.findByReviewCase_IdOrderByIdAsc(c.getId()).stream()
-						.map(this::toCandidate)
-						.collect(Collectors.toList()))
-				.orElseThrow(() -> new IllegalArgumentException("Unknown caseUuid: " + caseUuid));
+	public MpiDuplicateReviewCandidatesResponse listCandidatesForCaseUuid(String caseUuid) {
+		MpiPatientDuplicateReviewCase reviewCase = caseRepository.findByCaseUuid(caseUuid).orElseThrow(
+		    () -> new IllegalArgumentException("Unknown caseUuid: " + caseUuid));
+		List<MpiPatientDuplicateReviewCandidate> rows = candidateRepository.findByReviewCase_IdOrderByIdAsc(
+		    reviewCase.getId());
+		List<MpiDuplicateReviewCandidateDto> openmrs = new ArrayList<>();
+		List<MpiDuplicateReviewCandidateDto> fhir = new ArrayList<>();
+		for (MpiPatientDuplicateReviewCandidate c : rows) {
+			MpiDuplicateReviewCandidateDto d = toCandidate(c, reviewCase);
+			if (isOpenmrsMatchSource(c.getMatchSource())) {
+				openmrs.add(d);
+			} else {
+				fhir.add(d);
+			}
+		}
+		MpiDuplicateReviewCandidatesResponse out = new MpiDuplicateReviewCandidatesResponse();
+		out.setOpenmrsCandidates(openmrs);
+		out.setFhirCandidates(fhir);
+		return out;
+	}
+	
+	private static boolean isOpenmrsMatchSource(String matchSource) {
+		return matchSource != null && MpiImportDuplicateReviewSource.OPENMRS.getValue().equalsIgnoreCase(matchSource.trim());
 	}
 	
 	private MpiDuplicateReviewCaseSummaryDto toSummary(MpiPatientDuplicateReviewCase c) {
@@ -64,7 +84,8 @@ public class MpiDuplicateReviewQueryService {
 		return d;
 	}
 	
-	private MpiDuplicateReviewCandidateDto toCandidate(MpiPatientDuplicateReviewCandidate c) {
+	private MpiDuplicateReviewCandidateDto toCandidate(MpiPatientDuplicateReviewCandidate c,
+	        MpiPatientDuplicateReviewCase reviewCase) {
 		MpiDuplicateReviewCandidateDto d = new MpiDuplicateReviewCandidateDto();
 		d.setId(c.getId());
 		d.setFhirPatientLogicalId(c.getFhirPatientLogicalId());
@@ -78,7 +99,20 @@ public class MpiDuplicateReviewQueryService {
 		d.setCandidateAddressSnapshot(truncate(c.getCandidateAddressSnapshot(), 4000));
 		d.setMatchScore(c.getMatchScore());
 		d.setMatchSource(c.getMatchSource());
+		d.setMatchType(c.getMatchType());
+		d.setSourceOfPatient(resolveSourceOfPatientForCandidate(reviewCase, c));
 		return d;
+	}
+	
+	private static String resolveSourceOfPatientForCandidate(MpiPatientDuplicateReviewCase reviewCase,
+	        MpiPatientDuplicateReviewCandidate c) {
+		if (reviewCase != null && StringUtils.isNotBlank(reviewCase.getSourceOfPatient())) {
+			return reviewCase.getSourceOfPatient().trim();
+		}
+		if (c != null && StringUtils.isNotBlank(c.getMatchSource())) {
+			return c.getMatchSource().trim();
+		}
+		return null;
 	}
 	
 	private static String truncate(String s, int max) {

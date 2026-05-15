@@ -124,6 +124,7 @@ public class MpiDuplicateReviewService {
 			row.setPatientResourceJson(fhirContext.newJsonParser().setPrettyPrint(false).encodeResourceToString(match));
 			row.setMatchScore(bundleEntryMatchScore(entry));
 			row.setMatchSource(MpiImportDuplicateReviewSource.FHIR.getValue());
+			row.setMatchType(BundleSearchMatchGradeExtractor.extractMatchGradeCode(entry));
 			reviewCase.addCandidate(row);
 		}
 		
@@ -291,6 +292,7 @@ public class MpiDuplicateReviewService {
 			row.setPatientResourceJson(fhirContext.newJsonParser().setPrettyPrint(false).encodeResourceToString(match));
 			row.setMatchScore(matchRow.getMatchScore());
 			row.setMatchSource(matchRow.getMatchSource());
+			row.setMatchType(matchRow.getMatchType());
 			reviewCase.addCandidate(row);
 			idx++;
 		}

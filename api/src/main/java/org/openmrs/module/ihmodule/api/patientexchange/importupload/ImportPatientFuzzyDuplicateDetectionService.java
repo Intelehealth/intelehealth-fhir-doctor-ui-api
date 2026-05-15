@@ -18,6 +18,7 @@ import org.hl7.fhir.r4.model.StringType;
 import org.openmrs.module.ihmodule.api.patientexchange.config.FhirConfig;
 import org.openmrs.module.ihmodule.api.patientexchange.config.FhirContextHolder;
 import org.openmrs.module.ihmodule.api.patientexchange.domain.FhirResponse;
+import org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate.BundleSearchMatchGradeExtractor;
 import org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate.MpiDuplicateReviewCandidateMatchRow;
 import org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate.MpiDuplicateReviewService;
 import org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate.MpiImportDuplicateReviewSource;
@@ -280,7 +281,9 @@ public class ImportPatientFuzzyDuplicateDetectionService {
 			Patient p = (Patient) e.getResource();
 			String key = dedupeKey(p);
 			Double score = bundleEntryMatchScore(e);
-			MpiDuplicateReviewCandidateMatchRow incoming = new MpiDuplicateReviewCandidateMatchRow(p, matchSource, score);
+			String matchType = BundleSearchMatchGradeExtractor.extractMatchGradeCode(e);
+			MpiDuplicateReviewCandidateMatchRow incoming = new MpiDuplicateReviewCandidateMatchRow(p, matchSource, score,
+			        matchType);
 			MpiDuplicateReviewCandidateMatchRow existing = sink.get(key);
 			if (existing == null || scoreComparesHigher(score, existing.getMatchScore())) {
 				sink.put(key, incoming);

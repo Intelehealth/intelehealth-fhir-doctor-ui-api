@@ -29,6 +29,14 @@ public class MpiDuplicateReviewCandidateDto {
 	
 	private String matchSource;
 	
+	private String matchType;
+	
+	/**
+	 * Case-level {@code source_of_patient} when set; otherwise falls back to candidate
+	 * {@code match_source} (e.g. openmrs / fhir) for display.
+	 */
+	private String sourceOfPatient;
+	
 	public Long getId() {
 		return id;
 	}
@@ -123,5 +131,21 @@ public class MpiDuplicateReviewCandidateDto {
 	
 	public void setMatchSource(String matchSource) {
 		this.matchSource = matchSource;
+	}
+	
+	public String getMatchType() {
+		return matchType;
+	}
+	
+	public void setMatchType(String matchType) {
+		this.matchType = matchType;
+	}
+	
+	public String getSourceOfPatient() {
+		return sourceOfPatient;
+	}
+	
+	public void setSourceOfPatient(String sourceOfPatient) {
+		this.sourceOfPatient = sourceOfPatient;
 	}
 }

@@ -13,10 +13,14 @@ public final class MpiDuplicateReviewCandidateMatchRow {
 	
 	private final Double matchScore;
 	
-	public MpiDuplicateReviewCandidateMatchRow(Patient patient, String matchSource, Double matchScore) {
+	/** FHIR match-grade {@code valueCode}; null when not supplied (e.g. OpenMRS fuzzy path). */
+	private final String matchType;
+	
+	public MpiDuplicateReviewCandidateMatchRow(Patient patient, String matchSource, Double matchScore, String matchType) {
 		this.patient = patient;
 		this.matchSource = matchSource;
 		this.matchScore = matchScore;
+		this.matchType = matchType;
 	}
 	
 	public Patient getPatient() {
@@ -29,5 +33,9 @@ public final class MpiDuplicateReviewCandidateMatchRow {
 	
 	public Double getMatchScore() {
 		return matchScore;
+	}
+	
+	public String getMatchType() {
+		return matchType;
 	}
 }

@@ -1,5 +1,6 @@
 package org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.hl7.fhir.r4.model.Bundle;
@@ -30,6 +31,9 @@ public class MpiDuplicateReviewResolutionService {
 	
 	@Autowired
 	private MpiPatientDuplicateReviewCaseRepository caseRepository;
+	
+	@Autowired
+	private MpiPatientDuplicateReviewCandidateRepository candidateRepository;
 	
 	@Value("${intelehealth.fhir.resource.identifier.name}")
 	private String mpiIdentifierTypeText;
@@ -88,6 +92,43 @@ public class MpiDuplicateReviewResolutionService {
 		LOGGER.info(
 		    "Duplicate-review case {} resolved after local MPI update for local patient {} (chosen FHIR id={}, MPI={})",
 		    row.getCaseUuid(), localPatientUuid, row.getChosenFhirPatientLogicalId(), mpiIdentifierValue.trim());
+	}
+	
+	@Transactional
+	public void markCaseAndAllCandidatesCompleted(MpiPatientDuplicateReviewCase reviewCase, String resolvedBy) {
+		if (reviewCase == null || resolvedBy == null) {
+			return;
+		}
+		reviewCase.setReviewStatus(MpiDuplicateReviewStatus.COMPLETED);
+		reviewCase.setResolvedBy(resolvedBy.trim());
+		reviewCase.setDateResolved(DateUtils.toFormattedDateNow());
+		caseRepository.save(reviewCase);
+		markAllCandidatesStatus(reviewCase.getId(), MpiDuplicateReviewStatus.COMPLETED);
+		LOGGER.info("Duplicate-review case {} marked COMPLETED by {}", reviewCase.getCaseUuid(), resolvedBy);
+	}
+	
+	@Transactional
+	public void markCaseAndAllCandidatesSkipped(MpiPatientDuplicateReviewCase reviewCase, String resolvedBy) {
+		if (reviewCase == null || resolvedBy == null) {
+			return;
+		}
+		reviewCase.setReviewStatus(MpiDuplicateReviewStatus.SKIPPED);
+		reviewCase.setResolvedBy(resolvedBy.trim());
+		reviewCase.setDateResolved(DateUtils.toFormattedDateNow());
+		caseRepository.save(reviewCase);
+		markAllCandidatesStatus(reviewCase.getId(), MpiDuplicateReviewStatus.SKIPPED);
+		LOGGER.info("Duplicate-review case {} marked SKIPPED by {}", reviewCase.getCaseUuid(), resolvedBy);
+	}
+	
+	private void markAllCandidatesStatus(Long reviewCaseId, MpiDuplicateReviewStatus status) {
+		if (reviewCaseId == null) {
+			return;
+		}
+		List<MpiPatientDuplicateReviewCandidate> rows = candidateRepository.findByReviewCase_IdOrderByIdAsc(reviewCaseId);
+		for (MpiPatientDuplicateReviewCandidate c : rows) {
+			c.setReviewStatus(status);
+			candidateRepository.saveOrUpdate(c);
+		}
 	}
 	
 	private Patient extractPatientFromBundle(Bundle bundle) {

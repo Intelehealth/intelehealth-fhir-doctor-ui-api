@@ -18,6 +18,269 @@
 
 	var proxyBase = normalizePatientExchangeProxyBase(cfg.proxyBase || '');
 
+	var CAND_TABLE_COLSPAN = 11;
+
+	/** Case UUID for the open duplicate-review modal (candidate actions). */
+	var dupReviewModalCaseUuid = '';
+
+	function normalizeCandidatesPayload(raw) {
+		if (!raw || typeof raw !== 'object') {
+			return { openmrsCandidates: [], fhirCandidates: [] };
+		}
+		if (Array.isArray(raw)) {
+			return { openmrsCandidates: [], fhirCandidates: raw };
+		}
+		return {
+			openmrsCandidates: Array.isArray(raw.openmrsCandidates) ? raw.openmrsCandidates : [],
+			fhirCandidates: Array.isArray(raw.fhirCandidates) ? raw.fhirCandidates : []
+		};
+	}
+
+	function formatMatchScoreCell(score) {
+		if (score == null || score === '') {
+			return '—';
+		}
+		var n = Number(score);
+		if (isNaN(n)) {
+			return escapeHtml(String(score));
+		}
+		return escapeHtml(n.toFixed(4));
+	}
+
+	function setDupTabBadges(nOpenmrs, nFhir) {
+		var a = document.getElementById('dupTabBadgeOpenmrs');
+		var b = document.getElementById('dupTabBadgeFhir');
+		if (a) {
+			a.textContent = String(nOpenmrs != null ? nOpenmrs : 0);
+		}
+		if (b) {
+			b.textContent = String(nFhir != null ? nFhir : 0);
+		}
+	}
+
+	function activateDupCandidateTab(which) {
+		var $ = window.jQuery;
+		var tabOpen = document.getElementById('dupTabOpenmrs');
+		var tabFhir = document.getElementById('dupTabFhir');
+		var paneOpen = document.getElementById('dupPaneOpenmrs');
+		var paneFhir = document.getElementById('dupPaneFhir');
+		if ($ && tabOpen && tabFhir && typeof $.fn.tab === 'function') {
+			if (which === 'fhir') {
+				$(tabFhir).tab('show');
+			} else {
+				$(tabOpen).tab('show');
+			}
+			return;
+		}
+		if (tabOpen && tabFhir && paneOpen && paneFhir) {
+			if (which === 'fhir') {
+				tabOpen.classList.remove('active');
+				tabFhir.classList.add('active');
+				paneOpen.classList.remove('show', 'active');
+				paneFhir.classList.add('show', 'active');
+				tabOpen.setAttribute('aria-selected', 'false');
+				tabFhir.setAttribute('aria-selected', 'true');
+			} else {
+				tabFhir.classList.remove('active');
+				tabOpen.classList.add('active');
+				paneFhir.classList.remove('show', 'active');
+				paneOpen.classList.add('show', 'active');
+				tabFhir.setAttribute('aria-selected', 'false');
+				tabOpen.setAttribute('aria-selected', 'true');
+			}
+		}
+	}
+
+	function renderCandidatesTable(tbody, list, sourcePatientUuid, customEmptyMessage) {
+		if (!tbody) {
+			return;
+		}
+		tbody.innerHTML = '';
+		if (!list || !list.length) {
+			var msg = customEmptyMessage != null ? customEmptyMessage : 'No candidates in this category.';
+			tbody.innerHTML =
+				'<tr><td colspan="' +
+				CAND_TABLE_COLSPAN +
+				'" class="text-muted">' +
+				escapeHtml(msg) +
+				'</td></tr>';
+			return;
+		}
+		list.forEach(function (c) {
+			var nm = [c.candidateGiven || '', c.candidateFamily || ''].join(' ').trim() || '—';
+			var tr = document.createElement('tr');
+			tr.innerHTML =
+				'<td><code>' +
+				escapeHtml(c.fhirPatientLogicalId || '') +
+				'</code></td>' +
+				'<td><span class="badge bg-light text-dark border">' +
+				escapeHtml(c.mpiIdentifierValue || '—') +
+				'</span></td>' +
+				'<td>' +
+				escapeHtml(nm) +
+				'</td>' +
+				'<td>' +
+				escapeHtml(c.candidateBirthdate || '') +
+				'</td>' +
+				'<td>' +
+				escapeHtml(c.candidateGenderCode || '') +
+				'</td>' +
+				'<td>' +
+				escapeHtml(c.candidateTelecom || '') +
+				'</td>' +
+				'<td class="small text-break" style="white-space:pre-line;max-width:280px">' +
+				escapeHtml(c.candidateAddressSnapshot || '') +
+				'</td>' +
+				'<td>' +
+				formatMatchScoreCell(c.matchScore) +
+				'</td>' +
+				'<td>' +
+				(c.matchType ? escapeHtml(c.matchType) : '—') +
+				'</td>' +
+				'<td>' +
+				(c.sourceOfPatient ? escapeHtml(c.sourceOfPatient) : '—') +
+				'</td>' +
+				'<td class="text-nowrap">' +
+				'<button type="button" class="btn btn-sm btn-success btn-add-patient-cand me-1">Add Patient</button>' +
+				'<button type="button" class="btn btn-sm btn-outline-secondary btn-skip-dup-case">Skip</button>' +
+				'</td>';
+			tr.dataset.fhirLogicalId = c.fhirPatientLogicalId || '';
+			tr.dataset.mpiIdentifierValue = c.mpiIdentifierValue || '';
+			tr.dataset.candidateId = c.id != null ? String(c.id) : '';
+			tbody.appendChild(tr);
+		});
+
+		Array.prototype.forEach.call(tbody.querySelectorAll('.btn-add-patient-cand'), function (btn) {
+			btn.addEventListener('click', function () {
+				var tr = btn.closest('tr');
+				var cid = (tr.dataset.candidateId || '').trim();
+				postAddPatientCandidate(dupReviewModalCaseUuid, cid, btn);
+			});
+		});
+		Array.prototype.forEach.call(tbody.querySelectorAll('.btn-skip-dup-case'), function (btn) {
+			btn.addEventListener('click', function () {
+				postSkipDuplicateReviewCase(dupReviewModalCaseUuid, btn);
+			});
+		});
+	}
+
+	var dupCandRawOpenmrs = [];
+	var dupCandRawFhir = [];
+	var dupCandSourceUuid = '';
+	var dupMatchTypeFilterWired = false;
+
+	function uniqueSortedMatchTypesFromList(list) {
+		var seen = Object.create(null);
+		var types = [];
+		var hasBlank = false;
+		if (!list || !list.length) {
+			return { types: types, hasBlank: false };
+		}
+		list.forEach(function (c) {
+			var raw = c && c.matchType != null ? String(c.matchType) : '';
+			var t = raw.trim();
+			if (!t) {
+				hasBlank = true;
+				return;
+			}
+			if (!seen[t]) {
+				seen[t] = true;
+				types.push(t);
+			}
+		});
+		types.sort(function (a, b) {
+			return a.localeCompare(b);
+		});
+		return { types: types, hasBlank: hasBlank };
+	}
+
+	function rebuildDupMatchTypeSelect(selectEl, list) {
+		if (!selectEl) {
+			return;
+		}
+		var u = uniqueSortedMatchTypesFromList(list);
+		selectEl.innerHTML = '';
+		var optAll = document.createElement('option');
+		optAll.value = '';
+		optAll.textContent = 'All match types';
+		selectEl.appendChild(optAll);
+		if (u.hasBlank) {
+			var optBlank = document.createElement('option');
+			optBlank.value = '__EMPTY__';
+			optBlank.textContent = '(No match type)';
+			selectEl.appendChild(optBlank);
+		}
+		for (var i = 0; i < u.types.length; i++) {
+			var t = u.types[i];
+			var o = document.createElement('option');
+			o.value = t;
+			o.textContent = t;
+			selectEl.appendChild(o);
+		}
+		selectEl.value = '';
+	}
+
+	function wireDupMatchTypeFiltersOnce() {
+		if (dupMatchTypeFilterWired) {
+			return;
+		}
+		dupMatchTypeFilterWired = true;
+		var selOm = document.getElementById('dupMatchTypeFilterOpenmrs');
+		var selFh = document.getElementById('dupMatchTypeFilterFhir');
+		if (selOm) {
+			selOm.addEventListener('change', function () {
+				applyDupMatchTypeFilter('openmrs');
+			});
+		}
+		if (selFh) {
+			selFh.addEventListener('change', function () {
+				applyDupMatchTypeFilter('fhir');
+			});
+		}
+	}
+
+	function applyDupMatchTypeFilter(tabKey) {
+		var raw = tabKey === 'openmrs' ? dupCandRawOpenmrs : dupCandRawFhir;
+		var sel = document.getElementById(
+			tabKey === 'openmrs' ? 'dupMatchTypeFilterOpenmrs' : 'dupMatchTypeFilterFhir'
+		);
+		var tbody =
+			tabKey === 'openmrs'
+				? document.getElementById('candidatesBodyOpenmrs')
+				: document.getElementById('candidatesBodyFhir');
+		if (!sel || !tbody) {
+			return;
+		}
+		var v = sel.value;
+		var filtered = raw;
+		if (v === '__EMPTY__') {
+			filtered = raw.filter(function (c) {
+				return !c || c.matchType == null || !String(c.matchType).trim();
+			});
+		} else if (v) {
+			filtered = raw.filter(function (c) {
+				return c && String(c.matchType || '').trim() === v;
+			});
+		}
+		var emptyMsg = null;
+		if ((!filtered || !filtered.length) && raw && raw.length && v) {
+			emptyMsg = 'No candidates match the selected match type.';
+		}
+		renderCandidatesTable(tbody, filtered, dupCandSourceUuid, emptyMsg);
+	}
+
+	function setupDupTabCandidatesWithMatchTypeFilter(tabKey, list, sourcePatientUuid) {
+		var sel = document.getElementById(
+			tabKey === 'openmrs' ? 'dupMatchTypeFilterOpenmrs' : 'dupMatchTypeFilterFhir'
+		);
+		var tbody =
+			tabKey === 'openmrs'
+				? document.getElementById('candidatesBodyOpenmrs')
+				: document.getElementById('candidatesBodyFhir');
+		rebuildDupMatchTypeSelect(sel, list);
+		renderCandidatesTable(tbody, list, sourcePatientUuid, null);
+	}
+
 	/** Full pending list from last successful GET (client-side pagination). */
 	var pendingRowsCache = [];
 	var pendingCurrentPage = 1;
@@ -75,7 +338,8 @@
 			'</small></td>' +
 			'<td>' +
 			'<button type="button" class="btn btn-sm btn-outline-primary me-1 btn-view-dup">View duplicates</button>' +
-			'<button type="button" class="btn btn-sm btn-primary btn-force-sync">Force sync</button>' +
+			'<button type="button" class="btn btn-sm btn-primary me-1 btn-add-patient-pending">Add Patient</button>' +
+			'<button type="button" class="btn btn-sm btn-outline-secondary btn-skip-pending">Skip</button>' +
 			'</td>';
 		tr.dataset.caseUuid = row.caseUuid || '';
 		tr.dataset.localPatientUuid = row.localPatientUuid || '';
@@ -94,10 +358,16 @@
 				);
 			});
 		});
-		Array.prototype.forEach.call(tbody.querySelectorAll('.btn-force-sync'), function (btn) {
+		Array.prototype.forEach.call(tbody.querySelectorAll('.btn-add-patient-pending'), function (btn) {
 			btn.addEventListener('click', function () {
 				var tr = btn.closest('tr');
-				doForceSyncThenReview(tr.dataset.localPatientUuid, tr.dataset.caseUuid, btn);
+				doAddPatientFromPending(tr.dataset.localPatientUuid, tr.dataset.caseUuid, btn);
+			});
+		});
+		Array.prototype.forEach.call(tbody.querySelectorAll('.btn-skip-pending'), function (btn) {
+			btn.addEventListener('click', function () {
+				var tr = btn.closest('tr');
+				doSkipPendingCase(tr.dataset.caseUuid, btn);
 			});
 		});
 	}
@@ -298,8 +568,12 @@
 		return proxyBase + '/force-sync';
 	}
 
-	function mpiLocalUrl() {
-		return proxyBase + '/mpi-local';
+	function duplicateReviewSkipUrl() {
+		return proxyBase + '/duplicate-review/skip';
+	}
+
+	function duplicateReviewAddCandidateUrl() {
+		return proxyBase + '/duplicate-review/add-patient-candidate';
 	}
 
 	function statisticsUrl() {
@@ -529,10 +803,23 @@
 		}
 
 		var modal = document.getElementById('duplicateReviewModal');
+		dupReviewModalCaseUuid = caseUuid || '';
 		fillModalSourceSummary(sourceMeta, caseUuid, sourcePatientUuid);
 		clearModalAlert();
-		var candBody = document.getElementById('candidatesBody');
-		candBody.innerHTML = '<tr><td colspan="8" class="text-muted">Loading…</td></tr>';
+		wireDupMatchTypeFiltersOnce();
+		rebuildDupMatchTypeSelect(document.getElementById('dupMatchTypeFilterOpenmrs'), []);
+		rebuildDupMatchTypeSelect(document.getElementById('dupMatchTypeFilterFhir'), []);
+		var candBodyOm = document.getElementById('candidatesBodyOpenmrs');
+		var candBodyFhir = document.getElementById('candidatesBodyFhir');
+		var loadingRow =
+			'<tr><td colspan="' + CAND_TABLE_COLSPAN + '" class="text-muted">Loading…</td></tr>';
+		if (candBodyOm) {
+			candBodyOm.innerHTML = loadingRow;
+		}
+		if (candBodyFhir) {
+			candBodyFhir.innerHTML = loadingRow;
+		}
+		activateDupCandidateTab('openmrs');
 
 		fetch(candidatesUrl(caseUuid), { credentials: 'same-origin' })
 			.then(function (r) {
@@ -544,68 +831,53 @@
 				if (!res.ok) {
 					throw new Error(res.text);
 				}
-				var list = JSON.parse(res.text);
-				if (!Array.isArray(list)) {
-					throw new Error(list.error || JSON.stringify(list));
+				var parsed = JSON.parse(res.text);
+				if (parsed && parsed.error) {
+					throw new Error(parsed.error);
 				}
-				candBody.innerHTML = '';
-				if (!list.length) {
-					candBody.innerHTML =
-						'<tr><td colspan="8" class="text-muted">No candidates returned.</td></tr>';
+				var grouped = normalizeCandidatesPayload(parsed);
+				var om = grouped.openmrsCandidates;
+				var fh = grouped.fhirCandidates;
+				dupCandRawOpenmrs = om && om.length ? om.slice() : [];
+				dupCandRawFhir = fh && fh.length ? fh.slice() : [];
+				dupCandSourceUuid = sourcePatientUuid || '';
+				setDupTabBadges(dupCandRawOpenmrs.length, dupCandRawFhir.length);
+				setupDupTabCandidatesWithMatchTypeFilter('openmrs', dupCandRawOpenmrs, dupCandSourceUuid);
+				setupDupTabCandidatesWithMatchTypeFilter('fhir', dupCandRawFhir, dupCandSourceUuid);
+				if ((!om || !om.length) && fh && fh.length) {
+					activateDupCandidateTab('fhir');
 				} else {
-					list.forEach(function (c) {
-						var nm = [c.candidateGiven || '', c.candidateFamily || ''].join(' ').trim() || '—';
-						var tr = document.createElement('tr');
-						tr.innerHTML =
-							'<td><code>' +
-							escapeHtml(c.fhirPatientLogicalId || '') +
-							'</code></td>' +
-							'<td><span class="badge bg-light text-dark border">' +
-							escapeHtml(c.mpiIdentifierValue || '—') +
-							'</span></td>' +
-							'<td>' +
-							escapeHtml(nm) +
-							'</td>' +
-							'<td>' +
-							escapeHtml(c.candidateBirthdate || '') +
-							'</td>' +
-							'<td>' +
-							escapeHtml(c.candidateGenderCode || '') +
-							'</td>' +
-							'<td>' +
-							escapeHtml(c.candidateTelecom || '') +
-						'</td>' +
-							'<td class="small text-break" style="white-space:pre-line;max-width:280px">' +
-							escapeHtml(c.candidateAddressSnapshot || '') +
-							'</td>' +
-						'<td><button type="button" class="btn btn-sm btn-success btn-set-mpi">Use this MPI Id</button></td>';
-						tr.dataset.fhirLogicalId = c.fhirPatientLogicalId || '';
-						tr.dataset.mpiIdentifierValue = c.mpiIdentifierValue || '';
-						candBody.appendChild(tr);
-					});
-
-					Array.prototype.forEach.call(candBody.querySelectorAll('.btn-set-mpi'), function (btn) {
-						btn.addEventListener('click', function () {
-							var tr = btn.closest('tr');
-							var mpiVal = (tr.dataset.mpiIdentifierValue || '').trim();
-							postSetMpi(sourcePatientUuid, mpiVal, tr.dataset.fhirLogicalId, btn);
-						});
-					});
+					activateDupCandidateTab('openmrs');
 				}
 				if (show !== false && modal) {
 					showBsModal(modal);
 				}
 			})
 			.catch(function (e) {
-				candBody.innerHTML =
-					'<tr><td colspan="8" class="text-danger">' + escapeHtml(String(e.message || e)) + '</td></tr>';
+				dupCandRawOpenmrs = [];
+				dupCandRawFhir = [];
+				dupCandSourceUuid = '';
+				rebuildDupMatchTypeSelect(document.getElementById('dupMatchTypeFilterOpenmrs'), []);
+				rebuildDupMatchTypeSelect(document.getElementById('dupMatchTypeFilterFhir'), []);
+				var errRow =
+					'<tr><td colspan="' +
+					CAND_TABLE_COLSPAN +
+					'" class="text-danger">' +
+					escapeHtml(String(e.message || e)) +
+					'</td></tr>';
+				if (candBodyOm) {
+					candBodyOm.innerHTML = errRow;
+				}
+				if (candBodyFhir) {
+					candBodyFhir.innerHTML = errRow;
+				}
 				if (show !== false && modal) {
 					showBsModal(modal);
 				}
 			});
 	}
 
-	function doForceSyncThenReview(localPatientUuid, caseUuid, btn) {
+	function doAddPatientFromPending(localPatientUuid, caseUuid, btn) {
 		if (!resolvedBy) {
 			alert('resolvedBy is empty — log in to OpenMRS.');
 			return;
@@ -613,17 +885,18 @@
 		btn.disabled = true;
 		var status = document.getElementById('pendingStatus');
 		if (status) {
-			status.textContent = 'Force sync running…';
+			status.textContent = 'Add Patient running…';
 		}
-		var payload = JSON.stringify({
+		var payload = {
 			patientUuid: localPatientUuid,
-			resolvedBy: resolvedBy
-		});
+			resolvedBy: resolvedBy,
+			caseUuid: caseUuid || null
+		};
 		fetch(forceSyncUrl(), {
 			method: 'POST',
 			credentials: 'same-origin',
 			headers: buildJsonPostHeaders(),
-			body: payload
+			body: JSON.stringify(payload)
 		})
 			.then(function (r) {
 				return r.text().then(function (t) {
@@ -657,12 +930,12 @@
 				if (!syncOk) {
 					var errMsg =
 						(res.redirected
-							? 'Force sync was redirected (often CSRF/session). Refresh the page and retry.'
+							? 'Add Patient was redirected (often CSRF/session). Refresh the page and retry.'
 							: null) ||
 						(parsed && parsed.error) ||
-						(htmlBody ? 'Force sync returned HTML (often CSRF). Refresh the page and retry.' : null) ||
-						(!res.ok ? 'Force sync HTTP ' + res.status + ': ' + String(res.text).substring(0, 280) : null) ||
-						'Force sync failed — invalid response.';
+						(htmlBody ? 'Add Patient returned HTML (often CSRF). Refresh the page and retry.' : null) ||
+						(!res.ok ? 'Add Patient HTTP ' + res.status + ': ' + String(res.text).substring(0, 280) : null) ||
+						'Add Patient failed — invalid response.';
 					if (status) {
 						status.textContent = errMsg;
 						status.className = 'ms-2 text-danger';
@@ -672,7 +945,7 @@
 				}
 
 				var okMsg =
-					'Force sync: ' +
+					'Add Patient: ' +
 					String(parsed.message || parsed.status || 'OK').substring(0, 400);
 				if (status) {
 					status.textContent = okMsg;
@@ -690,29 +963,84 @@
 			});
 	}
 
-	function postSetMpi(sourcePatientUuid, mpiIdentifierValue, chosenFhirPatientLogicalId, btn) {
+	function doSkipPendingCase(caseUuid, btn) {
 		if (!resolvedBy) {
 			alert('resolvedBy is empty — log in to OpenMRS.');
 			return;
 		}
-		if (!mpiIdentifierValue) {
-			alert('MPI identifier value is missing for this candidate.');
+		if (!caseUuid) {
+			alert('Missing case UUID.');
 			return;
 		}
 		btn.disabled = true;
-		var payload = {
-			patientUuid: sourcePatientUuid,
-			mpiIdentifierValue: mpiIdentifierValue,
-			resolvedBy: resolvedBy
-		};
-		if (chosenFhirPatientLogicalId) {
-			payload.chosenFhirPatientLogicalId = chosenFhirPatientLogicalId;
+		var status = document.getElementById('pendingStatus');
+		if (status) {
+			status.textContent = 'Skipping…';
 		}
-		fetch(mpiLocalUrl(), {
+		fetch(duplicateReviewSkipUrl(), {
 			method: 'POST',
 			credentials: 'same-origin',
 			headers: buildJsonPostHeaders(),
-			body: JSON.stringify(payload)
+			body: JSON.stringify({ caseUuid: caseUuid, resolvedBy: resolvedBy })
+		})
+			.then(function (r) {
+				return r.text().then(function (t) {
+					return { ok: r.ok, status: r.status, text: t };
+				});
+			})
+			.then(function (res) {
+				btn.disabled = false;
+				var parsed = null;
+				try {
+					parsed = JSON.parse(res.text);
+				} catch (ignore) {
+					parsed = null;
+				}
+				if (res.ok && parsed && !parsed.error) {
+					window.location.reload();
+					return;
+				}
+				if (status) {
+					status.textContent =
+						(parsed && parsed.error) || res.text.substring(0, 400) || 'Skip failed';
+					status.className = 'ms-2 text-danger';
+				}
+				loadPendingList();
+			})
+			.catch(function (e) {
+				btn.disabled = false;
+				if (status) {
+					status.textContent = 'Network error: ' + e.message;
+					status.className = 'ms-2 text-danger';
+				}
+				loadPendingList();
+			});
+	}
+
+	function postAddPatientCandidate(caseUuid, candidateIdStr, btn) {
+		if (!resolvedBy) {
+			alert('resolvedBy is empty — log in to OpenMRS.');
+			return;
+		}
+		if (!caseUuid || !candidateIdStr) {
+			alert('Missing case or candidate id.');
+			return;
+		}
+		var cid = parseInt(candidateIdStr, 10);
+		if (isNaN(cid)) {
+			alert('Invalid candidate id.');
+			return;
+		}
+		btn.disabled = true;
+		fetch(duplicateReviewAddCandidateUrl(), {
+			method: 'POST',
+			credentials: 'same-origin',
+			headers: buildJsonPostHeaders(),
+			body: JSON.stringify({
+				caseUuid: caseUuid,
+				candidateId: cid,
+				resolvedBy: resolvedBy
+			})
 		})
 			.then(function (r) {
 				return r.text().then(function (t) {
@@ -727,7 +1055,7 @@
 				} catch (ex) {
 					parsed = null;
 				}
-				if (res.ok && parsed && !parsed.error && parsed.status !== 'failed') {
+				if (res.ok && parsed && !parsed.error) {
 					window.location.reload();
 					return;
 				}
@@ -745,7 +1073,53 @@
 			});
 	}
 
+	function postSkipDuplicateReviewCase(caseUuid, btn) {
+		if (!resolvedBy) {
+			alert('resolvedBy is empty — log in to OpenMRS.');
+			return;
+		}
+		if (!caseUuid) {
+			alert('Missing case UUID.');
+			return;
+		}
+		btn.disabled = true;
+		fetch(duplicateReviewSkipUrl(), {
+			method: 'POST',
+			credentials: 'same-origin',
+			headers: buildJsonPostHeaders(),
+			body: JSON.stringify({ caseUuid: caseUuid, resolvedBy: resolvedBy })
+		})
+			.then(function (r) {
+				return r.text().then(function (t) {
+					return { ok: r.ok, text: t };
+				});
+			})
+			.then(function (res) {
+				btn.disabled = false;
+				var parsed = null;
+				try {
+					parsed = JSON.parse(res.text);
+				} catch (ex) {
+					parsed = null;
+				}
+				if (res.ok && parsed && !parsed.error) {
+					window.location.reload();
+					return;
+				}
+				modalAlert(
+					parsed ? (parsed.error || JSON.stringify(parsed)) : res.text.substring(0, 400),
+					'danger'
+				);
+				loadPendingList();
+			})
+			.catch(function (e) {
+				btn.disabled = false;
+				modalAlert('Network error: ' + e.message, 'danger');
+			});
+	}
+
 	document.addEventListener('DOMContentLoaded', function () {
+		wireDupMatchTypeFiltersOnce();
 		loadDupReviewStatistics();
 		loadPendingList();
 		var refresh = document.getElementById('btnRefreshPending');

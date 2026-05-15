@@ -15,6 +15,12 @@ public enum MpiDuplicateReviewStatus {
 	/** Operator chose to force create/send despite duplicates (handled by future workflow). */
 	RESOLVED_FORCE_SEND,
 	
+	/** Duplicate-review UI: patient add path finished successfully. */
+	COMPLETED,
+	
+	/** Duplicate-review UI: operator skipped without creating/updating a patient. */
+	SKIPPED,
+	
 	/** Case voided / superseded without resolution. */
 	CANCELLED
 }

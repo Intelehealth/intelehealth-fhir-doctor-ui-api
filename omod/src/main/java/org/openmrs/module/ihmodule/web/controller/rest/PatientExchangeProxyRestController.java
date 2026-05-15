@@ -13,6 +13,8 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.openmrs.api.context.Context;
 import org.openmrs.User;
+import org.openmrs.module.ihmodule.api.patientexchange.api.dto.DuplicateReviewCaseActionRequest;
+import org.openmrs.module.ihmodule.api.patientexchange.api.dto.DuplicateReviewCandidateActionRequest;
 import org.openmrs.module.ihmodule.api.patientexchange.api.dto.ForcePatientSyncRequest;
 import org.openmrs.module.ihmodule.api.patientexchange.api.dto.LocalMpiUpdateRequest;
 import org.openmrs.module.ihmodule.api.patientexchange.export.CreatedPatientExportResult;
@@ -20,6 +22,7 @@ import org.openmrs.module.ihmodule.api.patientexchange.export.CreatedPatientExpo
 import org.openmrs.module.ihmodule.api.patientexchange.importupload.PatientUploadImportResponse;
 import org.openmrs.module.ihmodule.api.patientexchange.importupload.PatientUploadImportService;
 import org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate.ForceSyncDuplicateResolutionContext;
+import org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate.MpiDuplicateReviewPatientActionService;
 import org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate.MpiDuplicateReviewQueryService;
 import org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate.MpiDuplicateReviewResolutionService;
 import org.openmrs.module.ihmodule.api.patientexchange.scheduler.DataSendToFHIR;
@@ -73,6 +76,9 @@ public class PatientExchangeProxyRestController {
 	private PatientUploadImportService patientUploadImportService;
 	
 	@Autowired
+	private MpiDuplicateReviewPatientActionService mpiDuplicateReviewPatientActionService;
+	
+	@Autowired
 	private CreatedPatientExportService createdPatientExportService;
 	
 	private ObjectMapper objectMapper = new ObjectMapper();
@@ -107,6 +113,11 @@ public class PatientExchangeProxyRestController {
 		writeJson(response, HttpStatus.OK.value(), mpiDuplicateReviewQueryService.getCaseStatistics());
 	}
 	
+	/**
+	 * Duplicate-review candidates for a case. Response JSON: {@code "openmrsCandidates": [...],
+	 * "fhirCandidates": [...] } — grouped by candidate {@code match_source} ({@code openmrs} vs
+	 * central / {@code fhir}).
+	 */
 	@RequestMapping(value = { "module/ihmodule/patientExchangeCandidates.form",
 	        "/rest/v1/ihmodule/patient-exchange/candidates" }, method = RequestMethod.GET)
 	public void candidates(@RequestParam("caseUuid") String caseUuid, HttpServletResponse response) throws IOException {
@@ -133,25 +144,37 @@ public class PatientExchangeProxyRestController {
 		if (rejectIfUnauthorized(response)) {
 			return;
 		}
-		if (body == null || StringUtils.isBlank(body.getPatientUuid())) {
-			writeJson(response, HttpStatus.BAD_REQUEST.value(), errorBody("patientUuid is required"));
+		if (body == null || StringUtils.isBlank(body.getResolvedBy())) {
+			writeJson(response, HttpStatus.BAD_REQUEST.value(), errorBody("resolvedBy is required"));
 			return;
 		}
-		if (StringUtils.isBlank(body.getResolvedBy())) {
-			writeJson(response, HttpStatus.BAD_REQUEST.value(), errorBody("resolvedBy is required"));
+		boolean hasCaseUuid = StringUtils.isNotBlank(body.getCaseUuid());
+		if (!hasCaseUuid && StringUtils.isBlank(body.getPatientUuid())) {
+			writeJson(response, HttpStatus.BAD_REQUEST.value(), errorBody("patientUuid is required unless caseUuid is set"));
 			return;
 		}
 		ForceSyncDuplicateResolutionContext.begin(body.getResolvedBy().trim());
 		try {
 			if (log.isDebugEnabled()) {
 				User u = Context.getAuthenticatedUser();
-				log.debug("ihmodule patientExchange: force-sync requested by user="
-				        + (u != null ? u.getUsername() : "?") + ", patientUuid=" + body.getPatientUuid().trim());
+				log.debug("ihmodule patientExchange: add-patient / force-sync requested by user="
+				        + (u != null ? u.getUsername() : "?") + ", patientUuid=" + StringUtils.trimToEmpty(body.getPatientUuid())
+				        + ", caseUuid=" + StringUtils.trimToEmpty(body.getCaseUuid()));
 			}
-			org.openmrs.module.ihmodule.api.patientexchange.domain.FhirResponse res = dataSendToFHIR
-					.forceSendPatientToCentralByUuid(body.getPatientUuid().trim());
+			org.openmrs.module.ihmodule.api.patientexchange.domain.FhirResponse res;
+			if (hasCaseUuid) {
+				mpiDuplicateReviewPatientActionService.addPatientFromPendingCase(body.getCaseUuid().trim(),
+				    body.getPatientUuid() != null ? body.getPatientUuid().trim() : null, body.getResolvedBy().trim());
+				res = new org.openmrs.module.ihmodule.api.patientexchange.domain.FhirResponse();
+				res.setStatusCode("200");
+				res.setMessage("Duplicate-review case completed (add patient from pending)");
+				res.setResponse(null);
+			} else {
+				res = dataSendToFHIR.forceSendPatientToCentralByUuid(body.getPatientUuid().trim());
+			}
 			Map<String, Object> ok = new LinkedHashMap<>();
-			ok.put("patientUuid", body.getPatientUuid().trim());
+			ok.put("patientUuid", body.getPatientUuid() != null ? body.getPatientUuid().trim() : null);
+			ok.put("caseUuid", body.getCaseUuid() != null ? body.getCaseUuid().trim() : null);
 			ok.put("statusCode", res.getStatusCode());
 			ok.put("message", res.getMessage());
 			ok.put("response", res.getResponse());
@@ -160,18 +183,83 @@ public class PatientExchangeProxyRestController {
 			}
 			writeJson(response, HttpStatus.OK.value(), ok);
 		} catch (IllegalArgumentException ex) {
-			log.warn("ihmodule patientExchange: force-sync bad request, patientUuid=" + body.getPatientUuid().trim()
-			        + ", message=" + ex.getMessage(), ex);
+			log.warn("ihmodule patientExchange: force-sync bad request, message=" + ex.getMessage(), ex);
 			writeJson(response, HttpStatus.BAD_REQUEST.value(), errorBody(ex.getMessage()));
+		} catch (IllegalStateException ex) {
+			log.warn("ihmodule patientExchange: force-sync illegal state, message=" + ex.getMessage(), ex);
+			writeJson(response, HttpStatus.CONFLICT.value(), errorBody(ex.getMessage()));
 		} catch (ResourceIsNotValid ex) {
-			log.warn("ihmodule patientExchange: force-sync unprocessable, patientUuid=" + body.getPatientUuid().trim()
+			log.warn("ihmodule patientExchange: force-sync unprocessable, patientUuid=" + StringUtils.trimToEmpty(body.getPatientUuid())
 			        + ", message=" + ex.getMessage(), ex);
 			writeJson(response, HttpStatus.UNPROCESSABLE_ENTITY.value(), errorBody(ex.getMessage()));
 		} catch (Exception ex) {
-			log.error("ihmodule patientExchange: force-sync failed, patientUuid=" + body.getPatientUuid().trim(), ex);
+			log.error("ihmodule patientExchange: force-sync failed, patientUuid=" + StringUtils.trimToEmpty(body.getPatientUuid()), ex);
 			writeJson(response, HttpStatus.INTERNAL_SERVER_ERROR.value(), errorBody(ex.getMessage()));
 		} finally {
 			ForceSyncDuplicateResolutionContext.end();
+		}
+	}
+	
+	@RequestMapping(value = { "module/ihmodule/patientExchangeDuplicateReviewSkip.form",
+	        "/rest/v1/ihmodule/patient-exchange/duplicate-review/skip" }, method = RequestMethod.POST, consumes = "application/json")
+	public void duplicateReviewSkip(@RequestBody(required = false) DuplicateReviewCaseActionRequest body,
+	        HttpServletResponse response) throws IOException {
+		if (rejectIfUnauthorized(response)) {
+			return;
+		}
+		if (body == null || StringUtils.isBlank(body.getCaseUuid()) || StringUtils.isBlank(body.getResolvedBy())) {
+			writeJson(response, HttpStatus.BAD_REQUEST.value(), errorBody("caseUuid and resolvedBy are required"));
+			return;
+		}
+		try {
+			mpiDuplicateReviewPatientActionService.skipCaseByCaseUuid(body.getCaseUuid().trim(), body.getResolvedBy().trim());
+			Map<String, Object> ok = new LinkedHashMap<>();
+			ok.put("status", "ok");
+			ok.put("caseUuid", body.getCaseUuid().trim());
+			writeJson(response, HttpStatus.OK.value(), ok);
+		}
+		catch (IllegalArgumentException ex) {
+			writeJson(response, HttpStatus.BAD_REQUEST.value(), errorBody(ex.getMessage()));
+		}
+		catch (IllegalStateException ex) {
+			writeJson(response, HttpStatus.CONFLICT.value(), errorBody(ex.getMessage()));
+		}
+		catch (Exception ex) {
+			log.error("duplicate-review skip failed", ex);
+			writeJson(response, HttpStatus.INTERNAL_SERVER_ERROR.value(), errorBody(ex.getMessage()));
+		}
+	}
+	
+	@RequestMapping(value = { "module/ihmodule/patientExchangeDuplicateReviewAddCandidate.form",
+	        "/rest/v1/ihmodule/patient-exchange/duplicate-review/add-patient-candidate" }, method = RequestMethod.POST, consumes = "application/json")
+	public void duplicateReviewAddPatientCandidate(@RequestBody(required = false) DuplicateReviewCandidateActionRequest body,
+	        HttpServletResponse response) throws IOException {
+		if (rejectIfUnauthorized(response)) {
+			return;
+		}
+		if (body == null || StringUtils.isBlank(body.getCaseUuid()) || body.getCandidateId() == null
+		        || StringUtils.isBlank(body.getResolvedBy())) {
+			writeJson(response, HttpStatus.BAD_REQUEST.value(), errorBody("caseUuid, candidateId, and resolvedBy are required"));
+			return;
+		}
+		try {
+			mpiDuplicateReviewPatientActionService.addPatientFromCandidate(body.getCaseUuid().trim(), body.getCandidateId(),
+			    body.getResolvedBy().trim());
+			Map<String, Object> ok = new LinkedHashMap<>();
+			ok.put("status", "ok");
+			ok.put("caseUuid", body.getCaseUuid().trim());
+			ok.put("candidateId", body.getCandidateId());
+			writeJson(response, HttpStatus.OK.value(), ok);
+		}
+		catch (IllegalArgumentException ex) {
+			writeJson(response, HttpStatus.BAD_REQUEST.value(), errorBody(ex.getMessage()));
+		}
+		catch (IllegalStateException ex) {
+			writeJson(response, HttpStatus.CONFLICT.value(), errorBody(ex.getMessage()));
+		}
+		catch (Exception ex) {
+			log.error("duplicate-review add-patient-candidate failed", ex);
+			writeJson(response, HttpStatus.INTERNAL_SERVER_ERROR.value(), errorBody(ex.getMessage()));
 		}
 	}
 	

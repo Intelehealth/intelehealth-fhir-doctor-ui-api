@@ -1,6 +1,8 @@
 package org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate;
 
 import javax.persistence.Column;
+import javax.persistence.EnumType;
+import javax.persistence.Enumerated;
 import javax.persistence.FetchType;
 import javax.persistence.GeneratedValue;
 import javax.persistence.GenerationType;
@@ -79,6 +81,17 @@ public class MpiPatientDuplicateReviewCandidate {
 	/** {@code openmrs} (local fuzzy $match) or {@code fhir} (central $mdm-match / OpenCR search). */
 	@Column(name = "match_source", length = 32)
 	private String matchSource;
+	
+	/**
+	 * FHIR {@code Bundle.entry.search.extension} match-grade {@code valueCode} (e.g. certain,
+	 * probable, possible).
+	 */
+	@Column(name = "match_type", length = 32)
+	private String matchType;
+	
+	@Enumerated(EnumType.STRING)
+	@Column(name = "review_status", length = 32)
+	private MpiDuplicateReviewStatus reviewStatus;
 	
 	public Long getId() {
 		return id;
@@ -230,5 +243,21 @@ public class MpiPatientDuplicateReviewCandidate {
 	
 	public void setMatchSource(String matchSource) {
 		this.matchSource = matchSource;
+	}
+	
+	public String getMatchType() {
+		return matchType;
+	}
+	
+	public void setMatchType(String matchType) {
+		this.matchType = matchType;
+	}
+	
+	public MpiDuplicateReviewStatus getReviewStatus() {
+		return reviewStatus;
+	}
+	
+	public void setReviewStatus(MpiDuplicateReviewStatus reviewStatus) {
+		this.reviewStatus = reviewStatus;
 	}
 }

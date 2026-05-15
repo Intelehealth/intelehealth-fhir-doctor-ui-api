@@ -8,6 +8,7 @@ import java.time.ZoneOffset;
 import java.util.Date;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -81,6 +82,8 @@ public class PatientUploadImportService {
 	private static final String DEFAULT_PREFERRED_IDENTIFIER_TYPE_UUID = "05a29f94-c0ed-11e2-94be-8c13b969e334";
 	
 	private static final String MR_IDENTIFIER_CODE = "MR";
+	
+	private static final String FHIR_PATIENT_ID_TYPE_NAME = "FHIR Patient ID";
 	
 	private final FhirContext fhirContext = FhirContextHolder.R4;
 	
@@ -923,6 +926,291 @@ public class PatientUploadImportService {
 		
 		Context.getPatientService().savePatient(omrsPatient);
 		return omrsPatient.getUuid();
+	}
+	
+	/**
+	 * Local OpenMRS upsert from a FHIR Patient snapshot: lookup by identifier (or UUID), update if
+	 * found, otherwise create via {@link #createPatientViaOpenmrsNativeApi}.
+	 */
+	public OpenmrsPatientUpsertResult upsertOpenmrsPatientFromFhirPatient(Patient fhirPatient, String locationUuid) {
+		requireNativeCreateEnabled();
+		if (fhirPatient == null) {
+			throw new IllegalArgumentException("FHIR Patient is required");
+		}
+		Patient prepared = prepareFhirPatientForNativeUpsert(fhirPatient, locationUuid);
+		org.openmrs.Patient existing = findOpenmrsPatientByFhirIdentifiers(prepared);
+		if (existing != null) {
+			log.info("patient found by identifier: openmrsPatientUuid={}", existing.getUuid());
+			String uuid = updatePatientViaOpenmrsNativeApi(existing, prepared);
+			persistImportedPatientSupplementalAttributes(uuid, prepared);
+			log.info("patient updated: openmrsPatientUuid={}", uuid);
+			return new OpenmrsPatientUpsertResult(uuid, OpenmrsPatientUpsertResult.Action.UPDATED, "patient updated");
+		}
+		String uuid = createPatientViaOpenmrsNativeApi(prepared, resolveIdentifierLocationUuid(locationUuid));
+		persistImportedPatientSupplementalAttributes(uuid, prepared);
+		log.info("patient created: openmrsPatientUuid={}", uuid);
+		return new OpenmrsPatientUpsertResult(uuid, OpenmrsPatientUpsertResult.Action.CREATED, "patient created");
+	}
+	
+	/**
+	 * Force-sync / add-patient by OpenMRS UUID: builds a FHIR snapshot from the local DB row and
+	 * upserts (no central or FHIR server writes).
+	 */
+	public OpenmrsPatientUpsertResult forceSyncLocalOpenmrsPatientByUuid(String patientUuid) {
+		requireNativeCreateEnabled();
+		if (StringUtils.isBlank(patientUuid)) {
+			throw new IllegalArgumentException("patientUuid is required");
+		}
+		org.openmrs.Patient omrs = Context.getPatientService().getPatientByUuid(patientUuid.trim());
+		if (omrs == null || Boolean.TRUE.equals(omrs.getVoided())) {
+			throw new IllegalArgumentException("OpenMRS patient not found for uuid=" + patientUuid.trim());
+		}
+		return upsertOpenmrsPatientFromFhirPatient(buildFhirPatientSnapshotFromOpenmrs(omrs), null);
+	}
+	
+	/**
+	 * MPI duplicate-review: create or update OpenMRS patient from a stored FHIR Patient snapshot.
+	 */
+	public String duplicateReviewCreateOpenmrsFromFhirPatient(Patient fhirPatient, String locationUuid) {
+		return upsertOpenmrsPatientFromFhirPatient(fhirPatient, locationUuid).getPatientUuid();
+	}
+	
+	private void requireNativeCreateEnabled() {
+		if (!fhirConfig.isPatientImportNativeCreateEnabled()) {
+			throw new IllegalStateException(
+			        "Enable intelehealth.fhir.patient.import.native.create.enabled for local OpenMRS patient upsert.");
+		}
+	}
+	
+	private Patient prepareFhirPatientForNativeUpsert(Patient fhirPatient, String locationUuid) {
+		Patient copy = fhirPatient.copy();
+		copy.setId((String) null);
+		String loc = resolveIdentifierLocationUuid(locationUuid);
+		ensurePreferredOpenMrsIdentifier(copy, loc);
+		ensureIdentifierLocation(copy, loc);
+		normalizeBirthDateDayPrecision(copy);
+		validatePatientAgainstProfileBeforeCreate(copy);
+		return copy;
+	}
+	
+	private org.openmrs.Patient findOpenmrsPatientByFhirIdentifiers(Patient fhirPatient) {
+		if (fhirPatient == null) {
+			return null;
+		}
+		String idPart = fhirPatient.getIdElement() != null ? StringUtils.trimToNull(fhirPatient.getIdElement().getIdPart())
+		        : null;
+		if (idPart != null) {
+			org.openmrs.Patient byUuid = Context.getPatientService().getPatientByUuid(idPart);
+			if (byUuid != null && !Boolean.TRUE.equals(byUuid.getVoided())) {
+				return byUuid;
+			}
+		}
+		Identifier openMrsId = findOpenMrsIdentifierFromJson(fhirPatient);
+		if (openMrsId != null && StringUtils.isNotBlank(openMrsId.getValue())) {
+			org.openmrs.Patient byOpenMrsId = findOpenmrsPatientByIdentifierValue(openMrsId.getValue().trim(),
+			    resolvePreferredIdentifierType());
+			if (byOpenMrsId != null) {
+				return byOpenMrsId;
+			}
+		}
+		if (fhirPatient.getIdentifier() == null || fhirPatient.getIdentifier().isEmpty()) {
+			return null;
+		}
+		PatientIdentifierType fhirIdType = Context.getPatientService().getPatientIdentifierTypeByName(
+		    FHIR_PATIENT_ID_TYPE_NAME);
+		for (Identifier identifier : fhirPatient.getIdentifier()) {
+			if (identifier == null || StringUtils.isBlank(identifier.getValue()) || isOpenMrsIdentifier(identifier)) {
+				continue;
+			}
+			if (fhirIdType != null) {
+				org.openmrs.Patient byFhirId = findOpenmrsPatientByIdentifierValue(identifier.getValue().trim(), fhirIdType);
+				if (byFhirId != null) {
+					return byFhirId;
+				}
+			}
+		}
+		return null;
+	}
+	
+	private PatientIdentifierType resolvePreferredIdentifierType() {
+		String typeUuid = resolvePreferredIdentifierTypeUuid();
+		if (StringUtils.isBlank(typeUuid)) {
+			return null;
+		}
+		return Context.getPatientService().getPatientIdentifierTypeByUuid(typeUuid.trim());
+	}
+	
+	private org.openmrs.Patient findOpenmrsPatientByIdentifierValue(String identifierValue, PatientIdentifierType idType) {
+		if (StringUtils.isBlank(identifierValue) || idType == null) {
+			return null;
+		}
+		List<org.openmrs.Patient> matches = Context.getPatientService().getPatients(null, identifierValue.trim(),
+		    Collections.singletonList(idType), false);
+		if (matches == null || matches.isEmpty()) {
+			return null;
+		}
+		for (org.openmrs.Patient candidate : matches) {
+			if (candidate != null && !Boolean.TRUE.equals(candidate.getVoided())) {
+				return candidate;
+			}
+		}
+		return null;
+	}
+	
+	private String updatePatientViaOpenmrsNativeApi(org.openmrs.Patient omrsPatient, Patient fhirPatient) {
+		if (omrsPatient == null) {
+			throw new IllegalArgumentException("OpenMRS patient is required for update");
+		}
+		if (fhirPatient == null) {
+			throw new IllegalArgumentException("FHIR Patient is required for update");
+		}
+		applyFhirDemographicsToOpenmrsPatient(omrsPatient, fhirPatient);
+		Context.getPatientService().savePatient(omrsPatient);
+		return omrsPatient.getUuid();
+	}
+	
+	private void applyFhirDemographicsToOpenmrsPatient(org.openmrs.Patient omrsPatient, Patient fhirPatient) {
+		if (fhirPatient.hasName() && fhirPatient.getNameFirstRep() != null) {
+			HumanName hn = fhirPatient.getNameFirstRep();
+			PersonName pn = omrsPatient.getPersonName();
+			if (pn == null) {
+				pn = new PersonName();
+				pn.setPreferred(true);
+				omrsPatient.addName(pn);
+			}
+			pn.setFamilyName(StringUtils.trimToNull(hn.getFamily()));
+			if (hn.hasGiven() && !hn.getGiven().isEmpty()) {
+				pn.setGivenName(StringUtils.trimToNull(hn.getGiven().get(0).getValue()));
+				if (hn.getGiven().size() > 1) {
+					StringBuilder mid = new StringBuilder();
+					for (int i = 1; i < hn.getGiven().size(); i++) {
+						if (mid.length() > 0) {
+							mid.append(' ');
+						}
+						mid.append(hn.getGiven().get(i).getValue());
+					}
+					pn.setMiddleName(StringUtils.trimToNull(mid.toString()));
+				}
+			}
+		}
+		if (fhirPatient.hasGender()) {
+			String g = fhirPatient.getGender().toCode();
+			if ("male".equalsIgnoreCase(g)) {
+				omrsPatient.setGender("M");
+			} else if ("female".equalsIgnoreCase(g)) {
+				omrsPatient.setGender("F");
+			} else {
+				omrsPatient.setGender("U");
+			}
+		}
+		if (fhirPatient.hasBirthDate()) {
+			omrsPatient.setBirthdate(resolveBirthDateForOpenmrs(fhirPatient));
+		}
+		if (fhirPatient.hasAddress()) {
+			Address fa = fhirPatient.getAddressFirstRep();
+			PersonAddress pa = omrsPatient.getPersonAddress();
+			if (pa == null) {
+				pa = new PersonAddress();
+				pa.setPreferred(true);
+				omrsPatient.addAddress(pa);
+			}
+			if (fa.hasLine()) {
+				List<StringType> lines = fa.getLine();
+				if (!lines.isEmpty() && lines.get(0).getValue() != null) {
+					pa.setAddress1(lines.get(0).getValue());
+				}
+				if (lines.size() > 1 && lines.get(1).getValue() != null) {
+					pa.setAddress2(lines.get(1).getValue());
+				}
+				if (lines.size() > 2) {
+					StringBuilder rest = new StringBuilder();
+					for (int i = 2; i < lines.size(); i++) {
+						if (lines.get(i).getValue() == null) {
+							continue;
+						}
+						if (rest.length() > 0) {
+							rest.append(' ');
+						}
+						rest.append(lines.get(i).getValue());
+					}
+					pa.setAddress3(rest.toString());
+				}
+			}
+			pa.setCityVillage(fa.getCity());
+			pa.setStateProvince(fa.getState());
+			pa.setPostalCode(fa.getPostalCode());
+			pa.setCountry(fa.getCountry());
+		}
+	}
+	
+	private Patient buildFhirPatientSnapshotFromOpenmrs(org.openmrs.Patient omrs) {
+		if (omrs == null) {
+			throw new IllegalArgumentException("OpenMRS patient is required");
+		}
+		Patient p = new Patient();
+		p.setId(omrs.getUuid());
+		PersonName preferredName = omrs.getPersonName();
+		if (preferredName != null) {
+			HumanName hn = new HumanName();
+			hn.setFamily(preferredName.getFamilyName());
+			if (StringUtils.isNotBlank(preferredName.getGivenName())) {
+				hn.addGiven(preferredName.getGivenName());
+			}
+			if (StringUtils.isNotBlank(preferredName.getMiddleName())) {
+				hn.addGiven(preferredName.getMiddleName());
+			}
+			p.addName(hn);
+		}
+		if (StringUtils.isNotBlank(omrs.getGender())) {
+			if ("M".equalsIgnoreCase(omrs.getGender())) {
+				p.setGender(org.hl7.fhir.r4.model.Enumerations.AdministrativeGender.MALE);
+			} else if ("F".equalsIgnoreCase(omrs.getGender())) {
+				p.setGender(org.hl7.fhir.r4.model.Enumerations.AdministrativeGender.FEMALE);
+			} else {
+				p.setGender(org.hl7.fhir.r4.model.Enumerations.AdministrativeGender.UNKNOWN);
+			}
+		}
+		if (omrs.getBirthdate() != null) {
+			p.setBirthDate(omrs.getBirthdate());
+		}
+		PersonAddress oa = omrs.getPersonAddress();
+		if (oa != null) {
+			Address fa = new Address();
+			if (StringUtils.isNotBlank(oa.getAddress1())) {
+				fa.addLine(oa.getAddress1());
+			}
+			if (StringUtils.isNotBlank(oa.getAddress2())) {
+				fa.addLine(oa.getAddress2());
+			}
+			if (StringUtils.isNotBlank(oa.getAddress3())) {
+				fa.addLine(oa.getAddress3());
+			}
+			fa.setCity(oa.getCityVillage());
+			fa.setState(oa.getStateProvince());
+			fa.setPostalCode(oa.getPostalCode());
+			fa.setCountry(oa.getCountry());
+			p.addAddress(fa);
+		}
+		PatientIdentifierType preferredType = resolvePreferredIdentifierType();
+		if (preferredType != null && omrs.getActiveIdentifiers() != null) {
+			for (PatientIdentifier pid : omrs.getActiveIdentifiers()) {
+				if (pid == null || pid.getIdentifierType() == null || pid.getIdentifierType().getUuid() == null
+				        || !pid.getIdentifierType().getUuid().equals(preferredType.getUuid())
+				        || StringUtils.isBlank(pid.getIdentifier())) {
+					continue;
+				}
+				Identifier id = new Identifier();
+				id.setSystem(OPENMRS_ID_SYSTEM);
+				org.hl7.fhir.r4.model.CodeableConcept type = new org.hl7.fhir.r4.model.CodeableConcept();
+				type.setText("OpenMRS ID");
+				type.addCoding().setSystem(V2_IDENTIFIER_SYSTEM).setCode(MR_IDENTIFIER_CODE);
+				id.setType(type);
+				id.setValue(pid.getIdentifier());
+				p.addIdentifier(id);
+				break;
+			}
+		}
+		return p;
 	}
 	
 	private void validatePatientAgainstProfileBeforeCreate(Patient patient) {

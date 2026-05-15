@@ -11,6 +11,13 @@ public class ForcePatientSyncRequest {
 	private String patientUuid;
 	
 	/**
+	 * When set with {@link #patientUuid}, pending duplicate-review uses
+	 * {@code outbound_bundle_json} on the case (import snapshot) instead of only local FHIR fetch
+	 * by UUID.
+	 */
+	private String caseUuid;
+	
+	/**
 	 * Required; recorded on {@code mpi_patient_duplicate_review_case.resolved_by} when a pending
 	 * case exists.
 	 */
@@ -22,6 +29,14 @@ public class ForcePatientSyncRequest {
 	
 	public void setPatientUuid(String patientUuid) {
 		this.patientUuid = patientUuid;
+	}
+	
+	public String getCaseUuid() {
+		return caseUuid;
+	}
+	
+	public void setCaseUuid(String caseUuid) {
+		this.caseUuid = caseUuid;
 	}
 	
 	public String getResolvedBy() {
