@@ -146,20 +146,25 @@ public class ImportPatientFuzzyDuplicateDetectionService {
 	private Bundle invokeFhirMdmMatch(Patient patient) {
 		String authorityBase = fhirConfig.resolveMdmMatchAuthorityBaseUrl();
 		if (StringUtils.isBlank(authorityBase)) {
-			log.error("{} mdm-match skipped: resolveMdmMatchAuthorityBaseUrl() blank (check opencr.openhim.url)",
+			log.error(
+			    "{} mdm-match skipped: authority blank (set opencr.openhim.url or opencr.openhim.mdm.authority.base.url)",
 			    FUZZY_IMPORT_DEBUG);
 			return null;
 		}
 		String json = fhirContext.newJsonParser().encodeResourceToString(buildPatientMatchParameters(patient));
 		String url = authorityBase + MDM_MATCH_PATH;
 		log.error("{} mdm-match POST url={} requestJsonLength={}", FUZZY_IMPORT_DEBUG, url, json.length());
-		String[] creds = fhirConfig.getOpenCRCredentials();
+		String[] creds = fhirConfig.getOpenHimCommonCredentials();
+		log.error(
+		    "{} mdm-match basicAuthUser={} (expect fhir_app for Postman parity; OpenMRS GP opencr.openhim.clientid.password.basic.auth overrides classpath)",
+		    FUZZY_IMPORT_DEBUG, creds[0]);
 		try {
 			FhirResponse res = HttpWebClient.postWithBasicAuthFhirJson(authorityBase, MDM_MATCH_PATH, creds[0], creds[1],
 			    json);
 			if (!isSuccessfulHttp(res.getStatusCode())) {
-				log.error("{} mdm-match HTTP failure status={} message={} bodySnippet={}", FUZZY_IMPORT_DEBUG,
-				    res.getStatusCode(), res.getMessage(), truncate(res.getResponse(), 1200));
+				log.error(
+				    "{} mdm-match HTTP failure status={} message={} bodySnippet={} basicAuthUser={} hint=401: set GP opencr.openhim.clientid.password.basic.auth=fhir_app:PASSWORD or fix password to match Postman",
+				    FUZZY_IMPORT_DEBUG, res.getStatusCode(), res.getMessage(), truncate(res.getResponse(), 1200), creds[0]);
 				return null;
 			}
 			log.error("{} mdm-match HTTP ok status={} responseLength={}", FUZZY_IMPORT_DEBUG, res.getStatusCode(),

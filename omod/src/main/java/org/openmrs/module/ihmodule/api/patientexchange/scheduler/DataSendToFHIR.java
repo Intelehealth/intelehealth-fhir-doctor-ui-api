@@ -766,7 +766,7 @@ public class DataSendToFHIR extends IHConstant {
 	private CentralPatientWriteOutcome postCreatePatient(Patient patient) {
 		if (usesPlainPatientBodyOpenhimChannel()) {
 			String payload = fhirContext.newJsonParser().encodeResourceToString(patient);
-			String[] credentials = firFhirConfig.getOpenCRCredentials();
+			String[] credentials = firFhirConfig.getOpenHimMediatorCredentials();
 			FhirResponse httpRes = HttpWebClient.postWithBasicAuth(firFhirConfig.getResolvedOpenCrOpenhimUrl(), "",
 			    credentials[0], credentials[1], payload);
 			if (!isSuccessfulStatus(httpRes.getStatusCode())) {
@@ -847,7 +847,7 @@ public class DataSendToFHIR extends IHConstant {
 			String base = resolveCentralPatientWriteBaseUrl();
 			if (base != null) {
 				String payload = fhirContext.newJsonParser().encodeResourceToString(toUpdate);
-				String[] credentials = firFhirConfig.getOpenCRCredentials();
+				String[] credentials = firFhirConfig.getOpenHimMediatorCredentials();
 				String putUrl = base + "/Patient/" + sourcePatientLogicalId.trim();
 				LOGGER.info("Central patient update: HTTP PUT url={} (path uses source patient id only)", putUrl);
 				FhirResponse httpRes = HttpWebClient.putWithBasicAuth(putUrl, "", credentials[0], credentials[1], payload);

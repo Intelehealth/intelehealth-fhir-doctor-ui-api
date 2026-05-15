@@ -40,9 +40,7 @@ public class FhirConfig extends IHConstant {
 		    "intelehealth.fhir.opencr.openhim.url");
 		System.err.println("opencrOpenhimURL:" + resolvedOpencrUrl);
 		IGenericClient openCr = fhirContext.newRestfulGenericClient(resolvedOpencrUrl);
-		String resolvedOpencrAuth = resolveStringProperty(opencrOpenhimAuthentication,
-		    "opencr.openhim.clientid.password.basic.auth", "intelehealth.fhir.opencr.openhim.authentication");
-		String[] credentials = splitCredentials(resolvedOpencrAuth, "opencr.openhim.clientid.password.basic.auth");
+		String[] credentials = getOpenHimMediatorCredentials();
 		BasicAuthInterceptor b = new BasicAuthInterceptor(credentials[0], credentials[1]);
 		openCr.registerInterceptor(b);
 		return openCr;
@@ -80,11 +78,30 @@ public class FhirConfig extends IHConstant {
 		return splitCredentials(resolvedLocalAuth, "local.openmrs.openhim.clientid.password.basic.auth");
 	}
 	
-	/** Basic-auth parts for central OpenCR FHIR server ({@link #opencrOpenhimURL}). */
-	public String[] getOpenCRCredentials() {
-		String resolvedOpencrAuth = resolveStringProperty(opencrOpenhimAuthentication,
-		    "opencr.openhim.clientid.password.basic.auth", "intelehealth.fhir.opencr.openhim.authentication");
-		return splitCredentials(resolvedOpencrAuth, "opencr.openhim.clientid.password.basic.auth");
+	/**
+	 * OpenCR / OpenHIM client channel: {@code opencr.openhim.clientid.password.basic.auth} only (
+	 * {@code user:password}, e.g. {@code fhir_app} for {@code POST /fhir/$mdm-match}).
+	 */
+	public String[] getOpenHimCommonCredentials() {
+		String client = resolveStringProperty("", "opencr.openhim.clientid.password.basic.auth", null);
+		if (StringUtils.isBlank(client)) {
+			throw new IllegalStateException(
+			        "Missing opencr.openhim.clientid.password.basic.auth (expected user:password for client channel)");
+		}
+		return splitCredentials(client.trim(), "opencr.openhim.clientid.password.basic.auth");
+	}
+	
+	/**
+	 * OpenCR / OpenHIM mediator channel: {@code opencr.openhim.mediator.password.basic.auth} only (
+	 * {@code user:password}).
+	 */
+	public String[] getOpenHimMediatorCredentials() {
+		String mediator = resolveStringProperty("", "opencr.openhim.mediator.password.basic.auth", null);
+		if (StringUtils.isBlank(mediator)) {
+			throw new IllegalStateException(
+			        "Missing opencr.openhim.mediator.password.basic.auth (expected user:password for mediator channel)");
+		}
+		return splitCredentials(mediator.trim(), "opencr.openhim.mediator.password.basic.auth");
 	}
 	
 	public String getResolvedLocalOpenmrsBaseUrl() {
@@ -135,11 +152,33 @@ public class FhirConfig extends IHConstant {
 	}
 	
 	/**
-	 * Authority-only base (scheme + host + port) from {@link #getResolvedOpenCrOpenhimUrl()} for
-	 * POST {@code /fhir/$mdm-match}. Does not use the full OpenHIM patient-create URL.
+	 * Authority for {@code POST /fhir/$mdm-match} (no path except scheme/host/port).
+	 * <ol>
+	 * <li>If {@code opencr.openhim.mdm.authority.base.url} is set (GP or module), that value is
+	 * normalized to an authority (path stripped).</li>
+	 * <li>Otherwise derived from {@code opencr.openhim.url} via
+	 * {@link OpenhimUrlAuthorityExtractor#extractAuthorityBase(String)} — e.g.
+	 * {@code http://192.168.19.152:6001/openmrs-fhir-mdm/patient-create} →
+	 * {@code http://192.168.19.152:6001}, so the MDM URL is
+	 * {@code http://192.168.19.152:6001/fhir/$mdm-match}.</li>
+	 * </ol>
 	 */
 	public String resolveMdmMatchAuthorityBaseUrl() {
-		return OpenhimUrlAuthorityExtractor.extractAuthorityBase(getResolvedOpenCrOpenhimUrl());
+		String explicit = resolveStringProperty("", "opencr.openhim.mdm.authority.base.url", null);
+		String raw = StringUtils.isNotBlank(explicit) ? explicit.trim() : getResolvedOpenCrOpenhimUrl();
+		String authority = OpenhimUrlAuthorityExtractor.extractAuthorityBase(raw);
+		return stripTrailingSlash(authority);
+	}
+	
+	private static String stripTrailingSlash(String authority) {
+		if (StringUtils.isBlank(authority)) {
+			return null;
+		}
+		String t = authority.trim();
+		while (t.endsWith("/")) {
+			t = t.substring(0, t.length() - 1);
+		}
+		return t.isEmpty() ? null : t;
 	}
 	
 	public String getPatientProfileUrl() {

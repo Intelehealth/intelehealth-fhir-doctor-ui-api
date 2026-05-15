@@ -105,6 +105,7 @@ public class HttpWebClient {
 		String url = concatBaseAndPath(baseURL, APIURL);
 		HttpHeaders headers = new HttpHeaders();
 		headers.setContentType(MediaType.parseMediaType("application/fhir+json;charset=UTF-8"));
+		headers.add(HttpHeaders.ACCEPT, "application/fhir+json");
 		headers.setBasicAuth(username, password, StandardCharsets.UTF_8);
 		HttpEntity<String> entity = new HttpEntity<>(payload, headers);
 		FhirResponse response = new FhirResponse();

@@ -41,8 +41,7 @@ public abstract class IHConstant {
 	
 	protected String opencrOpenhimURL = resolveProperty("opencr.openhim.url", "intelehealth.fhir.opencr.openhim.url");
 	
-	protected String opencrOpenhimAuthentication = resolveProperty("opencr.openhim.clientid.password.basic.auth",
-	    "intelehealth.fhir.opencr.openhim.authentication");
+	protected String opencrOpenhimAuthentication = resolveOpenCrCredentialFromModuleProperties();
 	
 	protected String gofrOpenhimURL = resolveProperty("gofr.openhim.url", "intelehealth.fhir.gofr.openhim.url");
 	
@@ -73,6 +72,20 @@ public abstract class IHConstant {
 			}
 		}
 		return StringUtils.defaultIfBlank(StringUtils.trimToEmpty(value), defaultValue);
+	}
+	
+	/**
+	 * Classpath-only resolution;
+	 * {@link org.openmrs.module.ihmodule.api.patientexchange.config.FhirConfig} merges global
+	 * properties using the same key order.
+	 */
+	private static String resolveOpenCrCredentialFromModuleProperties() {
+		String v = resolveProperty("opencr.openhim.mediator.password.basic.auth",
+		    "opencr.openhim.clientid.password.basic.auth");
+		if (StringUtils.isNotBlank(StringUtils.trimToEmpty(v))) {
+			return v.trim();
+		}
+		return resolveProperty("intelehealth.fhir.opencr.openhim.authentication", null);
 	}
 	
 }

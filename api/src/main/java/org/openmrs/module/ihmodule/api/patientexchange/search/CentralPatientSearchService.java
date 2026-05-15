@@ -42,7 +42,7 @@ public class CentralPatientSearchService {
 	 * {@code makeQueryParam} behaviour.
 	 */
 	public String searchPatientJsonByDemographics(Patient patient) throws UnsupportedEncodingException {
-		String[] creds = fhirConfig.getOpenCRCredentials();
+		String[] creds = fhirConfig.getOpenHimMediatorCredentials();
 		if (creds.length < 2) {
 			throw new IllegalStateException("OpenCR credentials not configured");
 		}
