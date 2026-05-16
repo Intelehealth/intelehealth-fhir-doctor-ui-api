@@ -33,6 +33,12 @@ public abstract class IHConstant {
 	
 	protected String globalIdentifierName = resolveProperty("intelehealth.fhir.resource.identifier.name", null);
 	
+	protected String sourcePatientIdTypeUuid = resolveProperty("intelehealth.fhir.patient.source.identifier.type.uuid",
+	    null, "b2f192c2-346a-486c-bcb4-7a35616890ba");
+	
+	protected String sourcePatientIdTypeName = resolveProperty("intelehealth.fhir.patient.source.identifier.type.name",
+	    null, "Source Patient Id");
+	
 	public String localOpenmrsOpenhimURL = resolveProperty("local.openmrs.openhim.url",
 	    "intelehealth.fhir.local.openmrs.openhim.url");
 	

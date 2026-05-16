@@ -1,5 +1,6 @@
 package org.openmrs.module.ihmodule.api.patientexchange.service;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import org.hl7.fhir.r4.model.Identifier;
@@ -8,6 +9,8 @@ import org.openmrs.Location;
 import org.openmrs.PatientIdentifier;
 import org.openmrs.PatientIdentifierType;
 import org.openmrs.api.context.Context;
+import org.openmrs.module.ihmodule.api.patientexchange.api.dto.PatientIdentifierSnapshot;
+import org.openmrs.module.ihmodule.api.patientexchange.api.dto.SourcePatientIdentifierUpdateResponse;
 import org.openmrs.module.ihmodule.api.patientexchange.event.FhirSyncSuppressionContext;
 import org.openmrs.module.ihmodule.api.patientexchange.utils.IHConstant;
 import org.springframework.stereotype.Service;
@@ -25,10 +28,6 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 	public static final String MESSAGE_MPI_ALREADY_SET_FORCE_SYNC = "MPI is already assigned on this local patient. Force sync was not performed.";
 	
 	private static final String MPI_TYPE_TEXT = "MPI";
-	
-	private static final String SOURCE_PATIENT_ID_TYPE_NAME = "Source Patient Id";
-	
-	private static final String SOURCE_PATIENT_ID_TYPE_UUID = "b2f192c2-346a-486c-bcb4-7a35616890ba";
 	
 	private static final String OPENMRS_DEFAULT_IDENTIFIER_LOCATION_UUID = "8d6c993e-c2cc-11de-8d13-0010c6dffd0f";
 	
@@ -72,17 +71,22 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 	
 	/**
 	 * Stores the central FHIR server logical id (Patient.id) on the facility patient as the
-	 * "Source Patient Id" identifier type (UUID b2f192c2-346a-486c-bcb4-7a35616890ba).
+	 * configured source patient identifier type ({@link #sourcePatientIdTypeUuid} /
+	 * {@link #sourcePatientIdTypeName}).
+	 * 
+	 * @return {@code true} when an existing source identifier was updated; {@code false} when a new
+	 *         one was added
 	 */
-	public void upsertCentralSourcePatientIdToLocalPatient(String patientUuid, String centralLogicalId) {
+	public boolean upsertCentralSourcePatientIdToLocalPatient(String patientUuid, String centralLogicalId) {
 		if (centralLogicalId == null || centralLogicalId.trim().isEmpty()) {
-			return;
+			return false;
 		}
 		org.openmrs.Patient patient = loadLocalPatientOrThrow(patientUuid);
 		String idVal = centralLogicalId.trim();
 		PatientIdentifierType sourceIdType = resolveSourcePatientIdIdentifierType();
 		Location location = resolveIdentifierLocation();
 		PatientIdentifier existing = findExistingSourcePatientIdIdentifier(patient);
+		boolean updatedExisting = existing != null;
 		if (existing != null) {
 			existing.setIdentifier(idVal);
 			existing.setIdentifierType(sourceIdType);
@@ -104,6 +108,29 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 				Context.getPatientService().savePatient(patient);
 			}
 		});
+		return updatedExisting;
+	}
+	
+	/**
+	 * REST/operator entry: upserts the source patient identifier and returns the saved patient
+	 * snapshot (all non-voided identifiers).
+	 */
+	public SourcePatientIdentifierUpdateResponse upsertSourcePatientIdentifier(String patientUuid, String identifierValue) {
+		if (identifierValue == null || identifierValue.trim().isEmpty()) {
+			throw new IllegalArgumentException("identifierValue is required");
+		}
+		String idVal = identifierValue.trim();
+		boolean updatedExisting = upsertCentralSourcePatientIdToLocalPatient(patientUuid, idVal);
+		org.openmrs.Patient saved = loadLocalPatientOrThrow(patientUuid);
+		SourcePatientIdentifierUpdateResponse response = new SourcePatientIdentifierUpdateResponse();
+		response.setStatus("ok");
+		response.setPatientUuid(saved.getUuid());
+		response.setSourcePatientIdentifierValue(idVal);
+		response.setOperation(updatedExisting ? "updated" : "created");
+		response.setIdentifierTypeUuid(sourcePatientIdTypeUuid);
+		response.setIdentifierTypeName(sourcePatientIdTypeName);
+		response.setIdentifiers(buildIdentifierSnapshots(saved));
+		return response;
 	}
 	
 	private org.openmrs.Patient loadLocalPatientOrThrow(String patientUuid) {
@@ -182,11 +209,11 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 				continue;
 			}
 			org.openmrs.PatientIdentifierType pit = identifier.getIdentifierType();
-			if (SOURCE_PATIENT_ID_TYPE_UUID.equals(pit.getUuid())) {
+			if (sourcePatientIdTypeUuid != null && sourcePatientIdTypeUuid.equals(pit.getUuid())) {
 				return identifier;
 			}
 			String typeName = pit.getName();
-			if (typeName != null && SOURCE_PATIENT_ID_TYPE_NAME.equalsIgnoreCase(typeName)) {
+			if (typeName != null && sourcePatientIdTypeName != null && sourcePatientIdTypeName.equalsIgnoreCase(typeName)) {
 				return identifier;
 			}
 		}
@@ -194,16 +221,47 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 	}
 	
 	private PatientIdentifierType resolveSourcePatientIdIdentifierType() {
-		PatientIdentifierType type = Context.getPatientService().getPatientIdentifierTypeByUuid(SOURCE_PATIENT_ID_TYPE_UUID);
-		if (type != null && !type.getRetired()) {
-			return type;
+		if (sourcePatientIdTypeUuid != null && !sourcePatientIdTypeUuid.trim().isEmpty()) {
+			PatientIdentifierType type = Context.getPatientService().getPatientIdentifierTypeByUuid(
+			    sourcePatientIdTypeUuid.trim());
+			if (type != null && !type.getRetired()) {
+				return type;
+			}
 		}
-		type = Context.getPatientService().getPatientIdentifierTypeByName(SOURCE_PATIENT_ID_TYPE_NAME);
-		if (type != null && !type.getRetired()) {
-			return type;
+		if (sourcePatientIdTypeName != null && !sourcePatientIdTypeName.trim().isEmpty()) {
+			PatientIdentifierType type = Context.getPatientService().getPatientIdentifierTypeByName(
+			    sourcePatientIdTypeName.trim());
+			if (type != null && !type.getRetired()) {
+				return type;
+			}
 		}
-		throw new IllegalStateException("Patient identifier type not found for Source Patient Id (uuid="
-		        + SOURCE_PATIENT_ID_TYPE_UUID + ", name=" + SOURCE_PATIENT_ID_TYPE_NAME + ")");
+		throw new IllegalStateException("Patient identifier type not found for source patient id (uuid="
+		        + sourcePatientIdTypeUuid + ", name=" + sourcePatientIdTypeName + ")");
+	}
+	
+	private static List<PatientIdentifierSnapshot> buildIdentifierSnapshots(org.openmrs.Patient patient) {
+		List<PatientIdentifierSnapshot> snapshots = new ArrayList<>();
+		if (patient == null || patient.getIdentifiers() == null) {
+			return snapshots;
+		}
+		for (PatientIdentifier identifier : patient.getIdentifiers()) {
+			if (identifier == null || identifier.getVoided()) {
+				continue;
+			}
+			PatientIdentifierSnapshot snap = new PatientIdentifierSnapshot();
+			snap.setValue(identifier.getIdentifier());
+			snap.setPreferred(identifier.getPreferred());
+			snap.setVoided(identifier.getVoided());
+			if (identifier.getIdentifierType() != null) {
+				snap.setIdentifierTypeUuid(identifier.getIdentifierType().getUuid());
+				snap.setIdentifierTypeName(identifier.getIdentifierType().getName());
+			}
+			if (identifier.getLocation() != null) {
+				snap.setLocationUuid(identifier.getLocation().getUuid());
+			}
+			snapshots.add(snap);
+		}
+		return snapshots;
 	}
 	
 	private PatientIdentifierType resolveMpiIdentifierType() {
