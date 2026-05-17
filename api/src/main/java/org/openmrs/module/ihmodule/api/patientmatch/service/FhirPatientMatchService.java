@@ -23,6 +23,7 @@ import org.openmrs.module.ihmodule.api.patientmatch.dto.FuzzyPatientCandidate;
 import org.openmrs.module.ihmodule.api.patientmatch.dto.FuzzyPatientMatchRequest;
 import org.openmrs.module.ihmodule.api.patientmatch.dto.FuzzyPatientMatchResult;
 import org.openmrs.module.ihmodule.api.patientmatch.engine.PatientFuzzyMatchingEngine;
+import org.openmrs.module.ihmodule.api.patientmatch.mapper.FuzzyMatchPatientResponseMapper;
 import org.openmrs.module.ihmodule.api.patientmatch.repository.PatientCandidateSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -55,6 +56,9 @@ public class FhirPatientMatchService {
 	
 	@Autowired
 	private PatientFuzzyMatchingEngine matchingEngine;
+	
+	@Autowired(required = false)
+	private FuzzyMatchPatientResponseMapper responseMapper;
 	
 	@Transactional(readOnly = true)
 	public Bundle match(String body) {
@@ -169,7 +173,9 @@ public class FhirPatientMatchService {
 			telecom.setSystem(ContactPoint.ContactPointSystem.PHONE);
 			telecom.setValue(candidate.getPhone());
 		}
-		if (StringUtils.isNotBlank(candidate.getAddress())) {
+		if (responseMapper != null) {
+			responseMapper.enrich(patient, candidate);
+		} else if (StringUtils.isNotBlank(candidate.getAddress())) {
 			patient.addAddress().setText(candidate.getAddress());
 		}
 		return patient;

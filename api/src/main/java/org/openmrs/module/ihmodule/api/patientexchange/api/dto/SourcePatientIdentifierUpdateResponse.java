@@ -13,7 +13,7 @@ public class SourcePatientIdentifierUpdateResponse {
 	
 	private String sourcePatientIdentifierValue;
 	
-	/** {@code created} or {@code updated}. */
+	/** {@code created} or {@code unchanged}. */
 	private String operation;
 	
 	private String identifierTypeUuid;

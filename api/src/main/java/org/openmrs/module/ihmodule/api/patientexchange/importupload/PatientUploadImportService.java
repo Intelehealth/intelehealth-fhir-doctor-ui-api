@@ -1233,6 +1233,8 @@ public class PatientUploadImportService {
 			case "Emergency-Contact-Number":
 				// Extension is emergency contact phone — not the patient's primary Telephone Number (that comes from telecom).
 				return Arrays.asList("Emergency Contact Number", "Emergency-Contact-Number");
+			case "Emergency-Contact-Type":
+				return Arrays.asList("Emergency Contact Type", "Emergency-Contact-Type");
 			case "Caste":
 				return Arrays.asList("Caste", "caste");
 			case "Economic-Status":

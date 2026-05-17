@@ -94,13 +94,59 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 				existing.setLocation(location);
 			}
 		} else {
-			PatientIdentifier pid = new PatientIdentifier();
-			pid.setIdentifier(idVal);
-			pid.setIdentifierType(sourceIdType);
-			pid.setLocation(location);
-			pid.setPreferred(false);
-			patient.addIdentifier(pid);
+			addSourcePatientIdentifier(patient, idVal, sourceIdType, location);
 		}
+		savePatientSuppressed(patient);
+		return updatedExisting;
+	}
+	
+	/**
+	 * REST/operator entry: adds a source patient identifier only when the patient has none for the
+	 * configured type. Does not update an existing source identifier.
+	 */
+	public SourcePatientIdentifierUpdateResponse upsertSourcePatientIdentifier(String patientUuid, String identifierValue) {
+		if (identifierValue == null || identifierValue.trim().isEmpty()) {
+			throw new IllegalArgumentException("identifierValue is required");
+		}
+		String idVal = identifierValue.trim();
+		org.openmrs.Patient patient = loadLocalPatientOrThrow(patientUuid);
+		PatientIdentifier existing = findExistingSourcePatientIdIdentifier(patient);
+		String operation;
+		String sourceIdValue;
+		if (existing != null) {
+			operation = "unchanged";
+			sourceIdValue = existing.getIdentifier();
+		} else {
+			PatientIdentifierType sourceIdType = resolveSourcePatientIdIdentifierType();
+			Location location = resolveIdentifierLocation();
+			addSourcePatientIdentifier(patient, idVal, sourceIdType, location);
+			savePatientSuppressed(patient);
+			operation = "created";
+			sourceIdValue = idVal;
+		}
+		org.openmrs.Patient saved = loadLocalPatientOrThrow(patientUuid);
+		SourcePatientIdentifierUpdateResponse response = new SourcePatientIdentifierUpdateResponse();
+		response.setStatus("ok");
+		response.setPatientUuid(saved.getUuid());
+		response.setSourcePatientIdentifierValue(sourceIdValue);
+		response.setOperation(operation);
+		response.setIdentifierTypeUuid(sourcePatientIdTypeUuid);
+		response.setIdentifierTypeName(sourcePatientIdTypeName);
+		response.setIdentifiers(buildIdentifierSnapshots(saved));
+		return response;
+	}
+	
+	private static void addSourcePatientIdentifier(org.openmrs.Patient patient, String idVal,
+	        PatientIdentifierType sourceIdType, Location location) {
+		PatientIdentifier pid = new PatientIdentifier();
+		pid.setIdentifier(idVal);
+		pid.setIdentifierType(sourceIdType);
+		pid.setLocation(location);
+		pid.setPreferred(false);
+		patient.addIdentifier(pid);
+	}
+	
+	private static void savePatientSuppressed(final org.openmrs.Patient patient) {
 		FhirSyncSuppressionContext.runSuppressed(new Runnable() {
 			
 			@Override
@@ -108,29 +154,6 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 				Context.getPatientService().savePatient(patient);
 			}
 		});
-		return updatedExisting;
-	}
-	
-	/**
-	 * REST/operator entry: upserts the source patient identifier and returns the saved patient
-	 * snapshot (all non-voided identifiers).
-	 */
-	public SourcePatientIdentifierUpdateResponse upsertSourcePatientIdentifier(String patientUuid, String identifierValue) {
-		if (identifierValue == null || identifierValue.trim().isEmpty()) {
-			throw new IllegalArgumentException("identifierValue is required");
-		}
-		String idVal = identifierValue.trim();
-		boolean updatedExisting = upsertCentralSourcePatientIdToLocalPatient(patientUuid, idVal);
-		org.openmrs.Patient saved = loadLocalPatientOrThrow(patientUuid);
-		SourcePatientIdentifierUpdateResponse response = new SourcePatientIdentifierUpdateResponse();
-		response.setStatus("ok");
-		response.setPatientUuid(saved.getUuid());
-		response.setSourcePatientIdentifierValue(idVal);
-		response.setOperation(updatedExisting ? "updated" : "created");
-		response.setIdentifierTypeUuid(sourcePatientIdTypeUuid);
-		response.setIdentifierTypeName(sourcePatientIdTypeName);
-		response.setIdentifiers(buildIdentifierSnapshots(saved));
-		return response;
 	}
 	
 	private org.openmrs.Patient loadLocalPatientOrThrow(String patientUuid) {

@@ -23,14 +23,34 @@ public final class ModuleClasspathPropertiesLoader {
 	 * @return merged properties, or {@code null} if no resource could be loaded
 	 */
 	public static Properties loadMergedInOrder(String... resourceNames) {
-		ClassLoader cl = Thread.currentThread().getContextClassLoader();
+		Properties merged = loadMergedInOrder(Thread.currentThread().getContextClassLoader(), resourceNames);
+		if (merged != null) {
+			return merged;
+		}
+		merged = loadMergedInOrder(ModuleClasspathPropertiesLoader.class.getClassLoader(), resourceNames);
+		if (merged != null) {
+			return merged;
+		}
+		try {
+			Class<?> fhirConfigClass = Class.forName("org.openmrs.module.ihmodule.api.patientexchange.config.FhirConfig");
+			return loadMergedInOrder(fhirConfigClass.getClassLoader(), resourceNames);
+		}
+		catch (ClassNotFoundException ex) {
+			return null;
+		}
+	}
+	
+	static Properties loadMergedInOrder(ClassLoader classLoader, String... resourceNames) {
+		if (classLoader == null || resourceNames == null || resourceNames.length == 0) {
+			return null;
+		}
 		Properties merged = new Properties();
 		boolean any = false;
 		for (String resource : resourceNames) {
 			if (StringUtils.isBlank(resource)) {
 				continue;
 			}
-			try (InputStream in = cl.getResourceAsStream(resource)) {
+			try (InputStream in = classLoader.getResourceAsStream(resource)) {
 				if (in == null) {
 					continue;
 				}
@@ -38,7 +58,7 @@ public final class ModuleClasspathPropertiesLoader {
 				fragment.load(in);
 				merged.putAll(fragment);
 				any = true;
-				log.info("Merged module classpath properties from '{}'", resource);
+				log.info("Merged module classpath properties from '{}' using {}", resource, classLoader);
 			}
 			catch (Exception ex) {
 				log.warn("Unable to load module classpath properties '{}': {}", resource, ex.getMessage());

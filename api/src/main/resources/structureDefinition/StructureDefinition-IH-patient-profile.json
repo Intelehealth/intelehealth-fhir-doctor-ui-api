@@ -189,6 +189,21 @@
         ]
       },
       {
+        "id": "Patient.extension:emergencyContactType",
+        "path": "Patient.extension",
+        "sliceName": "emergencyContactType",
+        "min": 0,
+        "max": "*",
+        "type": [
+          {
+            "code": "Extension",
+            "profile": [
+              "http://intelehealth-central-fhir.mpower-social.com/fhir/StructureDefinition/Emergency-Contact-Type"
+            ]
+          }
+        ]
+      },
+      {
         "id": "Patient.extension:householdNumber",
         "path": "Patient.extension",
         "sliceName": "householdNumber",

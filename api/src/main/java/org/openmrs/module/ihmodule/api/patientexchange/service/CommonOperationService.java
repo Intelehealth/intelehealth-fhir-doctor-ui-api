@@ -388,7 +388,7 @@ public class CommonOperationService {
 	public List<PersonAttribute> findPersonAttributes(String patientUUID) {
 		String sql = "select" + "	p.person_id personId, pat.name name , pa.value value" + " from" + "	person_attribute pa"
 		        + " join person_attribute_type pat on" + "	pa.person_attribute_type_id = pat.person_attribute_type_id "
-		        + " join person p on pa.person_id=p.person_id" + " where p.uuid=:patientUUID";
+		        + " join person p on pa.person_id=p.person_id" + " where p.uuid=:patientUUID and pa.voided = false";
 		
 		System.err.println(sql);
 		

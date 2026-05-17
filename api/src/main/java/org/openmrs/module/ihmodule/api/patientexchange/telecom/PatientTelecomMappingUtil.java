@@ -19,7 +19,38 @@ public final class PatientTelecomMappingUtil {
 	
 	private static final String ATTR_EMERGENCY_CONTACT_NUMBER = "emergencycontactnumber";
 	
+	private static final int MIN_PHONE_DIGIT_COUNT = 10;
+	
 	private PatientTelecomMappingUtil() {
+	}
+	
+	/**
+	 * @return {@code true} when {@code value} contains at least {@link #MIN_PHONE_DIGIT_COUNT}
+	 *         digits (ignoring non-digit characters).
+	 */
+	public static boolean isValidPhoneNumber(String value) {
+		return countDigits(value) >= MIN_PHONE_DIGIT_COUNT;
+	}
+	
+	/**
+	 * Drops phone {@link Patient#getTelecom()} entries with fewer than
+	 * {@link #MIN_PHONE_DIGIT_COUNT} digits. Non-phone telecom entries are preserved.
+	 */
+	public static void removeInvalidPhoneTelecom(Patient patient) {
+		if (patient == null || !patient.hasTelecom()) {
+			return;
+		}
+		List<ContactPoint> retained = new ArrayList<>();
+		for (ContactPoint existing : patient.getTelecom()) {
+			if (existing == null) {
+				continue;
+			}
+			if (isPhoneTelecom(existing) && !isValidPhoneNumber(existing.getValue())) {
+				continue;
+			}
+			retained.add(existing);
+		}
+		patient.setTelecom(retained);
 	}
 	
 	public static void applyRankedPhoneTelecom(Patient patient, List<PersonAttribute> attributes) {
@@ -38,10 +69,10 @@ public final class PatientTelecomMappingUtil {
 				telecom.add(existing.copy());
 			}
 		}
-		if (StringUtils.isNotBlank(telephoneNumber)) {
+		if (StringUtils.isNotBlank(telephoneNumber) && isValidPhoneNumber(telephoneNumber)) {
 			telecom.add(0, buildPhoneContact(telephoneNumber.trim(), ContactPointUse.MOBILE, 1));
 		}
-		if (StringUtils.isNotBlank(emergencyContactNumber)) {
+		if (StringUtils.isNotBlank(emergencyContactNumber) && isValidPhoneNumber(emergencyContactNumber)) {
 			telecom.add(Math.min(telecom.size(), 1), buildPhoneContact(emergencyContactNumber.trim(), ContactPointUse.HOME, 2));
 		}
 		patient.setTelecom(telecom);
@@ -135,6 +166,19 @@ public final class PatientTelecomMappingUtil {
 	
 	private static String normalizeAttributeName(String value) {
 		return value.trim().toLowerCase().replaceAll("[\\s_-]+", "");
+	}
+	
+	private static int countDigits(String value) {
+		if (StringUtils.isBlank(value)) {
+			return 0;
+		}
+		int digits = 0;
+		for (int i = 0; i < value.length(); i++) {
+			if (Character.isDigit(value.charAt(i))) {
+				digits++;
+			}
+		}
+		return digits;
 	}
 	
 	public static final class TelecomValues {

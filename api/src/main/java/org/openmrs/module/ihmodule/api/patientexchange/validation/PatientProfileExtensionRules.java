@@ -20,7 +20,7 @@ public final class PatientProfileExtensionRules {
 	
 	public static final Set<String> ALLOWED_STRUCTURE_DEFINITION_SUFFIXES = Collections.unmodifiableSet(new HashSet<>(
 	        Arrays.asList("Economic-Status", "Education-Level", "NationalID", "occupation", "Emergency-Contact-Number",
-	            "Household-Number", "Caste")));
+	            "Emergency-Contact-Type", "Household-Number", "Caste")));
 	
 	public static String extensionSuffixFromStructureDefinitionUrl(String url) {
 		if (StringUtils.isBlank(url)) {

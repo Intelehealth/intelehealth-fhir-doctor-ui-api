@@ -79,6 +79,35 @@ public class FhirConfig extends IHConstant {
 	}
 	
 	/**
+	 * FHIR server base for StructureDefinition extension URLs, e.g.
+	 * {@code http://host/fhir/StructureDefinition/Caste}.
+	 */
+	public String getStructureDefinitionBaseUrl() {
+		String fromSdProperty = resolveStringProperty(sdExtensionURL, "intelehealth.fhir.structuredefinition.extension.url",
+		    null);
+		if (StringUtils.isNotBlank(fromSdProperty) && !fromSdProperty.contains("${")) {
+			String trimmed = fromSdProperty.trim();
+			int i = trimmed.toLowerCase().indexOf("/structuredefinition");
+			if (i > 0) {
+				String base = trimmed.substring(0, i).trim();
+				while (base.endsWith("/")) {
+					base = base.substring(0, base.length() - 1);
+				}
+				return base;
+			}
+		}
+		String central = resolveStringProperty(centralFhirURL, "intelehealth.fhir.central.url", null);
+		if (StringUtils.isNotBlank(central) && !central.contains("${")) {
+			String base = central.trim();
+			while (base.endsWith("/")) {
+				base = base.substring(0, base.length() - 1);
+			}
+			return base;
+		}
+		return null;
+	}
+	
+	/**
 	 * OpenCR / OpenHIM client channel: {@code opencr.openhim.clientid.password.basic.auth} only (
 	 * {@code user:password}, e.g. {@code fhir_app} for {@code POST /fhir/$mdm-match}).
 	 */

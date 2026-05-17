@@ -93,6 +93,8 @@ public class DataSendToFHIR extends IHConstant {
 	
 	private static final String SOURCE_PATIENT_ID_SYSTEM = "urn:uuid:b2f192c2-346a-486c-bcb4-7a35616890ba";
 	
+	private static final String PATIENT_UUID_STRUCTURE_DEFINITION = "patient-uuid";
+	
 	private static final String V2_0203_SYSTEM = "http://terminology.hl7.org/CodeSystem/v2-0203";
 	
 	private static final String OPENMRS_IDENTIFIER_LOCATION_EXTENSION_URL = "http://fhir.openmrs.org/ext/patient/identifier#location";
@@ -354,36 +356,6 @@ public class DataSendToFHIR extends IHConstant {
 			        .setPrettyPrint(true).encodeResourceToString(transactionBundle);
 			
 			Optional<MpiPatientDuplicateReviewCase> duplicateReview = Optional.empty();
-			/*
-			 * if (!skipCentralMpiDuplicateSearch) { duplicateReview =
-			 * centralPatientDuplicateMatcher.persistIfCentralSearchHasMultipleMatches(
-			 * localPatient, localPatientUUID, payload); if (!hasMPI(localPatient) &&
-			 * duplicateReview.isPresent()) { MpiPatientDuplicateReviewCase reviewCase =
-			 * duplicateReview.get(); LOGGER.warn("Skipping MCI save for patient uuid=" +
-			 * localPatientUUID + ": " + reviewCase.getCandidateCount() +
-			 * " duplicate MPI candidates stored for manual review (case_uuid=" +
-			 * reviewCase.getCaseUuid() + ")"); DataExchangeAuditLog deferLog = new
-			 * DataExchangeAuditLog(); deferLog.setResourceName(resourceType);
-			 * deferLog.setResourceUuid(localPatientUUID); deferLog.setRequest(payload);
-			 * deferLog.setRequestUrl(mciURL + "rest/v1/patient/save");
-			 * deferLog.setResponse("Deferred pending duplicate MPI review: case_uuid=" +
-			 * reviewCase.getCaseUuid()); deferLog.setResponseStatus("409");
-			 * deferLog.setStatus(false); try { DataExchangeAuditLog savedDeferLog =
-			 * dataExchangeService.save(deferLog); savedDeferLog.setChangedBy(1);
-			 * savedDeferLog.setDateChanged(DateUtils.toFormattedDateNow());
-			 * dataExchangeService.update(savedDeferLog); } catch (Exception ex) {
-			 * LOGGER.error( "Unable to persist deferred audit log for patient uuid=" +
-			 * localPatientUUID + ": " + ex.getMessage(), ex); } FhirResponse deferResponse
-			 * = new FhirResponse(); deferResponse.setStatusCode("409");
-			 * deferResponse.setResponse(deferLog.getResponse()); return deferResponse; }
-			 * 
-			 * if (duplicateReview.isPresent()) { LOGGER.info(
-			 * "MPI duplicate review case {} present for patient uuid={}; continuing MCI sync because patient already has MPI"
-			 * , duplicateReview.get().getCaseUuid(), localPatientUUID); } } else {
-			 * LOGGER.info(
-			 * "Central MPI duplicate search skipped for patient uuid={} (operator force-sync); proceeding to central FHIR"
-			 * , localPatientUUID); }
-			 */
 			
 			DataExchangeAuditLog log = new DataExchangeAuditLog();
 			log.setResourceName(resourceType);
@@ -400,18 +372,6 @@ public class DataSendToFHIR extends IHConstant {
 				    "Unable to persist outbound audit log for patient uuid=" + localPatientUUID + ": " + ex.getMessage(), ex);
 			}
 			
-			//System.err.println("Final Patient payload before sending to FHIR server: " + payload);
-			/*
-			 * LOGGER.info(
-			 * "Sending {} to FHIR server (POST {}), patient uuid={}, JSON payload:\n{}",
-			 * resourceType, mciURL + "rest/v1/patient/save", localPatientUUID, payload);
-			 */
-			
-			/*
-			 * FhirResponse res = HttpWebClient.postWithBasicAuth(shrUrl,
-			 * "rest/v1/patient/save", firFhirConfig.getOpenMRSCredentials()[0],
-			 * firFhirConfig.getOpenMRSCredentials()[1], payload);
-			 */
 			FhirResponse res = sendPatientToCentral(localPatient);
 			LOGGER.error("res MDM  uuid={}", res);
 			if (uLog != null) {
@@ -636,6 +596,8 @@ public class DataSendToFHIR extends IHConstant {
 			retainFirstAddressOnly(patient);
 			normalizePatientForLatestIg(patient);
 			normalizeIdentifierStandards(patient);
+			PatientTelecomMappingUtil.removeInvalidPhoneTelecom(patient);
+			String localPatientUuid = resolveLocalOpenMrsPatientUuid(sourcePatient);
 			
 			String sourcePatientId = trimToNull(getSourcePatientIdentifier(patient));
 			if (sourcePatientId != null) {
@@ -650,6 +612,7 @@ public class DataSendToFHIR extends IHConstant {
 					    sourcePatientId);
 				}
 				applyCentralPutOutboundIdentifiers(patient, mpiGolden);
+				appendOutboundLocalPatientUuidIdentifier(patient, localPatientUuid);
 				CentralPatientWriteOutcome outcome = putCentralPatientBySourcePatientId(patient, sourcePatientId, mpiGolden);
 				response.setStatusCode("200");
 				String wireUpdate = trimToNull(outcome.getCentralWireResponseBody());
@@ -660,6 +623,7 @@ public class DataSendToFHIR extends IHConstant {
 				return response;
 			}
 			
+			appendOutboundLocalPatientUuidIdentifier(patient, localPatientUuid);
 			CentralPatientWriteOutcome createOutcome = postCreatePatient(patient);
 			String mpiForLocalSync = trimToNull(createOutcome.getCentralMpiIdentifierValue());
 			if (mpiForLocalSync == null || mpiForLocalSync.isEmpty()) {
@@ -932,6 +896,48 @@ public class DataSendToFHIR extends IHConstant {
 		goldenId.setSystem(HAPI_MDM_GOLDEN_ENTERPRISE_ID_SYSTEM);
 		goldenId.setValue(mpi);
 		patient.addIdentifier(goldenId);
+	}
+	
+	/**
+	 * Appends a {@code Patient.identifier} with the facility OpenMRS patient UUID (
+	 * {@code .../StructureDefinition/patient-uuid}) so central outbound sync can preserve the local
+	 * row key. Existing identifiers are left unchanged.
+	 */
+	private void appendOutboundLocalPatientUuidIdentifier(Patient patient, String localPatientUuid) {
+		if (patient == null) {
+			return;
+		}
+		String uuid = trimToNull(localPatientUuid);
+		if (uuid == null) {
+			return;
+		}
+		String sdBase = getCentralStructureDefinitionBaseUrl();
+		if (sdBase == null) {
+			LOGGER.warn("Cannot append patient-uuid identifier: StructureDefinition base URL is not configured");
+			return;
+		}
+		String system = sdBase + "/StructureDefinition/" + PATIENT_UUID_STRUCTURE_DEFINITION;
+		if (patient.hasIdentifier()) {
+			for (Identifier existing : patient.getIdentifier()) {
+				if (existing == null || !existing.hasValue()) {
+					continue;
+				}
+				if (uuid.equals(existing.getValue()) && existing.hasSystem() && system.equals(existing.getSystem())) {
+					return;
+				}
+			}
+		}
+		Identifier patientUuidId = new Identifier();
+		patientUuidId.setSystem(system);
+		patientUuidId.setValue(uuid);
+		patient.addIdentifier(patientUuidId);
+	}
+	
+	private static String resolveLocalOpenMrsPatientUuid(Patient patient) {
+		if (patient == null || patient.getIdElement() == null || !patient.getIdElement().hasIdPart()) {
+			return null;
+		}
+		return trimToNull(patient.getIdElement().getIdPart());
 	}
 	
 	private static Identifier findFirstOpenMrsIdIdentifier(Patient patient) {
