@@ -24,7 +24,7 @@
 <div class="container-fluid py-3">
 	<h3 class="fw-bold mb-3">MPI duplicate review  pending source patients</h3>
 
-	<div class="row mb-4" id="dupReviewStatsRow">
+	<div class="row mb-4 d-none" id="dupReviewStatsRow" aria-hidden="true">
 		<div class="col-6 col-md-4 col-lg mb-3">
 			<div class="card border-secondary h-100 shadow-sm">
 				<div class="card-body py-2 px-3">
@@ -244,6 +244,6 @@
 		resolvedBy: '<c:out value="${resolvedByUsername}" />'
 	};
 </script>
-<script src="${pageContext.request.contextPath}/moduleResources/ihmodule/js/duplicatePatientReview.js?v=patient-exchange-ws14"></script>
+<script src="${pageContext.request.contextPath}/moduleResources/ihmodule/js/duplicatePatientReview.js?v=patient-exchange-ws19"></script>
 
 <%@ include file="/WEB-INF/template/footer.jsp"%>

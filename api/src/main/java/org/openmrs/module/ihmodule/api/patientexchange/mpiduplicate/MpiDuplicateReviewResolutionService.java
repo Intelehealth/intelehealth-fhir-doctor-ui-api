@@ -120,6 +120,28 @@ public class MpiDuplicateReviewResolutionService {
 		LOGGER.info("Duplicate-review case {} marked SKIPPED by {}", reviewCase.getCaseUuid(), resolvedBy);
 	}
 	
+	/** Marks only the candidate row skipped; {@link MpiPatientDuplicateReviewCase} stays unchanged. */
+	@Transactional
+	public void markCandidateSkipped(MpiPatientDuplicateReviewCandidate candidate, String resolvedBy) {
+		if (candidate == null || resolvedBy == null) {
+			return;
+		}
+		candidate.setReviewStatus(MpiDuplicateReviewStatus.SKIPPED);
+		candidateRepository.saveOrUpdate(candidate);
+		LOGGER.info("Duplicate-review candidate {} marked SKIPPED by {}", candidate.getId(), resolvedBy);
+	}
+	
+	/** Marks all candidates skipped without updating the parent case row. */
+	@Transactional
+	public void markAllCandidatesSkippedOnly(MpiPatientDuplicateReviewCase reviewCase, String resolvedBy) {
+		if (reviewCase == null || resolvedBy == null) {
+			return;
+		}
+		markAllCandidatesStatus(reviewCase.getId(), MpiDuplicateReviewStatus.SKIPPED);
+		LOGGER.info("Duplicate-review case {} candidates marked SKIPPED (case unchanged) by {}", reviewCase.getCaseUuid(),
+		    resolvedBy);
+	}
+	
 	private void markAllCandidatesStatus(Long reviewCaseId, MpiDuplicateReviewStatus status) {
 		if (reviewCaseId == null) {
 			return;

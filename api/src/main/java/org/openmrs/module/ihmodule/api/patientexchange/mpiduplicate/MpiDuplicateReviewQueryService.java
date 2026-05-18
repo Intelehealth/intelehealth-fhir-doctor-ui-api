@@ -48,7 +48,12 @@ public class MpiDuplicateReviewQueryService {
 		    reviewCase.getId());
 		List<MpiDuplicateReviewCandidateDto> openmrs = new ArrayList<>();
 		List<MpiDuplicateReviewCandidateDto> fhir = new ArrayList<>();
+		int hidden = 0;
 		for (MpiPatientDuplicateReviewCandidate c : rows) {
+			if (!isVisibleInDuplicateReviewList(c)) {
+				hidden++;
+				continue;
+			}
 			MpiDuplicateReviewCandidateDto d = toCandidate(c, reviewCase);
 			if (isOpenmrsMatchSource(c.getMatchSource())) {
 				openmrs.add(d);
@@ -59,11 +64,36 @@ public class MpiDuplicateReviewQueryService {
 		MpiDuplicateReviewCandidatesResponse out = new MpiDuplicateReviewCandidatesResponse();
 		out.setOpenmrsCandidates(openmrs);
 		out.setFhirCandidates(fhir);
+		out.setTotalStoredCount(rows.size());
+		out.setVisibleCount(openmrs.size() + fhir.size());
+		out.setHiddenCount(hidden);
 		return out;
 	}
 	
 	private static boolean isOpenmrsMatchSource(String matchSource) {
 		return matchSource != null && MpiImportDuplicateReviewSource.OPENMRS.getValue().equalsIgnoreCase(matchSource.trim());
+	}
+	
+	private int countVisibleCandidatesForCase(Long reviewCaseId, Integer storedCountFallback) {
+		if (reviewCaseId == null) {
+			return storedCountFallback != null ? storedCountFallback : 0;
+		}
+		List<MpiPatientDuplicateReviewCandidate> rows = candidateRepository.findByReviewCase_IdOrderByIdAsc(reviewCaseId);
+		int visible = 0;
+		for (MpiPatientDuplicateReviewCandidate c : rows) {
+			if (isVisibleInDuplicateReviewList(c)) {
+				visible++;
+			}
+		}
+		return visible;
+	}
+	
+	private static boolean isVisibleInDuplicateReviewList(MpiPatientDuplicateReviewCandidate candidate) {
+		if (candidate == null) {
+			return false;
+		}
+		MpiDuplicateReviewStatus status = candidate.getReviewStatus();
+		return status == null || status == MpiDuplicateReviewStatus.PENDING;
 	}
 	
 	private MpiDuplicateReviewCaseSummaryDto toSummary(MpiPatientDuplicateReviewCase c) {
@@ -77,7 +107,7 @@ public class MpiDuplicateReviewQueryService {
 		d.setSourceGenderCode(c.getSourceGenderCode());
 		d.setSourceTelecom(c.getSourceTelecom());
 		d.setCandidateAddressSnapshot(truncate(c.getSourceAddressSnapshot(), 4000));
-		d.setCandidateCount(c.getCandidateCount());
+		d.setCandidateCount(countVisibleCandidatesForCase(c.getId(), c.getCandidateCount()));
 		d.setReviewStatus(c.getReviewStatus() != null ? c.getReviewStatus().name() : null);
 		d.setDateCreated(c.getDateCreated());
 		d.setSourceOfPatient(c.getSourceOfPatient());

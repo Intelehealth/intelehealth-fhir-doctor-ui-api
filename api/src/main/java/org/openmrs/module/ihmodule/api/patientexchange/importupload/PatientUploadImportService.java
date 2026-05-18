@@ -136,6 +136,7 @@ public class PatientUploadImportService {
 						item.setMessage("Fuzzy duplicate detected; patient not imported. case_uuid="
 						        + fuzzyDup.get().getCaseUuid());
 						response.setDuplicateReviewDeferred(response.getDuplicateReviewDeferred() + 1);
+						response.setSkipped(response.getSkipped() + 1);
 						response.getItems().add(item);
 						continue;
 					}
@@ -950,6 +951,99 @@ public class PatientUploadImportService {
 		persistImportedPatientSupplementalAttributes(uuid, prepared);
 		log.info("patient created: openmrsPatientUuid={}", uuid);
 		return new OpenmrsPatientUpsertResult(uuid, OpenmrsPatientUpsertResult.Action.CREATED, "patient created");
+	}
+	
+	/**
+	 * Duplicate-review link-and-join: write the <em>source</em> import patient to OpenMRS. The
+	 * {@code existingOpenMrsPatient} (when present) is only the link target chosen from a duplicate
+	 * candidate; demographics and attributes come from {@code sourcePatient}.
+	 */
+	public OpenmrsPatientUpsertResult upsertOpenmrsPatientFromSourcePatient(Patient sourcePatient,
+	        org.openmrs.Patient existingOpenMrsPatient, String locationUuid) {
+		requireNativeCreateEnabled();
+		if (sourcePatient == null) {
+			throw new IllegalArgumentException("source FHIR Patient is required");
+		}
+		if (existingOpenMrsPatient != null && !Boolean.TRUE.equals(existingOpenMrsPatient.getVoided())) {
+			return updateOpenmrsPatientFromSourcePatient(sourcePatient, existingOpenMrsPatient, locationUuid);
+		}
+		return createOpenmrsPatientFromSourcePatient(sourcePatient, locationUuid);
+	}
+	
+	/**
+	 * Resolves the OpenMRS ID value from a FHIR Patient snapshot (preferred identifier on the
+	 * import profile).
+	 */
+	public String resolveOpenMrsIdentifierValueFromFhirPatient(Patient fhirPatient) {
+		Identifier openMrsId = findOpenMrsIdentifierFromJson(fhirPatient);
+		if (openMrsId == null || StringUtils.isBlank(openMrsId.getValue())) {
+			return null;
+		}
+		return openMrsId.getValue().trim();
+	}
+	
+	/**
+	 * Primary duplicate-review lookup: existing OpenMRS row by OpenMRS ID on the source FHIR
+	 * Patient.
+	 */
+	public org.openmrs.Patient findOpenmrsPatientBySourceOpenMrsIdentifier(Patient sourcePatient) {
+		if (sourcePatient == null) {
+			return null;
+		}
+		String identifierValue = resolveOpenMrsIdentifierValueFromFhirPatient(sourcePatient);
+		if (StringUtils.isBlank(identifierValue)) {
+			return null;
+		}
+		PatientIdentifierType idType = resolvePreferredIdentifierType();
+		if (idType == null) {
+			return null;
+		}
+		return findOpenmrsPatientByIdentifierValue(identifierValue, idType);
+	}
+	
+	public OpenmrsPatientUpsertResult updateOpenmrsPatientFromSourcePatient(Patient sourcePatient,
+	        org.openmrs.Patient existingOpenMrsPatient, String locationUuid) {
+		requireNativeCreateEnabled();
+		if (sourcePatient == null) {
+			throw new IllegalArgumentException("source FHIR Patient is required");
+		}
+		if (existingOpenMrsPatient == null || Boolean.TRUE.equals(existingOpenMrsPatient.getVoided())) {
+			throw new IllegalArgumentException("OpenMRS patient is required for update");
+		}
+		Patient prepared = prepareFhirPatientForNativeUpsert(sourcePatient, locationUuid);
+		log.info("duplicate-review link: updating openmrsPatientUuid={} from source patient",
+		    existingOpenMrsPatient.getUuid());
+		String uuid = updatePatientViaOpenmrsNativeApi(existingOpenMrsPatient, prepared);
+		persistImportedPatientSupplementalAttributes(uuid, prepared);
+		return new OpenmrsPatientUpsertResult(uuid, OpenmrsPatientUpsertResult.Action.UPDATED, "patient updated from source");
+	}
+	
+	public OpenmrsPatientUpsertResult createOpenmrsPatientFromSourcePatient(Patient sourcePatient, String locationUuid) {
+		requireNativeCreateEnabled();
+		if (sourcePatient == null) {
+			throw new IllegalArgumentException("source FHIR Patient is required");
+		}
+		Patient prepared = prepareFhirPatientForNativeUpsert(sourcePatient, locationUuid);
+		log.info("duplicate-review link: creating OpenMRS patient from source");
+		String uuid = createPatientViaOpenmrsNativeApi(prepared, resolveIdentifierLocationUuid(locationUuid));
+		persistImportedPatientSupplementalAttributes(uuid, prepared);
+		return new OpenmrsPatientUpsertResult(uuid, OpenmrsPatientUpsertResult.Action.CREATED, "patient created from source");
+	}
+	
+	/**
+	 * Local row previously linked to a central FHIR Patient logical id (
+	 * {@value #FHIR_PATIENT_ID_TYPE_NAME}).
+	 */
+	public org.openmrs.Patient findOpenmrsPatientByFhirPatientLogicalId(String fhirLogicalId) {
+		if (StringUtils.isBlank(fhirLogicalId)) {
+			return null;
+		}
+		PatientIdentifierType fhirIdType = Context.getPatientService().getPatientIdentifierTypeByName(
+		    FHIR_PATIENT_ID_TYPE_NAME);
+		if (fhirIdType == null) {
+			return null;
+		}
+		return findOpenmrsPatientByIdentifierValue(fhirLogicalId.trim(), fhirIdType);
 	}
 	
 	/**

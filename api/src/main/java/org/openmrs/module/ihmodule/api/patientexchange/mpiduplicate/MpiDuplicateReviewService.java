@@ -125,6 +125,7 @@ public class MpiDuplicateReviewService {
 			row.setMatchScore(bundleEntryMatchScore(entry));
 			row.setMatchSource(MpiImportDuplicateReviewSource.FHIR.getValue());
 			row.setMatchType(BundleSearchMatchGradeExtractor.extractMatchGradeCode(entry));
+			row.setReviewStatus(MpiDuplicateReviewStatus.PENDING);
 			reviewCase.addCandidate(row);
 		}
 		
@@ -293,6 +294,7 @@ public class MpiDuplicateReviewService {
 			row.setMatchScore(matchRow.getMatchScore());
 			row.setMatchSource(matchRow.getMatchSource());
 			row.setMatchType(matchRow.getMatchType());
+			row.setReviewStatus(MpiDuplicateReviewStatus.PENDING);
 			reviewCase.addCandidate(row);
 			idx++;
 		}

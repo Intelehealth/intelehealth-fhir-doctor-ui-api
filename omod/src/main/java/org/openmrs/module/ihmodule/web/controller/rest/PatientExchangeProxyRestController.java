@@ -101,7 +101,7 @@ public class PatientExchangeProxyRestController {
 			User u = Context.getAuthenticatedUser();
 			log.debug("ihmodule patientExchange: pending cases requested by user=" + (u != null ? u.getUsername() : "?"));
 		}
-		writeJson(response, HttpStatus.OK.value(), mpiDuplicateReviewQueryService.listPendingCases());
+		writeJson(response, HttpStatus.OK.value(), mpiDuplicateReviewQueryService.listPendingCases(), true);
 	}
 	
 	@RequestMapping(value = { "module/ihmodule/patientExchangeDupStatistics.form",
@@ -130,7 +130,7 @@ public class PatientExchangeProxyRestController {
 		}
 		try {
 			writeJson(response, HttpStatus.OK.value(),
-			    mpiDuplicateReviewQueryService.listCandidatesForCaseUuid(caseUuid.trim()));
+			    mpiDuplicateReviewQueryService.listCandidatesForCaseUuid(caseUuid.trim()), true);
 		}
 		catch (IllegalArgumentException ex) {
 			writeJson(response, HttpStatus.NOT_FOUND.value(), errorBody(ex.getMessage()));
@@ -212,10 +212,22 @@ public class PatientExchangeProxyRestController {
 			return;
 		}
 		try {
-			mpiDuplicateReviewPatientActionService.skipCaseByCaseUuid(body.getCaseUuid().trim(), body.getResolvedBy().trim());
+			String caseUuid = body.getCaseUuid().trim();
+			String resolvedBy = body.getResolvedBy().trim();
+			if (body.getCandidateId() != null) {
+				mpiDuplicateReviewPatientActionService.skipCandidateByCaseUuid(caseUuid, body.getCandidateId(), resolvedBy);
+			} else {
+				mpiDuplicateReviewPatientActionService.skipCaseByCaseUuid(caseUuid, resolvedBy);
+			}
 			Map<String, Object> ok = new LinkedHashMap<>();
 			ok.put("status", "ok");
-			ok.put("caseUuid", body.getCaseUuid().trim());
+			ok.put("caseUuid", caseUuid);
+			if (body.getCandidateId() != null) {
+				ok.put("candidateId", body.getCandidateId());
+				ok.put("scope", "candidate");
+			} else {
+				ok.put("scope", "case");
+			}
 			writeJson(response, HttpStatus.OK.value(), ok);
 		}
 		catch (IllegalArgumentException ex) {
@@ -413,10 +425,18 @@ public class PatientExchangeProxyRestController {
 	}
 	
 	private void writeJson(HttpServletResponse response, int statusCode, Object body) throws IOException {
+		writeJson(response, statusCode, body, false);
+	}
+	
+	private void writeJson(HttpServletResponse response, int statusCode, Object body, boolean noCache) throws IOException {
 		byte[] payload = objectMapper.writeValueAsBytes(body);
 		response.resetBuffer();
 		response.setStatus(statusCode);
 		response.setContentType("application/json;charset=UTF-8");
+		if (noCache) {
+			response.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+			response.setHeader("Pragma", "no-cache");
+		}
 		response.setContentLength(payload.length);
 		response.getOutputStream().write(payload);
 		response.getOutputStream().flush();

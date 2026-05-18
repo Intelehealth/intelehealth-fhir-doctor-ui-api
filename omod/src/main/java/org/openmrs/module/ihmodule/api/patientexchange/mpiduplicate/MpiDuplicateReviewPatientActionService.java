@@ -50,9 +50,24 @@ public class MpiDuplicateReviewPatientActionService {
 	private PatientUploadImportService patientUploadImportService;
 	
 	@Transactional
+	public void skipCandidateByCaseUuid(String caseUuid, long candidateId, String resolvedBy) {
+		MpiPatientDuplicateReviewCase reviewCase = requirePendingCase(caseUuid);
+		MpiPatientDuplicateReviewCandidate row = candidateRepository.findById(candidateId);
+		if (row == null || row.getReviewCase() == null || !reviewCase.getId().equals(row.getReviewCase().getId())) {
+			throw new IllegalArgumentException("candidateId does not belong to caseUuid");
+		}
+		mpiDuplicateReviewResolutionService.markCandidateSkipped(row, resolvedBy);
+	}
+	
+	/**
+	 * Pending source-patient list: marks {@code mpi_patient_duplicate_review_case} and all
+	 * candidates as {@link MpiDuplicateReviewStatus#SKIPPED} so the case leaves the pending queue.
+	 */
+	@Transactional
 	public void skipCaseByCaseUuid(String caseUuid, String resolvedBy) {
-		MpiPatientDuplicateReviewCase c = requirePendingCase(caseUuid);
-		mpiDuplicateReviewResolutionService.markCaseAndAllCandidatesSkipped(c, resolvedBy);
+		MpiPatientDuplicateReviewCase reviewCase = requirePendingCase(caseUuid);
+		mpiDuplicateReviewResolutionService.markCaseAndAllCandidatesSkipped(reviewCase, resolvedBy);
+		LOG.info("Duplicate-review pending case skipped: case_uuid={} by {}", reviewCase.getCaseUuid(), resolvedBy);
 	}
 	
 	@Transactional
@@ -87,31 +102,87 @@ public class MpiDuplicateReviewPatientActionService {
 		if (row == null || row.getReviewCase() == null || !reviewCase.getId().equals(row.getReviewCase().getId())) {
 			throw new IllegalArgumentException("candidateId does not belong to caseUuid");
 		}
-		String json = StringUtils.trimToNull(row.getPatientResourceJson());
-		if (json == null) {
-			throw new IllegalArgumentException("patient_resource_json is empty for candidate " + candidateId);
-		}
-		Patient source = fhirContext.newJsonParser().parseResource(Patient.class, json);
-		Patient prepared = source.copy();
-		String logical = StringUtils.trimToNull(row.getFhirPatientLogicalId());
+		Patient sourcePatient = resolveSourcePatientFromCase(reviewCase);
+		String candidateLogicalId = StringUtils.trimToNull(row.getFhirPatientLogicalId());
 		String matchSrc = StringUtils.trimToEmpty(row.getMatchSource());
-		if (MpiImportDuplicateReviewSource.FHIR.getValue().equalsIgnoreCase(matchSrc)) {
-			prepared.setId((String) null);
-		} else if (MpiImportDuplicateReviewSource.OPENMRS.getValue().equalsIgnoreCase(matchSrc)) {
-			if (logical == null) {
-				throw new IllegalArgumentException("fhir_patient_logical_id is required for OpenMRS candidate update");
-			}
-			prepared.setId(logical);
+		OpenmrsPatientUpsertResult result;
+		if (MpiImportDuplicateReviewSource.OPENMRS.getValue().equalsIgnoreCase(matchSrc)) {
+			result = linkAndJoinFromOpenMrsMatchSource(sourcePatient, row, candidateLogicalId);
+		} else if (MpiImportDuplicateReviewSource.FHIR.getValue().equalsIgnoreCase(matchSrc)) {
+			result = linkAndJoinFromFhirMatchSource(sourcePatient, candidateLogicalId);
 		} else {
-			throw new IllegalArgumentException("Unsupported match_source for candidate: " + row.getMatchSource());
+			throw new IllegalArgumentException("Unsupported match_source for candidate: " + matchSrc);
 		}
-		OpenmrsPatientUpsertResult result = patientUploadImportService.upsertOpenmrsPatientFromFhirPatient(prepared, null);
-		if (MpiImportDuplicateReviewSource.FHIR.getValue().equalsIgnoreCase(matchSrc)) {
-			attachFhirPatientIdIdentifierIfConfigured(result.getPatientUuid(), logical);
-		}
-		LOG.info("Duplicate-review candidate add ({}): {} openmrsPatientUuid={} case_uuid={} candidateId={}", matchSrc,
+		LOG.info("Duplicate-review link-and-join ({}): {} openmrsPatientUuid={} case_uuid={} candidateId={}", matchSrc,
 		    result.getMessage(), result.getPatientUuid(), caseUuid, candidateId);
 		mpiDuplicateReviewResolutionService.markCaseAndAllCandidatesCompleted(reviewCase, resolvedBy);
+	}
+	
+	/**
+	 * {@code match_source=openmrs}: resolve existing row by OpenMRS identifier (source, then
+	 * candidate snapshot), require a match, update from source import data.
+	 */
+	private OpenmrsPatientUpsertResult linkAndJoinFromOpenMrsMatchSource(Patient sourcePatient,
+	        MpiPatientDuplicateReviewCandidate row, String candidateLogicalId) {
+		org.openmrs.Patient existing = resolveExistingPatientByOpenMrsIdentifier(sourcePatient, row);
+		if (existing == null) {
+			String openMrsId = patientUploadImportService.resolveOpenMrsIdentifierValueFromFhirPatient(sourcePatient);
+			throw new IllegalArgumentException("OpenMRS patient not found for OpenMRS identifier: "
+			        + StringUtils.defaultString(openMrsId, "(missing)"));
+		}
+		assertSelectedOpenMrsCandidate(existing, candidateLogicalId);
+		return patientUploadImportService.updateOpenmrsPatientFromSourcePatient(sourcePatient, existing, null);
+	}
+	
+	/**
+	 * {@code match_source=fhir}: resolve by OpenMRS identifier on source; update if found,
+	 * otherwise create from source; attach central FHIR Patient ID when configured.
+	 */
+	private OpenmrsPatientUpsertResult linkAndJoinFromFhirMatchSource(Patient sourcePatient, String candidateLogicalId) {
+		org.openmrs.Patient existing = patientUploadImportService.findOpenmrsPatientBySourceOpenMrsIdentifier(sourcePatient);
+		OpenmrsPatientUpsertResult result;
+		if (existing != null) {
+			result = patientUploadImportService.updateOpenmrsPatientFromSourcePatient(sourcePatient, existing, null);
+		} else {
+			result = patientUploadImportService.createOpenmrsPatientFromSourcePatient(sourcePatient, null);
+		}
+		attachFhirPatientIdIdentifierIfConfigured(result.getPatientUuid(), candidateLogicalId);
+		return result;
+	}
+	
+	private org.openmrs.Patient resolveExistingPatientByOpenMrsIdentifier(Patient sourcePatient,
+	        MpiPatientDuplicateReviewCandidate row) {
+		org.openmrs.Patient bySourceId = patientUploadImportService
+		        .findOpenmrsPatientBySourceOpenMrsIdentifier(sourcePatient);
+		if (bySourceId != null) {
+			return bySourceId;
+		}
+		String candidateJson = StringUtils.trimToNull(row.getPatientResourceJson());
+		if (candidateJson != null) {
+			Patient candidateFhir = fhirContext.newJsonParser().parseResource(Patient.class, candidateJson);
+			org.openmrs.Patient byCandidateId = patientUploadImportService
+			        .findOpenmrsPatientBySourceOpenMrsIdentifier(candidateFhir);
+			if (byCandidateId != null) {
+				return byCandidateId;
+			}
+		}
+		if (StringUtils.isNotBlank(row.getFhirPatientLogicalId())) {
+			org.openmrs.Patient byUuid = Context.getPatientService().getPatientByUuid(row.getFhirPatientLogicalId().trim());
+			if (byUuid != null && !Boolean.TRUE.equals(byUuid.getVoided())) {
+				return byUuid;
+			}
+		}
+		return null;
+	}
+	
+	private void assertSelectedOpenMrsCandidate(org.openmrs.Patient resolved, String candidateLogicalId) {
+		if (StringUtils.isBlank(candidateLogicalId)) {
+			return;
+		}
+		if (!candidateLogicalId.trim().equals(resolved.getUuid())) {
+			throw new IllegalArgumentException(
+			        "Selected OpenMRS duplicate candidate does not match patient resolved by OpenMRS identifier");
+		}
 	}
 	
 	private MpiPatientDuplicateReviewCase requirePendingCase(String caseUuid) {
@@ -124,6 +195,15 @@ public class MpiDuplicateReviewPatientActionService {
 			throw new IllegalStateException("Case is not PENDING: " + c.getReviewStatus());
 		}
 		return c;
+	}
+	
+	private Patient resolveSourcePatientFromCase(MpiPatientDuplicateReviewCase reviewCase) {
+		String outbound = StringUtils.trimToNull(reviewCase.getOutboundBundleJson());
+		if (outbound == null) {
+			throw new IllegalArgumentException(
+			        "outbound_bundle_json is required on the duplicate-review case to upload source patient data");
+		}
+		return parsePatientFromOutboundJson(outbound);
 	}
 	
 	private Patient parsePatientFromOutboundJson(String outbound) {

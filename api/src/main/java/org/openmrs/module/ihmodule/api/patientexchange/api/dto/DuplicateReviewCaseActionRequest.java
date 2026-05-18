@@ -1,11 +1,16 @@
 package org.openmrs.module.ihmodule.api.patientexchange.api.dto;
 
 /**
- * Skip or reference a duplicate-review case by {@code case_uuid}.
+ * Skip duplicate-review via {@code POST .../duplicate-review/skip}. When {@code candidateId} is
+ * set, only that {@code mpi_patient_duplicate_review_candidate} row is updated (case unchanged).
+ * When {@code candidateId} is omitted, the {@code mpi_patient_duplicate_review_case} and all its
+ * candidates are marked {@code SKIPPED} (removes the case from the pending source-patient list).
  */
 public class DuplicateReviewCaseActionRequest {
 	
 	private String caseUuid;
+	
+	private Long candidateId;
 	
 	private String resolvedBy;
 	
@@ -15,6 +20,14 @@ public class DuplicateReviewCaseActionRequest {
 	
 	public void setCaseUuid(String caseUuid) {
 		this.caseUuid = caseUuid;
+	}
+	
+	public Long getCandidateId() {
+		return candidateId;
+	}
+	
+	public void setCandidateId(Long candidateId) {
+		this.candidateId = candidateId;
 	}
 	
 	public String getResolvedBy() {
