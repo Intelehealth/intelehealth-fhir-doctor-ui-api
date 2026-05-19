@@ -106,8 +106,8 @@ public class MpiDuplicateReviewPatientActionService {
 	}
 	
 	/**
-	 * {@code match_source=openmrs}: resolve existing row by OpenMRS identifier (source, then
-	 * candidate snapshot), require a match, update from source import data.
+	 * {@code match_source=openmrs}: resolve existing row by candidate snapshot, then enrich with
+	 * import source data (fill missing fields only; do not overwrite candidate demographics).
 	 */
 	private OpenmrsPatientUpsertResult linkAndJoinFromOpenMrsMatchSource(Patient sourcePatient,
 	        MpiPatientDuplicateReviewCandidate row, String candidateLogicalId) {
@@ -118,7 +118,7 @@ public class MpiDuplicateReviewPatientActionService {
 			        + StringUtils.defaultString(candidateId, "(missing)"));
 		}
 		assertSelectedOpenMrsCandidate(existing, row, candidateLogicalId);
-		return patientUploadImportService.updateOpenmrsPatientFromSourcePatient(sourcePatient, existing, null);
+		return patientUploadImportService.enrichOpenmrsPatientFromSourcePatient(sourcePatient, existing, null);
 	}
 	
 	/**

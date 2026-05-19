@@ -28,8 +28,12 @@ public class CreatedPatientUuidQueryService {
 		LocalDateTime startDateTime = LocalDateTime.of(start, LocalTime.MIN);
 		LocalDateTime endDateTime = LocalDateTime.of(end, LocalTime.MAX.withNano(0));
 		
-		String sql = "SELECT DISTINCT p.uuid " + "FROM patient pt " + "JOIN person p ON p.person_id = pt.patient_id "
-		        + "WHERE p.date_created BETWEEN :startDate AND :endDate " + "ORDER BY p.uuid";
+		String sql = "SELECT DISTINCT p.uuid "
+		        + "FROM patient pt "
+		        + "JOIN person p ON p.person_id = pt.patient_id "
+		        + "WHERE (p.date_created BETWEEN :startDate AND :endDate "
+		        + "OR p.date_changed BETWEEN :startDate AND :endDate) "
+		        + "ORDER BY p.uuid";
 		
 		@SuppressWarnings("unchecked")
 		List<Object> rows = sessionFactory.getCurrentSession().createSQLQuery(sql)

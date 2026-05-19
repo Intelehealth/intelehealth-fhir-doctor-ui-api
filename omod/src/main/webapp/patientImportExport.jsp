@@ -72,7 +72,7 @@
 				<div class="card-header bg-light fw-semibold">Export created patients (JSON download)</div>
 				<div class="card-body">
 					<p class="small text-muted mb-3">
-						Patients whose OpenMRS <code>person.date_created</code> falls within the inclusive date range are exported as a FHIR
+						Patients whose OpenMRS <code>date_created</code> or <code>date_changed</code> falls within the inclusive date range are exported as a FHIR
 						<code>collection</code> Bundle. Response headers include <code>X-Total-Patients</code>, <code>X-Exported-Patients</code>,
 						and <code>X-Validation-Failed-Patients</code>; the body is attachment JSON named <code>created-patients-&lt;start&gt;-to-&lt;end&gt;.json</code>.
 					</p>

@@ -21,6 +21,7 @@ import java.lang.reflect.Method;
 import org.apache.commons.lang3.StringUtils;
 import org.hl7.fhir.r4.model.Address;
 import org.hl7.fhir.r4.model.Bundle;
+import org.hl7.fhir.r4.model.ContactPoint;
 import org.hl7.fhir.r4.model.BooleanType;
 import org.hl7.fhir.r4.model.DateType;
 import org.hl7.fhir.r4.model.Extension;
@@ -728,6 +729,11 @@ public class PatientUploadImportService {
 	}
 	
 	private void persistImportedPatientSupplementalAttributes(String createdPatientUuid, Patient sourcePatient) {
+		persistImportedPatientSupplementalAttributes(createdPatientUuid, sourcePatient, false);
+	}
+	
+	private void persistImportedPatientSupplementalAttributes(String createdPatientUuid, Patient sourcePatient,
+	        boolean enrichOnly) {
 		if (StringUtils.isBlank(createdPatientUuid) || sourcePatient == null) {
 			return;
 		}
@@ -737,14 +743,19 @@ public class PatientUploadImportService {
 			    createdPatientUuid);
 			return;
 		}
-		boolean changed = persistImportedPatientExtensions(createdPatient, sourcePatient);
-		changed = persistImportedPatientTelecom(createdPatient, sourcePatient) || changed;
+		boolean changed = persistImportedPatientExtensions(createdPatient, sourcePatient, enrichOnly);
+		changed = persistImportedPatientTelecom(createdPatient, sourcePatient, enrichOnly) || changed;
 		if (changed) {
 			Context.getPatientService().savePatient(createdPatient);
 		}
 	}
 	
 	private boolean persistImportedPatientExtensions(org.openmrs.Patient createdPatient, Patient sourcePatient) {
+		return persistImportedPatientExtensions(createdPatient, sourcePatient, false);
+	}
+	
+	private boolean persistImportedPatientExtensions(org.openmrs.Patient createdPatient, Patient sourcePatient,
+	        boolean enrichOnly) {
 		if (createdPatient == null || sourcePatient == null || sourcePatient.getExtension() == null
 		        || sourcePatient.getExtension().isEmpty()) {
 			return false;
@@ -777,7 +788,7 @@ public class PatientUploadImportService {
 				log.info("Import extension mapping applied: added person_attribute_type='{}' value='{}'", type.getName(),
 				    value);
 				changed = true;
-			} else if (!StringUtils.equals(existing.getValue(), value)) {
+			} else if (!enrichOnly && !StringUtils.equals(existing.getValue(), value)) {
 				String previousValue = existing.getValue();
 				existing.setValue(value);
 				log.info("Import extension mapping applied: updated person_attribute_type='{}' oldValue='{}' newValue='{}'",
@@ -789,17 +800,27 @@ public class PatientUploadImportService {
 	}
 	
 	private boolean persistImportedPatientTelecom(org.openmrs.Patient createdPatient, Patient sourcePatient) {
+		return persistImportedPatientTelecom(createdPatient, sourcePatient, false);
+	}
+	
+	private boolean persistImportedPatientTelecom(org.openmrs.Patient createdPatient, Patient sourcePatient,
+	        boolean enrichOnly) {
 		TelecomValues telecomValues = PatientTelecomMappingUtil.extractRankedPhoneTelecom(sourcePatient);
 		boolean changed = false;
 		changed = upsertPersonAttribute(createdPatient, attributeTypeNameCandidatesForTelecom("telephoneNumber"),
-		    telecomValues.getTelephoneNumber(), "telephoneNumber") || changed;
+		    telecomValues.getTelephoneNumber(), "telephoneNumber", enrichOnly) || changed;
 		changed = upsertPersonAttribute(createdPatient, attributeTypeNameCandidatesForTelecom("emergencycontactnumber"),
-		    telecomValues.getEmergencyContactNumber(), "emergencycontactnumber") || changed;
+		    telecomValues.getEmergencyContactNumber(), "emergencycontactnumber", enrichOnly) || changed;
 		return changed;
 	}
 	
 	private boolean upsertPersonAttribute(org.openmrs.Patient createdPatient, List<String> typeCandidates, String value,
 	        String logicalName) {
+		return upsertPersonAttribute(createdPatient, typeCandidates, value, logicalName, false);
+	}
+	
+	private boolean upsertPersonAttribute(org.openmrs.Patient createdPatient, List<String> typeCandidates, String value,
+	        String logicalName, boolean enrichOnly) {
 		if (createdPatient == null || StringUtils.isBlank(value)) {
 			return false;
 		}
@@ -815,7 +836,7 @@ public class PatientUploadImportService {
 			log.info("Import telecom mapping applied: added person_attribute_type='{}' value='{}'", type.getName(), value);
 			return true;
 		}
-		if (!StringUtils.equals(existing.getValue(), value)) {
+		if (!enrichOnly && !StringUtils.equals(existing.getValue(), value)) {
 			String previousValue = existing.getValue();
 			existing.setValue(value);
 			log.info("Import telecom mapping applied: updated person_attribute_type='{}' oldValue='{}' newValue='{}'",
@@ -1102,6 +1123,31 @@ public class PatientUploadImportService {
 		String uuid = updatePatientViaOpenmrsNativeApi(existingOpenMrsPatient, prepared);
 		persistImportedPatientSupplementalAttributes(uuid, prepared);
 		return new OpenmrsPatientUpsertResult(uuid, OpenmrsPatientUpsertResult.Action.UPDATED, "patient updated from source");
+	}
+	
+	/**
+	 * Duplicate-review link-and-join ({@code match_source=openmrs}): keep existing candidate
+	 * demographics and identifiers; add fields from the import {@code sourcePatient} only where the
+	 * candidate has no value.
+	 */
+	public OpenmrsPatientUpsertResult enrichOpenmrsPatientFromSourcePatient(Patient sourcePatient,
+	        org.openmrs.Patient candidateOpenMrsPatient, String locationUuid) {
+		requireNativeCreateEnabled();
+		if (sourcePatient == null) {
+			throw new IllegalArgumentException("source FHIR Patient is required");
+		}
+		if (candidateOpenMrsPatient == null || Boolean.TRUE.equals(candidateOpenMrsPatient.getVoided())) {
+			throw new IllegalArgumentException("OpenMRS patient is required for enrich");
+		}
+		Patient candidateFhir = buildFhirPatientSnapshotFromOpenmrs(candidateOpenMrsPatient);
+		Patient preparedSource = prepareFhirPatientForNativeUpsert(sourcePatient, locationUuid);
+		Patient enriched = mergeMissingFhirPatientFields(candidateFhir, preparedSource);
+		log.info("duplicate-review link: enriching openmrsPatientUuid={} (fill missing from source only)",
+		    candidateOpenMrsPatient.getUuid());
+		String uuid = updatePatientViaOpenmrsNativeApi(candidateOpenMrsPatient, enriched);
+		persistImportedPatientSupplementalAttributes(uuid, preparedSource, true);
+		return new OpenmrsPatientUpsertResult(uuid, OpenmrsPatientUpsertResult.Action.UPDATED,
+		        "patient enriched from source");
 	}
 	
 	public OpenmrsPatientUpsertResult createOpenmrsPatientFromSourcePatient(Patient sourcePatient, String locationUuid) {
@@ -1391,6 +1437,217 @@ public class PatientUploadImportService {
 			}
 		}
 		return p;
+	}
+	
+	/**
+	 * Returns a copy of {@code candidate} with missing name, gender, birth date, address, telecom,
+	 * extension, and non-OpenMRS identifier fields filled from {@code source}.
+	 */
+	private Patient mergeMissingFhirPatientFields(Patient candidate, Patient source) {
+		if (candidate == null) {
+			throw new IllegalArgumentException("candidate FHIR Patient is required");
+		}
+		if (source == null) {
+			return candidate.copy();
+		}
+		Patient merged = candidate.copy();
+		mergeMissingHumanName(merged, source);
+		if (!merged.hasGender() && source.hasGender()) {
+			merged.setGender(source.getGender());
+		}
+		if (!merged.hasBirthDate() && source.hasBirthDate()) {
+			merged.setBirthDate(source.getBirthDate());
+			if (source.hasBirthDateElement()) {
+				merged.setBirthDateElement(source.getBirthDateElement().copy());
+			}
+		}
+		mergeMissingAddress(merged, source);
+		mergeMissingTelecom(merged, source);
+		mergeMissingExtensions(merged, source);
+		mergeMissingIdentifiers(merged, source);
+		return merged;
+	}
+	
+	private static void mergeMissingHumanName(Patient merged, Patient source) {
+		if (!source.hasName() || source.getNameFirstRep() == null) {
+			return;
+		}
+		HumanName sourceName = source.getNameFirstRep();
+		if (!merged.hasName() || merged.getNameFirstRep() == null) {
+			merged.addName(sourceName.copy());
+			return;
+		}
+		HumanName candidateName = merged.getNameFirstRep();
+		if (StringUtils.isBlank(candidateName.getFamily()) && StringUtils.isNotBlank(sourceName.getFamily())) {
+			candidateName.setFamily(sourceName.getFamily());
+		}
+		if (!candidateName.hasGiven() && sourceName.hasGiven()) {
+			for (StringType given : sourceName.getGiven()) {
+				if (given != null && StringUtils.isNotBlank(given.getValue())) {
+					candidateName.addGiven(given.getValue());
+				}
+			}
+		} else if (candidateName.hasGiven() && sourceName.hasGiven() && candidateName.getGiven().size() == 1
+		        && StringUtils.isBlank(candidateName.getGiven().get(0).getValue()) && sourceName.getGiven().size() > 0) {
+			candidateName.getGiven().clear();
+			for (StringType given : sourceName.getGiven()) {
+				if (given != null && StringUtils.isNotBlank(given.getValue())) {
+					candidateName.addGiven(given.getValue());
+				}
+			}
+		}
+	}
+	
+	private static void mergeMissingAddress(Patient merged, Patient source) {
+		if (!source.hasAddress() || source.getAddressFirstRep() == null) {
+			return;
+		}
+		Address sourceAddr = source.getAddressFirstRep();
+		if (!merged.hasAddress() || merged.getAddressFirstRep() == null) {
+			merged.addAddress(sourceAddr.copy());
+			return;
+		}
+		Address candidateAddr = merged.getAddressFirstRep();
+		if (!candidateAddr.hasLine() && sourceAddr.hasLine()) {
+			for (StringType line : sourceAddr.getLine()) {
+				if (line != null && StringUtils.isNotBlank(line.getValue())) {
+					candidateAddr.addLine(line.getValue());
+				}
+			}
+		} else if (candidateAddr.hasLine() && sourceAddr.hasLine()) {
+			for (int i = 0; i < sourceAddr.getLine().size(); i++) {
+				StringType sourceLine = sourceAddr.getLine().get(i);
+				if (sourceLine == null || StringUtils.isBlank(sourceLine.getValue())) {
+					continue;
+				}
+				if (i >= candidateAddr.getLine().size()) {
+					candidateAddr.addLine(sourceLine.getValue());
+					continue;
+				}
+				StringType candidateLine = candidateAddr.getLine().get(i);
+				if (candidateLine == null || StringUtils.isBlank(candidateLine.getValue())) {
+					candidateAddr.getLine().get(i).setValue(sourceLine.getValue());
+				}
+			}
+		}
+		if (StringUtils.isBlank(candidateAddr.getCity()) && StringUtils.isNotBlank(sourceAddr.getCity())) {
+			candidateAddr.setCity(sourceAddr.getCity());
+		}
+		if (StringUtils.isBlank(candidateAddr.getState()) && StringUtils.isNotBlank(sourceAddr.getState())) {
+			candidateAddr.setState(sourceAddr.getState());
+		}
+		if (StringUtils.isBlank(candidateAddr.getPostalCode()) && StringUtils.isNotBlank(sourceAddr.getPostalCode())) {
+			candidateAddr.setPostalCode(sourceAddr.getPostalCode());
+		}
+		if (StringUtils.isBlank(candidateAddr.getCountry()) && StringUtils.isNotBlank(sourceAddr.getCountry())) {
+			candidateAddr.setCountry(sourceAddr.getCountry());
+		}
+	}
+	
+	private static void mergeMissingTelecom(Patient merged, Patient source) {
+		if (!source.hasTelecom()) {
+			return;
+		}
+		if (!merged.hasTelecom()) {
+			for (ContactPoint cp : source.getTelecom()) {
+				if (cp != null) {
+					merged.addTelecom(cp.copy());
+				}
+			}
+			return;
+		}
+		for (ContactPoint sourceCp : source.getTelecom()) {
+			if (sourceCp == null || StringUtils.isBlank(sourceCp.getValue())) {
+				continue;
+			}
+			if (!fhirTelecomPresent(merged, sourceCp)) {
+				merged.addTelecom(sourceCp.copy());
+			}
+		}
+	}
+	
+	private static boolean fhirTelecomPresent(Patient patient, ContactPoint needle) {
+		if (patient == null || !patient.hasTelecom() || needle == null) {
+			return false;
+		}
+		String value = StringUtils.trimToEmpty(needle.getValue());
+		for (ContactPoint cp : patient.getTelecom()) {
+			if (cp == null || StringUtils.isBlank(cp.getValue())) {
+				continue;
+			}
+			if (!StringUtils.equals(value, StringUtils.trimToEmpty(cp.getValue()))) {
+				continue;
+			}
+			if (needle.hasSystem() && cp.hasSystem() && needle.getSystem() != cp.getSystem()) {
+				continue;
+			}
+			return true;
+		}
+		return false;
+	}
+	
+	private static void mergeMissingExtensions(Patient merged, Patient source) {
+		if (!source.hasExtension()) {
+			return;
+		}
+		for (Extension sourceExt : source.getExtension()) {
+			if (sourceExt == null || StringUtils.isBlank(sourceExt.getUrl())) {
+				continue;
+			}
+			if (!fhirExtensionPresent(merged, sourceExt.getUrl())) {
+				merged.addExtension(sourceExt.copy());
+			}
+		}
+	}
+	
+	private static boolean fhirExtensionPresent(Patient patient, String url) {
+		if (patient == null || !patient.hasExtension() || StringUtils.isBlank(url)) {
+			return false;
+		}
+		for (Extension ext : patient.getExtension()) {
+			if (ext != null && url.equals(ext.getUrl())) {
+				return true;
+			}
+		}
+		return false;
+	}
+	
+	private void mergeMissingIdentifiers(Patient merged, Patient source) {
+		if (!source.hasIdentifier()) {
+			return;
+		}
+		for (Identifier sourceId : source.getIdentifier()) {
+			if (sourceId == null || StringUtils.isBlank(sourceId.getValue())) {
+				continue;
+			}
+			if (isOpenMrsIdentifier(sourceId)) {
+				continue;
+			}
+			if (!fhirIdentifierPresent(merged, sourceId)) {
+				merged.addIdentifier(sourceId.copy());
+			}
+		}
+	}
+	
+	private static boolean fhirIdentifierPresent(Patient patient, Identifier needle) {
+		if (patient == null || !patient.hasIdentifier() || needle == null || StringUtils.isBlank(needle.getValue())) {
+			return false;
+		}
+		String value = needle.getValue().trim();
+		String system = StringUtils.trimToEmpty(needle.getSystem());
+		for (Identifier id : patient.getIdentifier()) {
+			if (id == null || StringUtils.isBlank(id.getValue())) {
+				continue;
+			}
+			if (!value.equals(id.getValue().trim())) {
+				continue;
+			}
+			if (StringUtils.isNotBlank(system) && StringUtils.isNotBlank(id.getSystem()) && !system.equals(id.getSystem())) {
+				continue;
+			}
+			return true;
+		}
+		return false;
 	}
 	
 	private void validatePatientAgainstProfileBeforeCreate(Patient patient) {
