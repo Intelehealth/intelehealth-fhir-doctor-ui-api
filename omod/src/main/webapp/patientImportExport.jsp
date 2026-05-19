@@ -19,8 +19,6 @@
 		(FHIR R4 <strong>Patient</strong> or <strong>Bundle</strong> JSON), and date-range export from
 		<code>GET …/patient/export/created</code> (<code>startDate</code> / <code>endDate</code> as <code>yyyy-MM-dd</code>).
 	</p>--%>
-	<p class="small text-muted">API is served directly from this module via <code>/ws/rest/v1/ihmodule/patient-exchange</code>.</p>
-
 	<div class="row g-4">
 		<div class="col-lg-6">
 			<div class="card border-secondary">

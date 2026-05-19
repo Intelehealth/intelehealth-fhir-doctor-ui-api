@@ -394,8 +394,6 @@ public class DataSendToFHIR extends IHConstant {
 				if (returnedMpi == null || returnedMpi.trim().isEmpty()) {
 					throw new IllegalStateException("Central FHIR response did not contain an MPI identifier value");
 				}
-				localPatientMpiUpdateService.upsertMpiIdentifierToLocalPatient(localPatientUUID, returnedMpi.trim());
-				LOGGER.info("Updated local MPI identifier for patient uuid={} from central response", localPatientUUID);
 				String mpiTrim = returnedMpi.trim();
 				String centralSourcePatientId = trimToNull(res.getCentralServerPatientLogicalId());
 				if (centralSourcePatientId != null && centralSourcePatientId.equals(mpiTrim)) {
@@ -411,9 +409,10 @@ public class DataSendToFHIR extends IHConstant {
 						centralSourcePatientId = idPart;
 					}
 				}
+				localPatientMpiUpdateService.upsertCentralSyncIdentifiersToLocalPatient(localPatientUUID, mpiTrim,
+				    centralSourcePatientId);
+				LOGGER.info("Updated local MPI identifier for patient uuid={} from central response", localPatientUUID);
 				if (centralSourcePatientId != null) {
-					localPatientMpiUpdateService.upsertCentralSourcePatientIdToLocalPatient(localPatientUUID,
-					    centralSourcePatientId);
 					LOGGER.info("Updated local Source Patient Id for patient uuid={} centralLogicalId={}", localPatientUUID,
 					    centralSourcePatientId);
 				}

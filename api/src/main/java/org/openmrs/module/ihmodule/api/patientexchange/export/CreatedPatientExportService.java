@@ -291,9 +291,9 @@ public class CreatedPatientExportService extends IHConstant {
 			identifier.setSystem(centralFhirURL + "/StructureDefinition/MPI");
 			return;
 		}
-		if (!identifier.hasSystem()) {
-			identifier.setSystem("urn:ietf:rfc:3986");
-		}
+		/*
+		 * if (!identifier.hasSystem()) { identifier.setSystem("urn:ietf:rfc:3986"); }
+		 */
 	}
 	
 	private void ensureIdentifierTypeCoding(Identifier identifier) {

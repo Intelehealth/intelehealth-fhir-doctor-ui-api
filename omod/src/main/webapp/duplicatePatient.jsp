@@ -161,71 +161,29 @@
 					</p>
 				</div>
 				<div id="modalAlert" class="alert d-none" role="alert"></div>
-				<ul class="nav nav-tabs mb-2" id="dupCandidateTabs" role="tablist">
-					<li class="nav-item" role="presentation">
-						<a class="nav-link active" id="dupTabOpenmrs" data-toggle="tab" href="#dupPaneOpenmrs" role="tab" aria-controls="dupPaneOpenmrs" aria-selected="true">OpenMRS Patient <span class="badge badge-secondary ml-1" id="dupTabBadgeOpenmrs">0</span></a>
-					</li>
-					<li class="nav-item" role="presentation">
-						<a class="nav-link" id="dupTabFhir" data-toggle="tab" href="#dupPaneFhir" role="tab" aria-controls="dupPaneFhir" aria-selected="false">FHIR Patient <span class="badge badge-secondary ml-1" id="dupTabBadgeFhir">0</span></a>
-					</li>
-				</ul>
-				<div class="tab-content" id="dupCandidateTabContent">
-					<div class="tab-pane fade show active" id="dupPaneOpenmrs" role="tabpanel" aria-labelledby="dupTabOpenmrs">
-						<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
-							<label class="small mb-0 text-muted" for="dupMatchTypeFilterOpenmrs">Match type filter</label>
-							<select id="dupMatchTypeFilterOpenmrs" class="form-control form-control-sm" style="max-width: 280px;" title="Client-side filter only">
-								<option value="">All match types</option>
-							</select>
-						</div>
-						<div class="table-responsive">
-							<table class="table table-sm table-bordered">
-								<thead class="table-light">
-									<tr>
-										<th style="min-width:7rem;">FHIR id</th>
-										<th style="min-width:8rem;">MPI value</th>
-										<th style="min-width:10rem;">Name</th>
-										<th style="min-width:7rem;">DOB</th>
-										<th style="min-width:5rem;">Gender</th>
-										<th style="min-width:9rem;">Telecom</th>
-										<th style="min-width:12rem;">Address (snapshot)</th>
-										<th style="min-width:5rem;">Score</th>
-										<th style="min-width:6rem;">Match type</th>
-										<th style="min-width:7rem;">Source of patient</th>
-										<th style="min-width: 160px;">Actions</th>
-									</tr>
-								</thead>
-								<tbody id="candidatesBodyOpenmrs"></tbody>
-							</table>
-						</div>
-					</div>
-					<div class="tab-pane fade" id="dupPaneFhir" role="tabpanel" aria-labelledby="dupTabFhir">
-						<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
-							<label class="small mb-0 text-muted" for="dupMatchTypeFilterFhir">Match type filter</label>
-							<select id="dupMatchTypeFilterFhir" class="form-control form-control-sm" style="max-width: 280px;" title="Client-side filter only">
-								<option value="">All match types</option>
-							</select>
-						</div>
-						<div class="table-responsive">
-							<table class="table table-sm table-bordered">
-								<thead class="table-light">
-									<tr>
-										<th style="min-width:7rem;">FHIR id</th>
-										<th style="min-width:8rem;">MPI value</th>
-										<th style="min-width:10rem;">Name</th>
-										<th style="min-width:7rem;">DOB</th>
-										<th style="min-width:5rem;">Gender</th>
-										<th style="min-width:9rem;">Telecom</th>
-										<th style="min-width:12rem;">Address (snapshot)</th>
-										<th style="min-width:5rem;">Score</th>
-										<th style="min-width:6rem;">Match type</th>
-										<th style="min-width:7rem;">Source of patient</th>
-										<th style="min-width: 160px;">Actions</th>
-									</tr>
-								</thead>
-								<tbody id="candidatesBodyFhir"></tbody>
-							</table>
-						</div>
-					</div>
+				<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+					<label class="small mb-0 text-muted" for="dupMatchTypeFilter">Match type filter</label>
+					<select id="dupMatchTypeFilter" class="form-control form-control-sm" style="max-width: 280px;" title="Client-side filter only">
+						<option value="">All match types</option>
+					</select>
+				</div>
+				<div class="table-responsive">
+					<table class="table table-sm table-bordered">
+						<thead class="table-light">
+							<tr>
+								<th style="min-width:10rem;">Name</th>
+								<th style="min-width:7rem;">DOB</th>
+								<th style="min-width:5rem;">Gender</th>
+								<th style="min-width:9rem;">Telecom</th>
+								<th style="min-width:12rem;">Address (snapshot)</th>
+								<th style="min-width:5rem;">Score</th>
+								<th style="min-width:6rem;">Match type</th>
+								<th style="min-width:7rem;">Source of patient</th>
+								<th style="min-width: 160px;">Actions</th>
+							</tr>
+						</thead>
+						<tbody id="candidatesBody"></tbody>
+					</table>
 				</div>
 			</div>
 			<div class="modal-footer">
@@ -244,6 +202,6 @@
 		resolvedBy: '<c:out value="${resolvedByUsername}" />'
 	};
 </script>
-<script src="${pageContext.request.contextPath}/moduleResources/ihmodule/js/duplicatePatientReview.js?v=patient-exchange-ws19"></script>
+<script src="${pageContext.request.contextPath}/moduleResources/ihmodule/js/duplicatePatientReview.js?v=patient-exchange-ws21"></script>
 
 <%@ include file="/WEB-INF/template/footer.jsp"%>

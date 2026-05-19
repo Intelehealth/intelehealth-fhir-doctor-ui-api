@@ -13,17 +13,13 @@ import org.hl7.fhir.r4.model.Bundle.BundleEntryComponent;
 import org.hl7.fhir.r4.model.IntegerType;
 import org.hl7.fhir.r4.model.Parameters;
 import org.hl7.fhir.r4.model.Patient;
-import org.hl7.fhir.r4.model.Resource;
 import org.hl7.fhir.r4.model.StringType;
-import org.openmrs.module.ihmodule.api.patientexchange.config.FhirConfig;
 import org.openmrs.module.ihmodule.api.patientexchange.config.FhirContextHolder;
-import org.openmrs.module.ihmodule.api.patientexchange.domain.FhirResponse;
 import org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate.BundleSearchMatchGradeExtractor;
 import org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate.MpiDuplicateReviewCandidateMatchRow;
 import org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate.MpiDuplicateReviewService;
 import org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate.MpiImportDuplicateReviewSource;
 import org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate.MpiPatientDuplicateReviewCase;
-import org.openmrs.module.ihmodule.api.patientexchange.utils.HttpWebClient;
 import org.openmrs.module.ihmodule.api.patientmatch.service.FhirPatientMatchService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,11 +29,11 @@ import org.springframework.stereotype.Service;
 import ca.uhn.fhir.context.FhirContext;
 
 /**
- * Runs OpenMRS fuzzy {@code $match} (in-process) and central FHIR {@code $mdm-match} during patient
- * import; persists duplicate-review rows when either API returns candidate Patients.
+ * Runs OpenMRS fuzzy {@code $match} (in-process) during patient import; persists duplicate-review
+ * rows when the match returns candidate Patients.
  * <p>
- * Request shape for both paths: FHIR {@code Parameters} with {@code resource} (Patient),
- * {@code resourceType}, {@code count}, {@code offset}, {@code onlyCertainMatches} — see
+ * Request shape: FHIR {@code Parameters} with {@code resource} (Patient), {@code resourceType},
+ * {@code count}, {@code offset}, {@code onlyCertainMatches} — see
  * {@code docs/fhir-mdm-and-openmrs-patient-match-samples.md}.
  */
 @Service
@@ -47,17 +43,12 @@ public class ImportPatientFuzzyDuplicateDetectionService {
 	
 	private static final String FUZZY_IMPORT_DEBUG = "FUZZY_IMPORT_MATCH_DEBUG";
 	
-	private static final String MDM_MATCH_PATH = "/fhir/$mdm-match";
-	
 	private static final int DEFAULT_MATCH_COUNT = 10;
 	
 	private final FhirContext fhirContext = FhirContextHolder.R4;
 	
 	@Autowired
 	private FhirPatientMatchService fhirPatientMatchService;
-	
-	@Autowired
-	private FhirConfig fhirConfig;
 	
 	@Autowired
 	private MpiDuplicateReviewService mpiDuplicateReviewService;
@@ -73,35 +64,28 @@ public class ImportPatientFuzzyDuplicateDetectionService {
 		log.error("{} evaluate start correlation={} outboundJsonLength={}", FUZZY_IMPORT_DEBUG, importCorrelationLocalKey,
 		    outboundImportPatientJson != null ? outboundImportPatientJson.length() : -1);
 		Bundle openmrsBundle = invokeOpenMrsFuzzyMatch(patientForMatch);
-		Bundle mdmBundle = invokeFhirMdmMatch(patientForMatch);
-		int om = countPatientMatches(openmrsBundle);
-		int md = countPatientMatches(mdmBundle);
-		log.error("{} evaluate after calls openmrsPatientEntries={} mdmPatientEntries={} correlation={}",
-		    FUZZY_IMPORT_DEBUG, om, md, importCorrelationLocalKey);
-		boolean openmrsHit = om >= 1;
-		boolean mdmHit = md >= 1;
-		if (!openmrsHit && !mdmHit) {
-			log.error("{} evaluate no duplicate correlation={} (both APIs empty)", FUZZY_IMPORT_DEBUG,
-			    importCorrelationLocalKey);
+		int matchCount = countPatientMatches(openmrsBundle);
+		log.error("{} evaluate after openmrs fuzzy match patientEntries={} correlation={}", FUZZY_IMPORT_DEBUG, matchCount,
+		    importCorrelationLocalKey);
+		if (matchCount < 1) {
+			log.error("{} evaluate no duplicate correlation={}", FUZZY_IMPORT_DEBUG, importCorrelationLocalKey);
 			return Optional.empty();
 		}
-		List<MpiDuplicateReviewCandidateMatchRow> merged = mergeMatchCandidateRows(openmrsBundle, mdmBundle);
-		if (merged.isEmpty()) {
-			log.error(
-			    "{} evaluate inconsistent state: APIs reported hits (openmrs={} mdm={}) but merge empty correlation={}",
-			    FUZZY_IMPORT_DEBUG, om, md, importCorrelationLocalKey);
+		List<MpiDuplicateReviewCandidateMatchRow> candidates = buildMatchCandidateRows(openmrsBundle);
+		if (candidates.isEmpty()) {
+			log.error("{} evaluate inconsistent state: bundle had patients but merge empty correlation={}",
+			    FUZZY_IMPORT_DEBUG, importCorrelationLocalKey);
 			return Optional.empty();
 		}
-		log.error("{} evaluate persisting duplicateReview mergedCandidates={} correlation={}", FUZZY_IMPORT_DEBUG,
-		    merged.size(), importCorrelationLocalKey);
-		String auditJson = buildCombinedSearchJson(openmrsBundle, mdmBundle);
+		log.error("{} evaluate persisting duplicateReview candidates={} correlation={}", FUZZY_IMPORT_DEBUG,
+		    candidates.size(), importCorrelationLocalKey);
+		String auditJson = buildSearchAuditJson(openmrsBundle);
 		return mpiDuplicateReviewService.persistImportFuzzyDuplicateIfMatches(importCorrelationLocalKey, patientForMatch,
-		    outboundImportPatientJson, merged, auditJson);
+		    outboundImportPatientJson, candidates, auditJson);
 	}
 	
 	/**
-	 * Same {@code Parameters} shape as OpenMRS {@code POST .../patient/$match} and central
-	 * {@code POST authority}/fhir/$mdm-match}.
+	 * Same {@code Parameters} shape as OpenMRS {@code POST .../patient/$match}.
 	 */
 	static Parameters buildPatientMatchParameters(Patient patientForResource) {
 		Patient copy = patientForResource.copy();
@@ -144,108 +128,11 @@ public class ImportPatientFuzzyDuplicateDetectionService {
 		}
 	}
 	
-	private Bundle invokeFhirMdmMatch(Patient patient) {
-		String authorityBase = fhirConfig.resolveMdmMatchAuthorityBaseUrl();
-		if (StringUtils.isBlank(authorityBase)) {
-			log.error(
-			    "{} mdm-match skipped: authority blank (set opencr.openhim.url or opencr.openhim.mdm.authority.base.url)",
-			    FUZZY_IMPORT_DEBUG);
-			return null;
-		}
-		String json = fhirContext.newJsonParser().encodeResourceToString(buildPatientMatchParameters(patient));
-		String url = authorityBase + MDM_MATCH_PATH;
-		log.error("{} mdm-match POST url={} requestJsonLength={}", FUZZY_IMPORT_DEBUG, url, json.length());
-		String[] creds = fhirConfig.getOpenHimCommonCredentials();
-		log.error(
-		    "{} mdm-match basicAuthUser={} (expect fhir_app for Postman parity; OpenMRS GP opencr.openhim.clientid.password.basic.auth overrides classpath)",
-		    FUZZY_IMPORT_DEBUG, creds[0]);
-		try {
-			FhirResponse res = HttpWebClient.postWithBasicAuthFhirJson(authorityBase, MDM_MATCH_PATH, creds[0], creds[1],
-			    json);
-			if (!isSuccessfulHttp(res.getStatusCode())) {
-				log.error(
-				    "{} mdm-match HTTP failure status={} message={} bodySnippet={} basicAuthUser={} hint=401: set GP opencr.openhim.clientid.password.basic.auth=fhir_app:PASSWORD or fix password to match Postman",
-				    FUZZY_IMPORT_DEBUG, res.getStatusCode(), res.getMessage(), truncate(res.getResponse(), 1200), creds[0]);
-				return null;
-			}
-			log.error("{} mdm-match HTTP ok status={} responseLength={}", FUZZY_IMPORT_DEBUG, res.getStatusCode(),
-			    res.getResponse() != null ? res.getResponse().length() : 0);
-			Bundle parsed = parseMdmResponseToSearchBundle(res.getResponse());
-			log.error("{} mdm-match parsed bundle entryCount={}", FUZZY_IMPORT_DEBUG,
-			    parsed != null && parsed.hasEntry() ? parsed.getEntry().size() : 0);
-			return parsed;
-		}
-		catch (RuntimeException ex) {
-			log.error("Import fuzzy duplicate: MDM $mdm-match call failed: {}", ex.getMessage(), ex);
-			return null;
-		}
-	}
-	
 	private static Bundle emptySearchBundle() {
 		Bundle b = new Bundle();
 		b.setType(Bundle.BundleType.SEARCHSET);
 		b.setTotal(0);
 		return b;
-	}
-	
-	private Bundle parseMdmResponseToSearchBundle(String responseBody) {
-		if (StringUtils.isBlank(responseBody)) {
-			return null;
-		}
-		try {
-			Resource parsed = (Resource) fhirContext.newJsonParser().parseResource(responseBody);
-			if (parsed instanceof Bundle) {
-				return (Bundle) parsed;
-			}
-			if (parsed instanceof Patient) {
-				Bundle wrap = new Bundle();
-				wrap.setType(Bundle.BundleType.SEARCHSET);
-				wrap.setTotal(1);
-				BundleEntryComponent ent = wrap.addEntry();
-				ent.setResource((Patient) parsed);
-				ent.getSearch().setMode(Bundle.SearchEntryMode.MATCH);
-				return wrap;
-			}
-			if (parsed instanceof Parameters) {
-				return parametersToSearchBundle((Parameters) parsed);
-			}
-			log.warn("Import fuzzy duplicate: unexpected MDM response type {}", parsed.getClass().getSimpleName());
-			log.error("{} parseMdmResponse unexpected resourceType={}", FUZZY_IMPORT_DEBUG, parsed.getClass().getName());
-			return null;
-		}
-		catch (RuntimeException ex) {
-			log.error("{} parseMdmResponse failed: {}", FUZZY_IMPORT_DEBUG, ex.getMessage(), ex);
-			return null;
-		}
-	}
-	
-	private static Bundle parametersToSearchBundle(Parameters parameters) {
-		Bundle out = new Bundle();
-		out.setType(Bundle.BundleType.SEARCHSET);
-		for (Parameters.ParametersParameterComponent p : parameters.getParameter()) {
-			if (p == null) {
-				continue;
-			}
-			if (p.hasResource() && p.getResource() instanceof Patient) {
-				BundleEntryComponent ent = out.addEntry();
-				ent.setResource(p.getResource());
-				ent.getSearch().setMode(Bundle.SearchEntryMode.MATCH);
-			}
-			if ("match".equals(p.getName()) && p.hasPart()) {
-				for (Parameters.ParametersParameterComponent part : p.getPart()) {
-					if (part != null && part.hasResource() && part.getResource() instanceof Patient) {
-						BundleEntryComponent ent = out.addEntry();
-						ent.setResource(part.getResource());
-						ent.getSearch().setMode(Bundle.SearchEntryMode.MATCH);
-					}
-				}
-			}
-		}
-		if (!out.hasEntry()) {
-			return null;
-		}
-		out.setTotal(out.getEntry().size());
-		return out;
 	}
 	
 	private static int countPatientMatches(Bundle bundle) {
@@ -261,11 +148,9 @@ public class ImportPatientFuzzyDuplicateDetectionService {
 		return n;
 	}
 	
-	private static List<MpiDuplicateReviewCandidateMatchRow> mergeMatchCandidateRows(Bundle openmrsBundle,
-	        Bundle mdmBundle) {
+	private static List<MpiDuplicateReviewCandidateMatchRow> buildMatchCandidateRows(Bundle openmrsBundle) {
 		Map<String, MpiDuplicateReviewCandidateMatchRow> ordered = new LinkedHashMap<>();
 		addBundleEntries(openmrsBundle, MpiImportDuplicateReviewSource.OPENMRS.getValue(), ordered);
-		addBundleEntries(mdmBundle, MpiImportDuplicateReviewSource.FHIR.getValue(), ordered);
 		return new ArrayList<>(ordered.values());
 	}
 	
@@ -319,29 +204,8 @@ public class ImportPatientFuzzyDuplicateDetectionService {
 		return "anon:" + System.identityHashCode(p);
 	}
 	
-	private String buildCombinedSearchJson(Bundle openmrsBundle, Bundle mdmBundle) {
+	private String buildSearchAuditJson(Bundle openmrsBundle) {
 		String om = openmrsBundle != null ? fhirContext.newJsonParser().encodeResourceToString(openmrsBundle) : "null";
-		String mdm = mdmBundle != null ? fhirContext.newJsonParser().encodeResourceToString(mdmBundle) : "null";
-		return "{\"openmrsFuzzyMatchBundle\":" + om + ",\"fhirMdmMatchBundle\":" + mdm + "}";
-	}
-	
-	private static boolean isSuccessfulHttp(String statusCode) {
-		if (StringUtils.isBlank(statusCode)) {
-			return false;
-		}
-		try {
-			int c = Integer.parseInt(statusCode.trim());
-			return c >= 200 && c < 300;
-		}
-		catch (NumberFormatException ex) {
-			return false;
-		}
-	}
-	
-	private static String truncate(String s, int max) {
-		if (s == null) {
-			return null;
-		}
-		return s.length() <= max ? s : s.substring(0, max);
+		return "{\"openmrsFuzzyMatchBundle\":" + om + "}";
 	}
 }

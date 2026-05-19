@@ -493,6 +493,49 @@ public class PatientUploadImportService {
 		return null;
 	}
 	
+	private static String resolveFirstFhirIdentifierValue(Patient patient) {
+		if (patient == null || patient.getIdentifier() == null) {
+			return null;
+		}
+		for (Identifier identifier : patient.getIdentifier()) {
+			if (identifier == null || StringUtils.isBlank(identifier.getValue())) {
+				continue;
+			}
+			return identifier.getValue().trim();
+		}
+		return null;
+	}
+	
+	private org.openmrs.Patient findOpenmrsPatientByStoredCandidateLogicalId(String candidateLogicalId) {
+		if (StringUtils.isBlank(candidateLogicalId)) {
+			return null;
+		}
+		String lid = candidateLogicalId.trim();
+		if (lid.regionMatches(true, 0, "idval:", 0, 6)) {
+			String idValue = lid.substring(6).trim();
+			if (StringUtils.isBlank(idValue)) {
+				return null;
+			}
+			return findOpenmrsPatientByIdentifierValue(idValue, resolvePreferredIdentifierType());
+		}
+		if (!looksLikeOpenMrsPatientUuid(lid)) {
+			return null;
+		}
+		org.openmrs.Patient byUuid = Context.getPatientService().getPatientByUuid(lid);
+		if (byUuid != null && !Boolean.TRUE.equals(byUuid.getVoided())) {
+			return byUuid;
+		}
+		return null;
+	}
+	
+	private static boolean looksLikeOpenMrsPatientUuid(String value) {
+		if (StringUtils.isBlank(value)) {
+			return false;
+		}
+		String t = value.trim();
+		return t.length() == 36 && t.indexOf('-') >= 0;
+	}
+	
 	private static boolean isOpenMrsIdentifier(Identifier identifier) {
 		if (identifier == null) {
 			return false;
@@ -999,6 +1042,49 @@ public class PatientUploadImportService {
 			return null;
 		}
 		return findOpenmrsPatientByIdentifierValue(identifierValue, idType);
+	}
+	
+	/**
+	 * Duplicate-review {@code match_source=openmrs}: resolve the existing facility row for the
+	 * selected candidate. OpenMRS {@code $match} snapshots often expose only
+	 * {@code identifier[].value} (no OpenMRS-ID type); those values are matched against the
+	 * preferred identifier type before falling back to {@code Patient.id} / stored logical id.
+	 */
+	public org.openmrs.Patient findOpenmrsPatientByDuplicateReviewCandidateSnapshot(Patient candidateFhir,
+	        String candidateLogicalId) {
+		if (candidateFhir != null) {
+			String openMrsIdValue = resolveDuplicateReviewCandidateIdentifierValue(candidateFhir);
+			if (StringUtils.isNotBlank(openMrsIdValue)) {
+				PatientIdentifierType idType = resolvePreferredIdentifierType();
+				org.openmrs.Patient byIdentifier = findOpenmrsPatientByIdentifierValue(openMrsIdValue, idType);
+				if (byIdentifier != null) {
+					return byIdentifier;
+				}
+			}
+			if (candidateFhir.getIdElement() != null && candidateFhir.getIdElement().hasIdPart()) {
+				org.openmrs.Patient byFhirId = findOpenmrsPatientByStoredCandidateLogicalId(candidateFhir.getIdElement()
+				        .getIdPart());
+				if (byFhirId != null) {
+					return byFhirId;
+				}
+			}
+		}
+		return findOpenmrsPatientByStoredCandidateLogicalId(candidateLogicalId);
+	}
+	
+	/**
+	 * OpenMRS ID value from a duplicate-review candidate snapshot (typed OpenMRS ID, else first
+	 * non-blank {@code identifier.value}).
+	 */
+	public String resolveDuplicateReviewCandidateIdentifierValue(Patient candidateFhir) {
+		if (candidateFhir == null) {
+			return null;
+		}
+		String typed = resolveOpenMrsIdentifierValueFromFhirPatient(candidateFhir);
+		if (StringUtils.isNotBlank(typed)) {
+			return typed.trim();
+		}
+		return resolveFirstFhirIdentifierValue(candidateFhir);
 	}
 	
 	public OpenmrsPatientUpsertResult updateOpenmrsPatientFromSourcePatient(Patient sourcePatient,

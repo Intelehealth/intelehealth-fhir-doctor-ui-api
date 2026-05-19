@@ -107,7 +107,7 @@
     "fieldMatchThreshold": 60,
     "phoneticBoostEnabled": true,
     "phoneticBoostAlgorithm": "DOUBLE_METAPHONE",
-    "dobNearMatchDays": 0,
+    "dobNearMatchDays": 1,
     "dobRepositoryFilterMode": "ONLY_DOB_REQUESTS",
     "matchGradeThresholds": {
       "certain": 0.95,

@@ -23,10 +23,12 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
- * Adds or updates the facility patient's source patient identifier (central FHIR Patient logical
- * id).
+ * Upserts the facility patient's source patient identifier (central FHIR Patient logical id):
+ * updates when present, creates when absent.
  * <p>
- * {@code POST /ws/rest/v1/ihmodule/patient/source-identifier}
+ * {@code POST /ws/rest/v1/ihmodule/patient/source-identifier} — body: {@code patientUuid},
+ * {@code identifierValue}, {@code locationUuid} (required when a new source identifier row is
+ * created).
  */
 @Controller
 public class SourcePatientIdentifierRestController {
@@ -55,7 +57,8 @@ public class SourcePatientIdentifierRestController {
 		}
 		try {
 			SourcePatientIdentifierUpdateResponse result = localPatientMpiUpdateService.upsertSourcePatientIdentifier(body
-			        .getPatientUuid().trim(), body.getIdentifierValue().trim());
+			        .getPatientUuid().trim(), body.getIdentifierValue().trim(), StringUtils.trimToNull(body
+			        .getLocationUuid()));
 			writeJson(response, HttpStatus.OK.value(), result);
 		}
 		catch (IllegalArgumentException ex) {

@@ -4,10 +4,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.hl7.fhir.instance.model.api.IBaseResource;
 import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.Patient;
-import org.openmrs.Location;
 import org.openmrs.PatientIdentifier;
-import org.openmrs.PatientIdentifierType;
-import org.openmrs.api.context.Context;
 import org.openmrs.module.ihmodule.api.patientexchange.config.FhirContextHolder;
 import org.openmrs.module.ihmodule.api.patientexchange.importupload.OpenmrsPatientUpsertResult;
 import org.openmrs.module.ihmodule.api.patientexchange.importupload.PatientUploadImportService;
@@ -32,8 +29,6 @@ import java.text.ParseException;
 public class MpiDuplicateReviewPatientActionService {
 	
 	private static final Logger LOG = LoggerFactory.getLogger(MpiDuplicateReviewPatientActionService.class);
-	
-	private static final String FHIR_PATIENT_ID_TYPE_NAME = "FHIR Patient ID";
 	
 	private final FhirContext fhirContext = FhirContextHolder.R4;
 	
@@ -104,16 +99,8 @@ public class MpiDuplicateReviewPatientActionService {
 		}
 		Patient sourcePatient = resolveSourcePatientFromCase(reviewCase);
 		String candidateLogicalId = StringUtils.trimToNull(row.getFhirPatientLogicalId());
-		String matchSrc = StringUtils.trimToEmpty(row.getMatchSource());
-		OpenmrsPatientUpsertResult result;
-		if (MpiImportDuplicateReviewSource.OPENMRS.getValue().equalsIgnoreCase(matchSrc)) {
-			result = linkAndJoinFromOpenMrsMatchSource(sourcePatient, row, candidateLogicalId);
-		} else if (MpiImportDuplicateReviewSource.FHIR.getValue().equalsIgnoreCase(matchSrc)) {
-			result = linkAndJoinFromFhirMatchSource(sourcePatient, candidateLogicalId);
-		} else {
-			throw new IllegalArgumentException("Unsupported match_source for candidate: " + matchSrc);
-		}
-		LOG.info("Duplicate-review link-and-join ({}): {} openmrsPatientUuid={} case_uuid={} candidateId={}", matchSrc,
+		OpenmrsPatientUpsertResult result = linkAndJoinFromOpenMrsMatchSource(sourcePatient, row, candidateLogicalId);
+		LOG.info("Duplicate-review link-and-join (openmrs): {} openmrsPatientUuid={} case_uuid={} candidateId={}",
 		    result.getMessage(), result.getPatientUuid(), caseUuid, candidateId);
 		mpiDuplicateReviewResolutionService.markCaseAndAllCandidatesCompleted(reviewCase, resolvedBy);
 	}
@@ -124,65 +111,93 @@ public class MpiDuplicateReviewPatientActionService {
 	 */
 	private OpenmrsPatientUpsertResult linkAndJoinFromOpenMrsMatchSource(Patient sourcePatient,
 	        MpiPatientDuplicateReviewCandidate row, String candidateLogicalId) {
-		org.openmrs.Patient existing = resolveExistingPatientByOpenMrsIdentifier(sourcePatient, row);
+		org.openmrs.Patient existing = resolveExistingOpenMrsDuplicateCandidatePatient(row, candidateLogicalId);
 		if (existing == null) {
-			String openMrsId = patientUploadImportService.resolveOpenMrsIdentifierValueFromFhirPatient(sourcePatient);
-			throw new IllegalArgumentException("OpenMRS patient not found for OpenMRS identifier: "
-			        + StringUtils.defaultString(openMrsId, "(missing)"));
+			String candidateId = resolveCandidateIdentifierHint(row);
+			throw new IllegalArgumentException("OpenMRS patient not found for candidate identifier: "
+			        + StringUtils.defaultString(candidateId, "(missing)"));
 		}
-		assertSelectedOpenMrsCandidate(existing, candidateLogicalId);
+		assertSelectedOpenMrsCandidate(existing, row, candidateLogicalId);
 		return patientUploadImportService.updateOpenmrsPatientFromSourcePatient(sourcePatient, existing, null);
 	}
 	
 	/**
-	 * {@code match_source=fhir}: resolve by OpenMRS identifier on source; update if found,
-	 * otherwise create from source; attach central FHIR Patient ID when configured.
+	 * {@code match_source=openmrs}: resolve the duplicate candidate row first (by candidate
+	 * {@code identifier.value}, then stored logical id / {@code Patient.id}), not by the import
+	 * source OpenMRS ID.
 	 */
-	private OpenmrsPatientUpsertResult linkAndJoinFromFhirMatchSource(Patient sourcePatient, String candidateLogicalId) {
-		org.openmrs.Patient existing = patientUploadImportService.findOpenmrsPatientBySourceOpenMrsIdentifier(sourcePatient);
-		OpenmrsPatientUpsertResult result;
-		if (existing != null) {
-			result = patientUploadImportService.updateOpenmrsPatientFromSourcePatient(sourcePatient, existing, null);
-		} else {
-			result = patientUploadImportService.createOpenmrsPatientFromSourcePatient(sourcePatient, null);
-		}
-		attachFhirPatientIdIdentifierIfConfigured(result.getPatientUuid(), candidateLogicalId);
-		return result;
+	private org.openmrs.Patient resolveExistingOpenMrsDuplicateCandidatePatient(MpiPatientDuplicateReviewCandidate row,
+	        String candidateLogicalId) {
+		String candidateJson = StringUtils.trimToNull(row.getPatientResourceJson());
+		Patient candidateFhir = candidateJson != null ? fhirContext.newJsonParser().parseResource(Patient.class,
+		    candidateJson) : null;
+		return patientUploadImportService.findOpenmrsPatientByDuplicateReviewCandidateSnapshot(candidateFhir,
+		    candidateLogicalId);
 	}
 	
-	private org.openmrs.Patient resolveExistingPatientByOpenMrsIdentifier(Patient sourcePatient,
-	        MpiPatientDuplicateReviewCandidate row) {
-		org.openmrs.Patient bySourceId = patientUploadImportService
-		        .findOpenmrsPatientBySourceOpenMrsIdentifier(sourcePatient);
-		if (bySourceId != null) {
-			return bySourceId;
+	private String resolveCandidateIdentifierHint(MpiPatientDuplicateReviewCandidate row) {
+		String candidateJson = StringUtils.trimToNull(row.getPatientResourceJson());
+		if (candidateJson != null) {
+			Patient candidateFhir = fhirContext.newJsonParser().parseResource(Patient.class, candidateJson);
+			String id = patientUploadImportService.resolveDuplicateReviewCandidateIdentifierValue(candidateFhir);
+			if (StringUtils.isNotBlank(id)) {
+				return id;
+			}
+		}
+		return StringUtils.trimToNull(row.getFhirPatientLogicalId());
+	}
+	
+	private void assertSelectedOpenMrsCandidate(org.openmrs.Patient resolved, MpiPatientDuplicateReviewCandidate row,
+	        String candidateLogicalId) {
+		if (resolved == null) {
+			return;
+		}
+		String resolvedUuid = resolved.getUuid();
+		if (StringUtils.isNotBlank(candidateLogicalId)) {
+			String lid = candidateLogicalId.trim();
+			if (lid.equals(resolvedUuid)) {
+				return;
+			}
+			if (lid.regionMatches(true, 0, "idval:", 0, 6)) {
+				String idValue = lid.substring(6).trim();
+				if (openMrsIdentifierValueMatches(resolved, idValue)) {
+					return;
+				}
+			}
 		}
 		String candidateJson = StringUtils.trimToNull(row.getPatientResourceJson());
 		if (candidateJson != null) {
 			Patient candidateFhir = fhirContext.newJsonParser().parseResource(Patient.class, candidateJson);
-			org.openmrs.Patient byCandidateId = patientUploadImportService
-			        .findOpenmrsPatientBySourceOpenMrsIdentifier(candidateFhir);
-			if (byCandidateId != null) {
-				return byCandidateId;
+			String expectedId = patientUploadImportService.resolveDuplicateReviewCandidateIdentifierValue(candidateFhir);
+			if (openMrsIdentifierValueMatches(resolved, expectedId)) {
+				return;
+			}
+			if (candidateFhir.getIdElement() != null && candidateFhir.getIdElement().hasIdPart()
+			        && candidateFhir.getIdElement().getIdPart().trim().equals(resolvedUuid)) {
+				return;
 			}
 		}
-		if (StringUtils.isNotBlank(row.getFhirPatientLogicalId())) {
-			org.openmrs.Patient byUuid = Context.getPatientService().getPatientByUuid(row.getFhirPatientLogicalId().trim());
-			if (byUuid != null && !Boolean.TRUE.equals(byUuid.getVoided())) {
-				return byUuid;
-			}
-		}
-		return null;
-	}
-	
-	private void assertSelectedOpenMrsCandidate(org.openmrs.Patient resolved, String candidateLogicalId) {
 		if (StringUtils.isBlank(candidateLogicalId)) {
 			return;
 		}
-		if (!candidateLogicalId.trim().equals(resolved.getUuid())) {
-			throw new IllegalArgumentException(
-			        "Selected OpenMRS duplicate candidate does not match patient resolved by OpenMRS identifier");
+		throw new IllegalArgumentException(
+		        "Selected OpenMRS duplicate candidate does not match patient resolved by candidate identifier");
+	}
+	
+	private static boolean openMrsIdentifierValueMatches(org.openmrs.Patient resolved, String identifierValue) {
+		if (resolved == null || StringUtils.isBlank(identifierValue) || resolved.getIdentifiers() == null) {
+			return false;
 		}
+		String expected = identifierValue.trim();
+		for (PatientIdentifier pid : resolved.getIdentifiers()) {
+			if (pid == null || pid.getVoided() || pid.getIdentifier() == null) {
+				continue;
+			}
+			if (expected.equals(pid.getIdentifier().trim())) {
+				return true;
+			}
+		}
+		return false;
 	}
 	
 	private MpiPatientDuplicateReviewCase requirePendingCase(String caseUuid) {
@@ -223,36 +238,5 @@ public class MpiDuplicateReviewPatientActionService {
 			}
 		}
 		throw new IllegalArgumentException("outbound_bundle_json must be a FHIR Patient or a Bundle containing a Patient");
-	}
-	
-	private void attachFhirPatientIdIdentifierIfConfigured(String openmrsPatientUuid, String fhirLogicalIdValue) {
-		if (StringUtils.isBlank(openmrsPatientUuid) || StringUtils.isBlank(fhirLogicalIdValue)) {
-			return;
-		}
-		org.openmrs.Patient p = Context.getPatientService().getPatientByUuid(openmrsPatientUuid.trim());
-		if (p == null) {
-			LOG.warn("Cannot attach FHIR Patient ID: OpenMRS patient not found uuid={}", openmrsPatientUuid);
-			return;
-		}
-		PatientIdentifierType t = Context.getPatientService().getPatientIdentifierTypeByName(FHIR_PATIENT_ID_TYPE_NAME);
-		if (t == null) {
-			LOG.warn("Patient identifier type '{}' not found; skipping secondary identifier", FHIR_PATIENT_ID_TYPE_NAME);
-			return;
-		}
-		Location loc = Context.getLocationService().getDefaultLocation();
-		for (PatientIdentifier existing : p.getActiveIdentifiers()) {
-			if (existing.getIdentifier() != null && existing.getIdentifier().equals(fhirLogicalIdValue.trim())
-			        && existing.getIdentifierType() != null && existing.getIdentifierType().getId() != null
-			        && existing.getIdentifierType().getId().equals(t.getId())) {
-				return;
-			}
-		}
-		PatientIdentifier pid = new PatientIdentifier();
-		pid.setIdentifier(fhirLogicalIdValue.trim());
-		pid.setIdentifierType(t);
-		pid.setLocation(loc);
-		pid.setPreferred(false);
-		p.addIdentifier(pid);
-		Context.getPatientService().savePatient(p);
 	}
 }
