@@ -17,6 +17,11 @@ public class IHMarker {
 	
 	private String lastSyncTime;
 	
+	/**
+	 * High-water mark for {@code unsync_patient.id} replay (marker {@code UNSYNCED_PATIENT}).
+	 */
+	private Integer lastId;
+	
 	public Integer getId() {
 		return id;
 	}
@@ -41,10 +46,18 @@ public class IHMarker {
 		this.lastSyncTime = lastSyncTime;
 	}
 	
+	public Integer getLastId() {
+		return lastId;
+	}
+	
+	public void setLastId(Integer lastId) {
+		this.lastId = lastId;
+	}
+	
 	@Override
 	public String toString() {
-		return "IHMarker [id=" + id + ", name=" + name + ", lastSyncTime=" + lastSyncTime + ", getId()=" + getId()
-		        + ", getName()=" + getName() + ", getLastSyncTime()=" + getLastSyncTime() + ", getClass()=" + getClass()
-		        + ", hashCode()=" + hashCode() + ", toString()=" + super.toString() + "]";
+		return "IHMarker [id=" + id + ", name=" + name + ", lastSyncTime=" + lastSyncTime + ", lastId=" + lastId
+		        + ", getId()=" + getId() + ", getName()=" + getName() + ", getLastSyncTime()=" + getLastSyncTime()
+		        + ", getClass()=" + getClass() + ", hashCode()=" + hashCode() + ", toString()=" + super.toString() + "]";
 	}
 }

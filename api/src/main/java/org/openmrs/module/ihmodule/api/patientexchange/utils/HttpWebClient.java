@@ -61,6 +61,27 @@ public class HttpWebClient {
 		}
 	}
 	
+	/**
+	 * GET JSON from an absolute URL (no authentication).
+	 */
+	public static String getJson(String absoluteUrl) {
+		if (absoluteUrl == null || absoluteUrl.trim().isEmpty()) {
+			throw new IllegalArgumentException("absoluteUrl is required");
+		}
+		HttpHeaders headers = new HttpHeaders();
+		headers.set(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE);
+		HttpEntity<Void> entity = new HttpEntity<>(headers);
+		try {
+			return REST_TEMPLATE.exchange(absoluteUrl.trim(), HttpMethod.GET, entity, String.class).getBody();
+		}
+		catch (HttpStatusCodeException e) {
+			System.err.println(e);
+			System.err.println(e.getStatusCode());
+			System.err.println(e.getResponseBodyAsString());
+			throw e;
+		}
+	}
+	
 	public static String get(String baseURL, String APIURL, String username, String password)
 	        throws UnsupportedEncodingException {
 		String url = concatBaseAndPath(baseURL, APIURL);

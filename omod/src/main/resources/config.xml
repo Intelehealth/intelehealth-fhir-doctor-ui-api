@@ -51,6 +51,7 @@
 		patientDataExchangeMpiDuplicateReviewCase.hbm.xml
 		patientDataExchangeMpiDuplicateReviewCandidate.hbm.xml
 		patientDataExchangeValidationRecord.hbm.xml
+		patientDataExchangeUnsyncPatient.hbm.xml
 	</mappingFiles>
 	<!-- AOP
 	<advice>

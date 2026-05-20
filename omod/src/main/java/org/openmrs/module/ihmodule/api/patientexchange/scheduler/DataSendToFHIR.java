@@ -47,6 +47,10 @@ import org.openmrs.module.ihmodule.api.patientexchange.importupload.OpenmrsPatie
 import org.openmrs.module.ihmodule.api.patientexchange.importupload.PatientUploadImportService;
 import org.openmrs.module.ihmodule.api.patientexchange.service.LocalPatientMpiUpdateService;
 import org.openmrs.module.ihmodule.api.patientexchange.service.PatientDataService;
+import org.openmrs.module.ihmodule.api.patientexchange.sync.FhirPatientSendGateService;
+import org.openmrs.module.ihmodule.api.patientexchange.sync.PublishedConfigFhirSyncGateService;
+import org.openmrs.module.ihmodule.api.patientexchange.sync.UnsyncPatient;
+import org.openmrs.module.ihmodule.api.patientexchange.sync.UnsyncPatientRepository;
 import org.openmrs.module.ihmodule.api.patientexchange.telecom.PatientTelecomMappingUtil;
 import org.openmrs.module.ihmodule.api.patientexchange.utils.DateUtils;
 import org.openmrs.module.ihmodule.api.patientexchange.utils.HttpWebClient;
@@ -127,6 +131,12 @@ public class DataSendToFHIR extends IHConstant {
 	
 	private PatientUploadImportService patientUploadImportService;
 	
+	private FhirPatientSendGateService fhirPatientSendGateService;
+	
+	private UnsyncPatientRepository unsyncPatientRepository;
+	
+	private PublishedConfigFhirSyncGateService publishedConfigFhirSyncGateService;
+	
 	private void ensureDependencies() {
 		if (firFhirConfig == null) {
 			firFhirConfig = Context.getRegisteredComponent("fhirConfig", FhirConfig.class);
@@ -171,57 +181,65 @@ public class DataSendToFHIR extends IHConstant {
 			patientUploadImportService = Context.getRegisteredComponent("patientUploadImportService",
 			    PatientUploadImportService.class);
 		}
+		if (fhirPatientSendGateService == null) {
+			fhirPatientSendGateService = Context.getRegisteredComponent("fhirPatientSendGateService",
+			    FhirPatientSendGateService.class);
+		}
+		if (unsyncPatientRepository == null) {
+			unsyncPatientRepository = Context.getRegisteredComponent("unsyncPatientRepository",
+			    UnsyncPatientRepository.class);
+		}
+		if (publishedConfigFhirSyncGateService == null) {
+			publishedConfigFhirSyncGateService = Context.getRegisteredComponent("publishedConfigFhirSyncGateService",
+			    PublishedConfigFhirSyncGateService.class);
+		}
 	}
 	
 	public void scheduleTaskUsingCronExpression() throws ParseException, UnsupportedEncodingException, DataFormatException,
 	        JsonProcessingException, JSONException {
 		ensureDependencies();
 		
-		transferCreatedPatient();
+		transferUnsyncedPatient();
 		
 		//transferModifiedPatient();
 	}
 	
-	public void transferCreatedPatient() {
+	public void transferUnsyncedPatient() {
 		ensureDependencies();
-		ConfigDataSync patientSync = configDataSyncService.getConfigDataSync(ConfigFacilityDataType.PATIENTS);
-
-		if (patientSync.getStatus()) {
-
-			IHMarker patientMarker = ihMarkerService.findByName(exportCreatedPatient);
-
-			List<PatientDTO> patientList = patientService.getCreatedPatients(patientMarker.getLastSyncTime());
-
-			HashSet<String> patientIdList = new HashSet<>(
-					patientList.stream().map(p -> p.getUuid()).collect(Collectors.toSet()));
-
-			System.err.println("Total Patient Found: " + patientIdList.size());
-
-			int patientSendingError = 0;
-
-			for (String patient : patientIdList) {
-				try {
-					FhirResponse result = send("Patient", patient);
-					if (!isSuccessfulStatus(result != null ? result.getStatusCode() : null)) {
-						patientSendingError++;
-					}
-				} catch (Exception e) {
-					System.err.println(e);
-					patientSendingError++;
-				}
-			}
-
-			System.err.format("Total patient found: %d, Successfully Send %d, Error %d\n", patientIdList.size(),
-					patientIdList.size() - patientSendingError, patientSendingError);
-
-			if (patientIdList.size() > 0) {
-				ihMarkerService.updateMarkerByName(exportCreatedPatient);
-			}
-
-			System.err.println("Patient Data Sync Done............");
-		} else {
-			System.err.println("Patient data sending is disabled ............");
+		
+		if (!publishedConfigFhirSyncGateService.isFhirSyncEnabled()) {
+			LOGGER.info("transferUnsyncedPatient skipped: published config FHIR sync disabled (fhir_module.fhir=false)");
+			return;
 		}
+		IHMarker unsyncMarker = ihMarkerService.getOrCreateUnsyncedPatientProgressMarker();
+		long lastId = unsyncMarker.getLastId() != null ? unsyncMarker.getLastId().longValue() : 0L;
+		List<UnsyncPatient> pending = unsyncPatientRepository.findWhereIdGreaterThan(lastId);
+		LOGGER.info("Unsynced patient transfer: {} row(s) with unsync_patient.id > {}", pending.size(), lastId);
+		for (UnsyncPatient row : pending) {
+			if (row == null || row.getPatientUuid() == null || row.getId() == null) {
+				continue;
+			}
+			String patientUuid = row.getPatientUuid().trim();
+			try {
+				FhirResponse result = executeCentralSend("Patient", patientUuid);
+				if (!isSuccessfulStatus(result != null ? result.getStatusCode() : null)) {
+					LOGGER.warn(
+					    "Unsynced patient send failed: unsync_patient.id={} patientUuid={} status={}; stopping sequential replay",
+					    row.getId(), patientUuid, result != null ? result.getStatusCode() : null);
+					break;
+				}
+				int cursor = row.getId() > Integer.MAX_VALUE ? Integer.MAX_VALUE : row.getId().intValue();
+				ihMarkerService.updateUnsyncedPatientMarkerLastId(cursor);
+				LOGGER.info("Unsynced patient sent: unsync_patient.id={} patientUuid={}; ih_marker.last_id updated to {}",
+				    row.getId(), patientUuid, cursor);
+			}
+			catch (Exception ex) {
+				LOGGER.error("Unsynced patient send error: unsync_patient.id={} patientUuid={}: {}", row.getId(),
+				    patientUuid, ex.getMessage(), ex);
+				break;
+			}
+		}
+		System.err.println("Unsynced patient transfer pass completed............");
 	}
 	
 	private void transferModifiedPatient() {
@@ -268,6 +286,20 @@ public class DataSendToFHIR extends IHConstant {
 	
 	public FhirResponse send(String resourceType, String uuid) throws ParseException, DataFormatException, JSONException,
 	        ConfigurationException, IOException {
+		ensureDependencies();
+		if (resourceType != null && "Patient".equalsIgnoreCase(resourceType.trim())) {
+			return fhirPatientSendGateService.handlePatientSend(uuid,
+			    patientUuid -> executeCentralSend("Patient", patientUuid));
+		}
+		return executeCentralSend(resourceType, uuid);
+	}
+	
+	/**
+	 * Central FHIR pipeline without published-config gate (non-Patient resources, or internal
+	 * replay).
+	 */
+	FhirResponse executeCentralSend(String resourceType, String uuid) throws ParseException, DataFormatException,
+	        JSONException, ConfigurationException, IOException {
 		ensureDependencies();
 		System.err.println("resourceType => " + resourceType + " => " + uuid);
 		Bundle localBundle = firFhirConfig.getLocalOpenMRSFhirContext().search().byUrl(resourceType + "?_id=" + uuid)

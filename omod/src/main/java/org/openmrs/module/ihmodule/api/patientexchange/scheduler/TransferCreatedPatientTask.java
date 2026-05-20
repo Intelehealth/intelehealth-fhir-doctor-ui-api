@@ -6,7 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * OpenMRS scheduled task that delegates to {@link DataSendToFHIR#transferCreatedPatient()}.
+ * OpenMRS scheduled task that delegates to {@link DataSendToFHIR#transferUnsyncedPatient()}.
  * <p>
  * Configure the schedule from the OpenMRS Admin UI (Manage Scheduler) by registering a task with
  * task class
@@ -37,7 +37,7 @@ public class TransferCreatedPatientTask extends AbstractTask {
 			}
 			
 			LOGGER.info("TransferCreatedPatientTask started");
-			dataSendToFHIR.transferCreatedPatient();
+			dataSendToFHIR.transferUnsyncedPatient();
 			LOGGER.info("TransferCreatedPatientTask completed");
 		}
 		catch (Exception ex) {
