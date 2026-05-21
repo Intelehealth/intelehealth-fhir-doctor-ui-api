@@ -68,6 +68,10 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 		return false;
 	}
 	
+	/**
+	 * @deprecated Only used by deprecated {@code POST .../patient-exchange/mpi-local}.
+	 */
+	@Deprecated
 	public void applyMpiIdentifierToLocalPatient(String patientUuid, String mpiIdentifierValue) {
 		final String uuid = requirePatientUuid(patientUuid);
 		runWithPatientIdentifierLock(uuid, new Runnable() {

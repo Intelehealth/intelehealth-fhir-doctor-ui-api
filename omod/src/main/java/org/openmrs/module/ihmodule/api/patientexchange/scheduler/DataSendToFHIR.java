@@ -51,6 +51,8 @@ import org.openmrs.module.ihmodule.api.patientexchange.sync.FhirPatientSendGateS
 import org.openmrs.module.ihmodule.api.patientexchange.sync.PublishedConfigFhirSyncGateService;
 import org.openmrs.module.ihmodule.api.patientexchange.sync.UnsyncPatient;
 import org.openmrs.module.ihmodule.api.patientexchange.sync.UnsyncPatientRepository;
+import org.openmrs.module.ihmodule.api.patientexchange.sync.UnsyncPatientService;
+import org.openmrs.module.ihmodule.api.patientexchange.sync.UnsyncPatientStatus;
 import org.openmrs.module.ihmodule.api.patientexchange.telecom.PatientTelecomMappingUtil;
 import org.openmrs.module.ihmodule.api.patientexchange.utils.DateUtils;
 import org.openmrs.module.ihmodule.api.patientexchange.utils.HttpWebClient;
@@ -135,6 +137,8 @@ public class DataSendToFHIR extends IHConstant {
 	
 	private UnsyncPatientRepository unsyncPatientRepository;
 	
+	private UnsyncPatientService unsyncPatientService;
+	
 	private PublishedConfigFhirSyncGateService publishedConfigFhirSyncGateService;
 	
 	private void ensureDependencies() {
@@ -189,6 +193,9 @@ public class DataSendToFHIR extends IHConstant {
 			unsyncPatientRepository = Context.getRegisteredComponent("unsyncPatientRepository",
 			    UnsyncPatientRepository.class);
 		}
+		if (unsyncPatientService == null) {
+			unsyncPatientService = Context.getRegisteredComponent("unsyncPatientService", UnsyncPatientService.class);
+		}
 		if (publishedConfigFhirSyncGateService == null) {
 			publishedConfigFhirSyncGateService = Context.getRegisteredComponent("publishedConfigFhirSyncGateService",
 			    PublishedConfigFhirSyncGateService.class);
@@ -220,68 +227,39 @@ public class DataSendToFHIR extends IHConstant {
 				continue;
 			}
 			String patientUuid = row.getPatientUuid().trim();
+			int cursor = row.getId() > Integer.MAX_VALUE ? Integer.MAX_VALUE : row.getId().intValue();
+			UnsyncPatientStatus replayStatus = UnsyncPatientStatus.FAILED;
+			boolean sendSucceeded = false;
 			try {
 				FhirResponse result = executeCentralSend("Patient", patientUuid);
-				if (!isSuccessfulStatus(result != null ? result.getStatusCode() : null)) {
-					LOGGER.warn(
-					    "Unsynced patient send failed: unsync_patient.id={} patientUuid={} status={}; stopping sequential replay",
+				sendSucceeded = isSuccessfulStatus(result != null ? result.getStatusCode() : null);
+				replayStatus = sendSucceeded ? UnsyncPatientStatus.COMPLETED : UnsyncPatientStatus.FAILED;
+				if (!sendSucceeded) {
+					LOGGER.warn("Unsynced patient send failed: unsync_patient.id={} patientUuid={} httpStatus={}",
 					    row.getId(), patientUuid, result != null ? result.getStatusCode() : null);
-					break;
+				} else {
+					LOGGER.info("Unsynced patient sent: unsync_patient.id={} patientUuid={}", row.getId(), patientUuid);
 				}
-				int cursor = row.getId() > Integer.MAX_VALUE ? Integer.MAX_VALUE : row.getId().intValue();
-				ihMarkerService.updateUnsyncedPatientMarkerLastId(cursor);
-				LOGGER.info("Unsynced patient sent: unsync_patient.id={} patientUuid={}; ih_marker.last_id updated to {}",
-				    row.getId(), patientUuid, cursor);
 			}
 			catch (Exception ex) {
 				LOGGER.error("Unsynced patient send error: unsync_patient.id={} patientUuid={}: {}", row.getId(),
 				    patientUuid, ex.getMessage(), ex);
+			}
+			finally {
+				try {
+					unsyncPatientService.finalizeUnsyncReplayAttempt(row.getId(), cursor, replayStatus);
+				}
+				catch (Exception persistEx) {
+					LOGGER.error(
+					    "Failed to persist unsync replay outcome for unsync_patient.id={} (ih_marker may be stale): {}",
+					    row.getId(), persistEx.getMessage(), persistEx);
+				}
+			}
+			if (!sendSucceeded) {
 				break;
 			}
 		}
 		System.err.println("Unsynced patient transfer pass completed............");
-	}
-	
-	private void transferModifiedPatient() {
-		ensureDependencies();
-		ConfigDataSync patientSync = configDataSyncService.getConfigDataSync(ConfigFacilityDataType.PATIENTS);
-
-		if (patientSync.getStatus()) {
-
-			IHMarker patientMarker = ihMarkerService.findByName(exportModifiedPatient);
-
-			List<PatientDTO> patientList = patientService.getModifiedPatients(patientMarker.getLastSyncTime());
-
-			HashSet<String> patientIdList = new HashSet<>(
-					patientList.stream().map(p -> p.getUuid()).collect(Collectors.toSet()));
-
-			System.err.println("Total Patient Found: " + patientIdList.size());
-
-			int patientSendingError = 0;
-
-			for (String patient : patientIdList) {
-				try {
-					FhirResponse result = send("Patient", patient);
-					if (!isSuccessfulStatus(result != null ? result.getStatusCode() : null)) {
-						patientSendingError++;
-					}
-				} catch (Exception e) {
-					System.err.println(e);
-					patientSendingError++;
-				}
-			}
-
-			System.err.format("Total patient found: %d, Successfully Send %d, Error %d\n", patientIdList.size(),
-					patientIdList.size() - patientSendingError, patientSendingError);
-
-			if (patientIdList.size() > 0) {
-				ihMarkerService.updateMarkerByName(exportModifiedPatient);
-			}
-
-			System.err.println("Patient Data Sync Done............");
-		} else {
-			System.err.println("Patient data sending is disabled ............");
-		}
 	}
 	
 	public FhirResponse send(String resourceType, String uuid) throws ParseException, DataFormatException, JSONException,

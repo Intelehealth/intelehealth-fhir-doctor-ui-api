@@ -2,9 +2,8 @@ package org.openmrs.module.ihmodule.api.patientexchange.service;
 
 import static org.openmrs.module.ihmodule.api.patientexchange.utils.DateUtils.toFormattedDateNow;
 
-import javax.transaction.Transactional;
-
 import org.openmrs.module.ihmodule.api.patientexchange.model.IHMarker;
+import org.springframework.transaction.annotation.Transactional;
 import org.openmrs.module.ihmodule.api.patientexchange.repository.IHMarkerRepository;
 import org.springframework.stereotype.Service;
 

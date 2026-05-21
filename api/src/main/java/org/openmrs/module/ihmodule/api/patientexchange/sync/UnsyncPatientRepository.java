@@ -29,11 +29,20 @@ public class UnsyncPatientRepository {
 		sessionFactory.getCurrentSession().saveOrUpdate(row);
 	}
 	
+	public void updateStatus(Long id, UnsyncPatientStatus status) {
+		if (id == null || status == null) {
+			return;
+		}
+		sessionFactory.getCurrentSession().createQuery("update UnsyncPatient u set u.status = :status where u.id = :id")
+		        .setParameter("status", status.name()).setParameter("id", id).executeUpdate();
+	}
+	
 	@SuppressWarnings("unchecked")
 	public List<UnsyncPatient> findWhereIdGreaterThan(long lastId) {
 		Query query = sessionFactory.getCurrentSession().createQuery(
 		    "from UnsyncPatient u where u.id > :lastId order by u.id asc");
 		query.setParameter("lastId", lastId);
+		query.setMaxResults(100);
 		return query.list();
 	}
 	

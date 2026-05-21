@@ -41,15 +41,30 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 
 /**
- * Serves patient exchange endpoints for duplicate-patient UI directly from ihmodule services.
+ * REST API: patient exchange proxy (duplicate review, import, export).
  * <p>
- * Mapped both as legacy {@code *.form} URLs and under {@code /rest/v1/ihmodule/patient-exchange/*},
- * which resolves to {@code /ws/rest/v1/ihmodule/patient-exchange/*} on the server — same
- * DispatcherServlet prefix as {@link PatientRestController}. That path is CSRFGuard-unprotected in
- * OpenMRS so JSON POSTs work.
+ * <b>Base URL:</b> {@code {openmrsBase}/ws/rest/v1/ihmodule/patient-exchange/...} (also legacy
+ * {@code module/ihmodule/patientExchange*.form}). JSON handlers use {@link HttpServletResponse} for
+ * Servlet 3 / Tomcat 7 compatibility.
  * <p>
- * Handlers write JSON via {@link HttpServletResponse} directly (not {@code ResponseEntity}) for
- * Servlet 3.0 / Tomcat 7 compatibility (avoids {@code setContentLengthLong}).
+ * <b>Active endpoints (non-deprecated):</b>
+ * <table border="1" summary="Active endpoints">
+ * <tr><th>Method</th><th>Path</th><th>Description</th></tr>
+ * <tr><td>GET</td><td>{@code .../pending}</td><td>List pending duplicate-review cases</td></tr>
+ * <tr><td>GET</td><td>{@code .../candidates?caseUuid=}</td><td>OpenMRS + FHIR candidates for a case</td></tr>
+ * <tr><td>POST</td><td>{@code .../force-sync}</td><td>Register new patient (with caseUuid) or local upsert by patientUuid</td></tr>
+ * <tr><td>POST</td><td>{@code .../duplicate-review/add-patient-candidate}</td><td>Link and join — enrich existing candidate</td></tr>
+ * <tr><td>POST</td><td>{@code .../duplicate-review/skip}</td><td>Skip case or single candidate</td></tr>
+ * <tr><td>POST</td><td>{@code .../import-upload}</td><td>Multipart FHIR Patient/Bundle import</td></tr>
+ * <tr><td>GET</td><td>{@code .../export-created?startDate=&amp;endDate=}</td><td>Export created patients (FHIR JSON attachment)</td></tr>
+ * </table>
+ * <p>
+ * <b>Deprecated (not documented in API reference):</b> {@code GET .../cases/statistics},
+ * {@code POST .../mpi-local}.
+ * <p>
+ * Auth: OpenMRS session. Errors: {@code {"error":"..."}} JSON.
+ * <p>
+ * Full reference: {@code docs/ihmodule-rest-api-documentation.md} (section 2).
  */
 @Controller
 public class PatientExchangeProxyRestController {
@@ -104,12 +119,19 @@ public class PatientExchangeProxyRestController {
 		writeJson(response, HttpStatus.OK.value(), mpiDuplicateReviewQueryService.listPendingCases(), true);
 	}
 	
+	/**
+	 * @deprecated Aggregate duplicate-review case counts. Still used by {@code duplicatePatientReview.js};
+	 *             do not use from new integrations. Legacy form URL {@code patientExchangeDupStatistics.form}
+	 *             is deprecated as well.
+	 */
+	@Deprecated
 	@RequestMapping(value = { "module/ihmodule/patientExchangeDupStatistics.form",
 	        "/rest/v1/ihmodule/patient-exchange/cases/statistics" }, method = RequestMethod.GET)
 	public void duplicateReviewStatistics(HttpServletResponse response) throws IOException {
 		if (rejectIfUnauthorized(response)) {
 			return;
 		}
+		log.warn("DEPRECATED endpoint cases/statistics called; GET /rest/v1/ihmodule/patient-exchange/cases/statistics and patientExchangeDupStatistics.form are deprecated");
 		writeJson(response, HttpStatus.OK.value(), mpiDuplicateReviewQueryService.getCaseStatistics());
 	}
 	
@@ -275,12 +297,22 @@ public class PatientExchangeProxyRestController {
 		}
 	}
 	
+	/**
+	 * Manually sets MPI on a local patient and resolves a pending duplicate-review case.
+	 * 
+	 * @deprecated Not used by {@code duplicatePatientReview.js}. Prefer
+	 *             {@link #duplicateReviewAddPatientCandidate} at
+	 *             {@code POST /rest/v1/ihmodule/patient-exchange/duplicate-review/add-patient-candidate}
+	 *             . Legacy form URL {@code patientExchangeMpiLocal.form} is deprecated as well.
+	 */
+	@Deprecated
 	@RequestMapping(value = { "module/ihmodule/patientExchangeMpiLocal.form", "/rest/v1/ihmodule/patient-exchange/mpi-local" }, method = RequestMethod.POST, consumes = "application/json")
 	public void mpiLocal(@RequestBody(required = false) LocalMpiUpdateRequest body, HttpServletResponse response)
-			throws IOException {
+	        throws IOException {
 		if (rejectIfUnauthorized(response)) {
 			return;
 		}
+		log.warn("DEPRECATED endpoint mpi-local called; use POST /rest/v1/ihmodule/patient-exchange/duplicate-review/add-patient-candidate instead");
 		if (body == null || StringUtils.isBlank(body.getPatientUuid())) {
 			writeJson(response, HttpStatus.BAD_REQUEST.value(), errorBody("patientUuid is required"));
 			return;
@@ -296,42 +328,46 @@ public class PatientExchangeProxyRestController {
 		try {
 			if (log.isDebugEnabled()) {
 				User u = Context.getAuthenticatedUser();
-				log.debug("ihmodule patientExchange: mpi-local requested by user="
-				        + (u != null ? u.getUsername() : "?") + ", patientUuid=" + body.getPatientUuid().trim()
-				        + ", chosenFhirPatientLogicalId=" + body.getChosenFhirPatientLogicalId());
+				log.debug("ihmodule patientExchange: mpi-local requested by user=" + (u != null ? u.getUsername() : "?")
+				        + ", patientUuid=" + body.getPatientUuid().trim() + ", chosenFhirPatientLogicalId="
+				        + body.getChosenFhirPatientLogicalId());
 			}
-			localPatientMpiUpdateService.applyMpiIdentifierToLocalPatient(body.getPatientUuid().trim(),
-					body.getMpiIdentifierValue().trim());
+			localPatientMpiUpdateService.applyMpiIdentifierToLocalPatient(body.getPatientUuid().trim(), body
+			        .getMpiIdentifierValue().trim());
 			try {
-				mpiDuplicateReviewResolutionService.resolvePendingCaseAfterLocalMpiUpdate(body.getPatientUuid().trim(),
-						body.getMpiIdentifierValue().trim(), body.getChosenFhirPatientLogicalId(),
-						body.getResolvedBy().trim());
-			} catch (RuntimeException ex) {
-				log.warn("Duplicate-review resolution after local MPI failed for patient "
-						+ body.getPatientUuid() + ": " + ex.getMessage(), ex);
+				mpiDuplicateReviewResolutionService.resolvePendingCaseAfterLocalMpiUpdate(body.getPatientUuid().trim(), body
+				        .getMpiIdentifierValue().trim(), body.getChosenFhirPatientLogicalId(), body.getResolvedBy().trim());
 			}
-			Map<String, Object> ok = new LinkedHashMap<>();
+			catch (RuntimeException ex) {
+				log.warn("Duplicate-review resolution after local MPI failed for patient " + body.getPatientUuid() + ": "
+				        + ex.getMessage(), ex);
+			}
+			Map<String, Object> ok = mpiLocalDeprecatedResponseBody();
 			ok.put("status", "ok");
 			ok.put("patientUuid", body.getPatientUuid().trim());
 			ok.put("mpiIdentifierValue", body.getMpiIdentifierValue().trim());
 			writeJson(response, HttpStatus.OK.value(), ok);
-		} catch (LocalMpiAlreadySetException ex) {
+		}
+		catch (LocalMpiAlreadySetException ex) {
 			log.info("ihmodule patientExchange: mpi-local skipped, patientUuid=" + body.getPatientUuid().trim()
 			        + ", message=" + ex.getMessage());
-			Map<String, Object> skipped = new LinkedHashMap<>();
+			Map<String, Object> skipped = mpiLocalDeprecatedResponseBody();
 			skipped.put("status", "skipped");
 			skipped.put("patientUuid", body.getPatientUuid().trim());
 			skipped.put("message", ex.getMessage());
 			writeJson(response, HttpStatus.OK.value(), skipped);
-		} catch (IllegalArgumentException ex) {
+		}
+		catch (IllegalArgumentException ex) {
 			log.warn("ihmodule patientExchange: mpi-local bad request, patientUuid=" + body.getPatientUuid().trim()
 			        + ", message=" + ex.getMessage(), ex);
 			writeJson(response, HttpStatus.BAD_REQUEST.value(), errorBody(ex.getMessage()));
-		} catch (IllegalStateException ex) {
+		}
+		catch (IllegalStateException ex) {
 			log.warn("ihmodule patientExchange: mpi-local not found, patientUuid=" + body.getPatientUuid().trim()
 			        + ", message=" + ex.getMessage(), ex);
 			writeJson(response, HttpStatus.NOT_FOUND.value(), errorBody(ex.getMessage()));
-		} catch (Exception ex) {
+		}
+		catch (Exception ex) {
 			log.error("ihmodule patientExchange: mpi-local failed, patientUuid=" + body.getPatientUuid().trim(), ex);
 			writeJson(response, HttpStatus.INTERNAL_SERVER_ERROR.value(), errorBody(ex.getMessage()));
 		}
@@ -440,6 +476,14 @@ public class PatientExchangeProxyRestController {
 		response.setContentLength(payload.length);
 		response.getOutputStream().write(payload);
 		response.getOutputStream().flush();
+	}
+	
+	private static Map<String, Object> mpiLocalDeprecatedResponseBody() {
+		Map<String, Object> m = new LinkedHashMap<>();
+		m.put("deprecated", true);
+		m.put("replacement",
+		    "/rest/v1/ihmodule/patient-exchange/duplicate-review/add-patient-candidate");
+		return m;
 	}
 	
 	private static Map<String, Object> errorBody(String message) {
