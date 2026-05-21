@@ -15,6 +15,9 @@ public class UnsyncPatient {
 	@Column(name = "patient_uuid", nullable = false, length = 38)
 	private String patientUuid;
 	
+	@Column(name = "status", nullable = false, length = 32)
+	private String status = UnsyncPatientStatus.PENDING.name();
+	
 	public Long getId() {
 		return id;
 	}
@@ -29,5 +32,29 @@ public class UnsyncPatient {
 	
 	public void setPatientUuid(String patientUuid) {
 		this.patientUuid = patientUuid;
+	}
+	
+	public String getStatus() {
+		return status;
+	}
+	
+	public void setStatus(String status) {
+		this.status = status;
+	}
+	
+	public UnsyncPatientStatus getStatusEnum() {
+		if (status == null) {
+			return UnsyncPatientStatus.PENDING;
+		}
+		try {
+			return UnsyncPatientStatus.valueOf(status);
+		}
+		catch (IllegalArgumentException ex) {
+			return UnsyncPatientStatus.PENDING;
+		}
+	}
+	
+	public void setStatusEnum(UnsyncPatientStatus statusEnum) {
+		this.status = statusEnum != null ? statusEnum.name() : UnsyncPatientStatus.PENDING.name();
 	}
 }

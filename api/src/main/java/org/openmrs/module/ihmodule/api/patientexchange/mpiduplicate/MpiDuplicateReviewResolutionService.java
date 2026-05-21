@@ -68,6 +68,10 @@ public class MpiDuplicateReviewResolutionService {
 	}
 	
 	@Transactional
+	/**
+	 * @deprecated Only used by deprecated {@code POST .../patient-exchange/mpi-local}.
+	 */
+	@Deprecated
 	public void resolvePendingCaseAfterLocalMpiUpdate(String localPatientUuid, String mpiIdentifierValue,
 	        String chosenFhirPatientLogicalId, String resolvedBy) {
 		if (localPatientUuid == null || mpiIdentifierValue == null || resolvedBy == null) {

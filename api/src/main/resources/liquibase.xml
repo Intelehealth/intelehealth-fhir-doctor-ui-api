@@ -579,4 +579,18 @@
 		<sql>ALTER TABLE ih_marker MODIFY COLUMN id INT(11) NOT NULL AUTO_INCREMENT;</sql>
 	</changeSet>
 
+	<changeSet id="unsync-patient-status-1.0.0" author="ihmodule">
+		<preConditions onFail="MARK_RAN">
+			<not>
+				<columnExists tableName="unsync_patient" columnName="status"/>
+			</not>
+		</preConditions>
+		<comment>PENDING / COMPLETED / FAILED lifecycle for unsync_patient replay.</comment>
+		<addColumn tableName="unsync_patient">
+			<column name="status" type="varchar(32)" defaultValue="PENDING">
+				<constraints nullable="false"/>
+			</column>
+		</addColumn>
+	</changeSet>
+
 </databaseChangeLog>

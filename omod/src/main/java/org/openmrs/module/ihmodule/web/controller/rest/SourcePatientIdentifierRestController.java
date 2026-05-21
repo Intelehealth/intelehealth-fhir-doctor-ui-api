@@ -23,12 +23,31 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
- * Upserts the facility patient's source patient identifier (central FHIR Patient logical id):
- * updates when present, creates when absent.
+ * REST API: upsert facility <b>Source Patient Id</b> (central FHIR Patient logical id).
  * <p>
- * {@code POST /ws/rest/v1/ihmodule/patient/source-identifier} — body: {@code patientUuid},
- * {@code identifierValue}, {@code locationUuid} (required when a new source identifier row is
- * created).
+ * <b>Base URL:</b> {@code openmrsBase}/ws/rest/v1/ihmodule/patient/source-identifier}
+ * <p>
+ * <table border="1" summary="Active endpoints">
+ * <tr>
+ * <th>Method</th>
+ * <th>Path</th>
+ * <th>Description</th>
+ * </tr>
+ * <tr>
+ * <td>POST</td>
+ * <td>{@code /rest/v1/ihmodule/patient/source-identifier}</td>
+ * <td>Create or update Source Patient Id on local patient</td>
+ * </tr>
+ * </table>
+ * Legacy alias: {@code module/ihmodule/patientSourceIdentifier.form}.
+ * <p>
+ * Request JSON: {@code patientUuid}, {@code identifierValue} (required); {@code locationUuid}
+ * (required when creating a new identifier row). Response:
+ * {@link SourcePatientIdentifierUpdateResponse} or {@code "error":"..."}}.
+ * <p>
+ * Full reference: {@code docs/ihmodule-rest-api-documentation.md} (section 3).
+ * 
+ * @see LocalPatientMpiUpdateService#upsertSourcePatientIdentifier
  */
 @Controller
 public class SourcePatientIdentifierRestController {

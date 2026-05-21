@@ -1,10 +1,14 @@
 package org.openmrs.module.ihmodule.api.patientexchange.api.dto;
 
 /**
- * Body for manually attaching or correcting the MPI identifier on the local OpenMRS FHIR Patient,
- * mirroring what happens after a successful central sync when {@code syncPatientToLocal} merges
- * identifiers.
+ * Body for {@code POST .../patient-exchange/mpi-local}.
+ * 
+ * @deprecated Unused by current Duplicate Patient UI. Prefer
+ *             {@code POST /rest/v1/ihmodule/patient-exchange/duplicate-review/add-patient-candidate}
+ *             (link-and-join from a duplicate-review candidate). MPI is normally applied after a
+ *             successful central patient sync via {@code DataSendToFHIR}.
  */
+@Deprecated
 public class LocalMpiUpdateRequest {
 	
 	private String patientUuid;

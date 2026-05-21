@@ -7,5 +7,6 @@
 			<generator class="native"/>
 		</id>
 		<property name="patientUuid" type="string" column="patient_uuid" not-null="true"/>
+		<property name="status" type="string" column="status" not-null="true" length="32"/>
 	</class>
 </hibernate-mapping>

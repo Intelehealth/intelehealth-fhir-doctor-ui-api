@@ -1307,15 +1307,9 @@ public class PatientUploadImportService {
 			pn.setFamilyName(StringUtils.trimToNull(hn.getFamily()));
 			if (hn.hasGiven() && !hn.getGiven().isEmpty()) {
 				pn.setGivenName(StringUtils.trimToNull(hn.getGiven().get(0).getValue()));
-				if (hn.getGiven().size() > 1) {
-					StringBuilder mid = new StringBuilder();
-					for (int i = 1; i < hn.getGiven().size(); i++) {
-						if (mid.length() > 0) {
-							mid.append(' ');
-						}
-						mid.append(hn.getGiven().get(i).getValue());
-					}
-					pn.setMiddleName(StringUtils.trimToNull(mid.toString()));
+				String middleFromFhir = joinFhirGivenNamesFromIndex(hn, 1);
+				if (middleFromFhir != null) {
+					pn.setMiddleName(middleFromFhir);
 				}
 			}
 		}
@@ -1340,33 +1334,82 @@ public class PatientUploadImportService {
 				pa.setPreferred(true);
 				omrsPatient.addAddress(pa);
 			}
-			if (fa.hasLine()) {
-				List<StringType> lines = fa.getLine();
-				if (!lines.isEmpty() && lines.get(0).getValue() != null) {
-					pa.setAddress1(lines.get(0).getValue());
-				}
-				if (lines.size() > 1 && lines.get(1).getValue() != null) {
-					pa.setAddress2(lines.get(1).getValue());
-				}
-				if (lines.size() > 2) {
-					StringBuilder rest = new StringBuilder();
-					for (int i = 2; i < lines.size(); i++) {
-						if (lines.get(i).getValue() == null) {
-							continue;
-						}
-						if (rest.length() > 0) {
-							rest.append(' ');
-						}
-						rest.append(lines.get(i).getValue());
-					}
-					pa.setAddress3(rest.toString());
-				}
-			}
-			pa.setCityVillage(fa.getCity());
-			pa.setStateProvince(fa.getState());
-			pa.setPostalCode(fa.getPostalCode());
-			pa.setCountry(fa.getCountry());
+			applyMergedFhirAddressToOpenmrsPersonAddress(pa, fa);
 		}
+	}
+	
+	/**
+	 * Writes merged FHIR address onto OpenMRS only where the local row is blank (link-and-join
+	 * enrich).
+	 */
+	private static void applyMergedFhirAddressToOpenmrsPersonAddress(PersonAddress pa, Address fa) {
+		if (pa == null || fa == null) {
+			return;
+		}
+		if (fa.hasLine()) {
+			List<StringType> lines = fa.getLine();
+			if (!lines.isEmpty()) {
+				applyOpenmrsAddressLineIfBlank(pa, 1, lines.get(0));
+			}
+			if (lines.size() > 1) {
+				applyOpenmrsAddressLineIfBlank(pa, 2, lines.get(1));
+			}
+			String address3FromFhir = joinFhirAddressLinesFromIndex(fa, 2);
+			if (StringUtils.isBlank(pa.getAddress3()) && address3FromFhir != null) {
+				pa.setAddress3(address3FromFhir);
+			}
+		}
+		if (StringUtils.isBlank(pa.getCityVillage()) && StringUtils.isNotBlank(fa.getCity())) {
+			pa.setCityVillage(fa.getCity().trim());
+		}
+		if (StringUtils.isBlank(pa.getStateProvince()) && StringUtils.isNotBlank(fa.getState())) {
+			pa.setStateProvince(fa.getState().trim());
+		}
+		if (StringUtils.isBlank(pa.getPostalCode()) && StringUtils.isNotBlank(fa.getPostalCode())) {
+			pa.setPostalCode(fa.getPostalCode().trim());
+		}
+		if (StringUtils.isBlank(pa.getCountry()) && StringUtils.isNotBlank(fa.getCountry())) {
+			pa.setCountry(fa.getCountry().trim());
+		}
+	}
+	
+	private static void applyOpenmrsAddressLineIfBlank(PersonAddress pa, int lineNumber, StringType fhirLine) {
+		if (pa == null || fhirLine == null || StringUtils.isBlank(fhirLine.getValue())) {
+			return;
+		}
+		String value = fhirLine.getValue().trim();
+		switch (lineNumber) {
+			case 1:
+				if (StringUtils.isBlank(pa.getAddress1())) {
+					pa.setAddress1(value);
+				}
+				break;
+			case 2:
+				if (StringUtils.isBlank(pa.getAddress2())) {
+					pa.setAddress2(value);
+				}
+				break;
+			default:
+				break;
+		}
+	}
+	
+	private static String joinFhirAddressLinesFromIndex(Address fa, int startIndex) {
+		if (fa == null || !fa.hasLine() || fa.getLine().size() <= startIndex) {
+			return null;
+		}
+		StringBuilder rest = new StringBuilder();
+		for (int i = startIndex; i < fa.getLine().size(); i++) {
+			StringType line = fa.getLine().get(i);
+			if (line == null || StringUtils.isBlank(line.getValue())) {
+				continue;
+			}
+			if (rest.length() > 0) {
+				rest.append(' ');
+			}
+			rest.append(line.getValue().trim());
+		}
+		return rest.length() > 0 ? rest.toString() : null;
 	}
 	
 	private Patient buildFhirPatientSnapshotFromOpenmrs(org.openmrs.Patient omrs) {
@@ -1495,7 +1538,81 @@ public class PatientUploadImportService {
 					candidateName.addGiven(given.getValue());
 				}
 			}
+		} else if (candidateName.hasGiven() && sourceName.hasGiven()) {
+			if (candidateName.getGiven().size() > 0 && StringUtils.isBlank(candidateName.getGiven().get(0).getValue())
+			        && StringUtils.isNotBlank(sourceName.getGiven().get(0).getValue())) {
+				candidateName.getGiven().get(0).setValue(sourceName.getGiven().get(0).getValue());
+			}
+			// OpenMRS middle_name maps to FHIR given[1+]; candidate may have only given[0] (see buildFhirPatientSnapshotFromOpenmrs).
+			mergeMissingAdditionalGivenNames(candidateName, sourceName);
 		}
+	}
+	
+	/**
+	 * Adds source {@code given[1..]} when the candidate has at most one non-blank given (missing
+	 * OpenMRS {@code middle_name} / extra given tokens).
+	 */
+	private static void mergeMissingAdditionalGivenNames(HumanName candidateName, HumanName sourceName) {
+		if (candidateName == null || sourceName == null || !sourceName.hasGiven() || sourceName.getGiven().size() <= 1) {
+			return;
+		}
+		if (countNonBlankGiven(candidateName) > 1) {
+			return;
+		}
+		for (int i = 1; i < sourceName.getGiven().size(); i++) {
+			StringType sourceGiven = sourceName.getGiven().get(i);
+			if (sourceGiven == null || StringUtils.isBlank(sourceGiven.getValue())) {
+				continue;
+			}
+			String value = sourceGiven.getValue().trim();
+			if (!candidateHasGivenValue(candidateName, value)) {
+				candidateName.addGiven(value);
+			}
+		}
+	}
+	
+	private static int countNonBlankGiven(HumanName name) {
+		if (name == null || !name.hasGiven()) {
+			return 0;
+		}
+		int count = 0;
+		for (StringType given : name.getGiven()) {
+			if (given != null && StringUtils.isNotBlank(given.getValue())) {
+				count++;
+			}
+		}
+		return count;
+	}
+	
+	private static String joinFhirGivenNamesFromIndex(HumanName hn, int startIndex) {
+		if (hn == null || !hn.hasGiven() || hn.getGiven().size() <= startIndex) {
+			return null;
+		}
+		StringBuilder mid = new StringBuilder();
+		for (int i = startIndex; i < hn.getGiven().size(); i++) {
+			StringType part = hn.getGiven().get(i);
+			if (part == null || StringUtils.isBlank(part.getValue())) {
+				continue;
+			}
+			if (mid.length() > 0) {
+				mid.append(' ');
+			}
+			mid.append(part.getValue().trim());
+		}
+		return mid.length() > 0 ? mid.toString() : null;
+	}
+	
+	private static boolean candidateHasGivenValue(HumanName candidateName, String value) {
+		if (candidateName == null || !candidateName.hasGiven() || StringUtils.isBlank(value)) {
+			return false;
+		}
+		String expected = value.trim();
+		for (StringType given : candidateName.getGiven()) {
+			if (given != null && expected.equalsIgnoreCase(StringUtils.trimToEmpty(given.getValue()))) {
+				return true;
+			}
+		}
+		return false;
 	}
 	
 	private static void mergeMissingAddress(Patient merged, Patient source) {

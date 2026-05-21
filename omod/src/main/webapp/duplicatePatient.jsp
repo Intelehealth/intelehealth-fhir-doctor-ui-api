@@ -64,10 +64,10 @@
 		List from patient exchange API (<code>PENDING</code> cases).
 		Use <strong>Force sync &amp; review</strong> to push the source patient through MCI (skips duplicate deferral), then open candidates.
 		Use <strong>View duplicates</strong> to load candidates without syncing.
-		In the modal, <strong>Set MPI on local patient</strong> calls <code>POST .../mpi/local</code> on the exchange API for the <em>source</em> local patient UUID.
+		In the modal, use <strong>Link And Join Patient</strong> (<code>duplicate-review/add-patient-candidate</code>); <code>mpi-local</code> is deprecated.
 	</p>
 	<p class="small text-muted">
-		Proxy base (same-origin, CSRFGuard-exempt <code>/ws/rest/v1/...</code>): <code><c:out value="${patientExchangeProxyBase}" /></code>/{pending|candidates|force-sync|mpi-local}<br/>
+		Proxy base (same-origin, CSRFGuard-exempt <code>/ws/rest/v1/...</code>): <code><c:out value="${patientExchangeProxyBase}" /></code>/{pending|candidates|force-sync|duplicate-review/*}<br/>
 		Upstream URL: edit <code>ihmodule.properties</code> (<code>patientexchange.baseUrl</code>) in the ihmodule API jar, or override at runtime via Administration → Settings → <code><c:out value="${patientExchangeGpKey}" /></code>.
 	</p>
 --%>
