@@ -1,0 +1,1 @@
+package org.openmrs.module.ihmodule.api.patientexchange.domain;

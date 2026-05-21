@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE hibernate-mapping PUBLIC "-//Hibernate/Hibernate Mapping DTD 3.0//EN"
+        "http://hibernate.sourceforge.net/hibernate-mapping-3.0.dtd">
+<hibernate-mapping package="org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate">
+	<class name="MpiPatientDuplicateReviewCase" table="mpi_patient_duplicate_review_case">
+		<id name="id" type="long" column="id">
+			<generator class="native"/>
+		</id>
+		<property name="caseUuid" type="string" column="case_uuid" not-null="true" unique="true"/>
+		<property name="localPatientUuid" type="string" column="local_patient_uuid" not-null="true"/>
+		<property name="sourceBirthdate" type="string" column="source_birthdate"/>
+		<property name="sourceFamily" type="string" column="source_family"/>
+		<property name="sourceGiven" type="string" column="source_given"/>
+		<property name="sourceGenderCode" type="string" column="source_gender_code"/>
+		<property name="sourceTelecom" type="string" column="source_telecom"/>
+		<property name="sourceAddressLines" type="text" column="source_address_lines"/>
+		<property name="sourceAddressCity" type="string" column="source_address_city"/>
+		<property name="sourceAddressDistrict" type="string" column="source_address_district"/>
+		<property name="sourceAddressState" type="string" column="source_address_state"/>
+		<property name="sourceAddressPostalCode" type="string" column="source_address_postal_code"/>
+		<property name="sourceAddressCountry" type="string" column="source_address_country"/>
+		<property name="sourceAddressSnapshot" type="text" column="source_address_snapshot"/>
+		<property name="candidateCount" type="int" column="candidate_count" not-null="true"/>
+		<property name="reviewStatus" column="review_status" not-null="true">
+			<type name="org.hibernate.type.EnumType">
+				<param name="enumClass">org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate.MpiDuplicateReviewStatus</param>
+				<param name="useNamed">true</param>
+			</type>
+		</property>
+		<property name="chosenFhirPatientLogicalId" type="string" column="chosen_fhir_patient_logical_id"/>
+		<property name="chosenMpiIdentifierValue" type="string" column="chosen_mpi_identifier_value"/>
+		<property name="resolutionNotes" type="text" column="resolution_notes"/>
+		<property name="resolvedBy" type="string" column="resolved_by"/>
+		<property name="dateCreated" type="string" column="date_created"/>
+		<property name="dateResolved" type="string" column="date_resolved"/>
+		<property name="outboundBundleJson" type="text" column="outbound_bundle_json"/>
+		<property name="searchBundleJson" type="text" column="search_bundle_json"/>
+		<property name="sourceOfPatient" type="string" column="source_of_patient" length="32"/>
+		<bag name="candidates" table="mpi_patient_duplicate_review_candidate" inverse="true" lazy="true" cascade="all-delete-orphan">
+			<key column="review_case_id"/>
+			<one-to-many class="org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate.MpiPatientDuplicateReviewCandidate"/>
+		</bag>
+	</class>
+</hibernate-mapping>

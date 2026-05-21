@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE hibernate-mapping PUBLIC "-//Hibernate/Hibernate Mapping DTD 3.0//EN" "http://www.hibernate.org/dtd/hibernate-mapping-3.0.dtd">
 
-<hibernate-mapping package="org.openmrs.module.doctor.ui.api">
+<hibernate-mapping package="org.openmrs.module.ihmodule">
 
 	<class name="ExternalReferral" table="external_referral"
 		abstract="true">

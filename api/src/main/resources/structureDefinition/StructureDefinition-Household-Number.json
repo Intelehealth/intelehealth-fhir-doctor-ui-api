@@ -1,0 +1,75 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "Household-Number",
+  "url": "http://intelehealth-central-fhir.mpower-social.com/fhir/StructureDefinition/Household-Number",
+  "version": "1.0.1",
+  "name": "HouseholdNumber",
+  "title": "Household Number",
+  "status": "active",
+  "description": "An extension to add a household number identifier for a Patient resource.",
+  "fhirVersion": "4.0.1",
+  "mapping": [
+    {
+      "identity": "rim",
+      "uri": "http://hl7.org/v3",
+      "name": "RIM Mapping"
+    }
+  ],
+  "kind": "complex-type",
+  "abstract": false,
+  "context": [
+    {
+      "type": "element",
+      "expression": "Patient"
+    }
+  ],
+  "type": "Extension",
+  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/Extension",
+  "derivation": "constraint",
+  "differential": {
+    "element": [
+      {
+        "id": "Extension",
+        "path": "Extension",
+        "short": "Household Number",
+        "definition": "An extension to add a household number identifier for a Patient resource."
+      },
+      {
+        "id": "Extension.extension",
+        "path": "Extension.extension",
+        "max": "0"
+      },
+      {
+        "id": "Extension.url",
+        "path": "Extension.url",
+        "fixedUri": "http://intelehealth-central-fhir.mpower-social.com/fhir/StructureDefinition/Household-Number"
+      },
+      {
+        "id": "Extension.value[x]",
+        "path": "Extension.value[x]",
+        "slicing": {
+          "discriminator": [
+            {
+              "type": "type",
+              "path": "$this"
+            }
+          ],
+          "ordered": false,
+          "rules": "open"
+        },
+        "min": 1,
+        "type": [
+          {
+            "code": "string"
+          }
+        ]
+      },
+      {
+        "id": "Extension.valueString",
+        "path": "Extension.valueString",
+        "min": 1,
+        "max": "1"
+      }
+    ]
+  }
+}

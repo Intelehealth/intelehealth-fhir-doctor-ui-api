@@ -15,15 +15,15 @@
 	<!-- Uncomment the changeset below if you want to make the Item class
 	persistable, see also Item and APIfordoctorUIDaoTest -->
 	<!--
-	<changeSet id="doctor.ui.api-2016-08-02-12-21" author="raff">
+	<changeSet id="ihmodule-2016-08-02-12-21" author="raff">
 		<preConditions onFail="MARK_RAN">
-			<not><tableExists tableName="doctor.ui.api_item"/></not>
+			<not><tableExists tableName="ihmodule_item"/></not>
 		</preConditions>
 		<comment>
-			Creating the doctor.ui.api_item table
+			Creating the ihmodule_item table
 		</comment>
-		<createTable tableName="doctor.ui.api_item">
-			<column name="doctor.ui.api_item_id" type="int" autoIncrement="true">
+		<createTable tableName="ihmodule_item">
+			<column name="ihmodule_item_id" type="int" autoIncrement="true">
 				<constraints primaryKey="true" nullable="false"/>
 			</column>
 			<column name="uuid" type="char(38)">
@@ -32,8 +32,8 @@
 			<column name="owner" type="int" />
 			<column name="description" type="varchar(255)" />
 		</createTable>
-        <addForeignKeyConstraint constraintName="doctor.ui.api_item_owner_fk"
-	baseTableName="doctor.ui.api_item" baseColumnNames="owner"
+        <addForeignKeyConstraint constraintName="ihmodule_item_owner_fk"
+	baseTableName="ihmodule_item" baseColumnNames="owner"
 	referencedTableName="users"
                                  referencedColumnNames="user_id" />
     </changeSet> -->
@@ -355,6 +355,228 @@
 		<addColumn tableName="external_referral">
 			<column name="referrer_id" type="varchar(255)" />
 		</addColumn>
+	</changeSet>
+
+	<changeSet id="ih-marker-1.0.0" author="codex">
+		<preConditions onFail="MARK_RAN">
+			<not><tableExists tableName="ih_marker"/></not>
+		</preConditions>
+		<createTable tableName="ih_marker">
+			<column name="id" type="int(11)" autoIncrement="true">
+				<constraints primaryKey="true" nullable="false"/>
+			</column>
+			<column name="name" type="varchar(255)"/>
+			<column name="last_sync_time" type="varchar(255)"/>
+		</createTable>
+	</changeSet>
+
+	<changeSet id="mpi-duplicate-review-case-1.0.0" author="codex">
+		<preConditions onFail="MARK_RAN">
+			<not><tableExists tableName="mpi_patient_duplicate_review_case"/></not>
+		</preConditions>
+		<createTable tableName="mpi_patient_duplicate_review_case">
+			<column name="id" type="bigint(20)" autoIncrement="true"><constraints primaryKey="true" nullable="false"/></column>
+			<column name="case_uuid" type="varchar(64)"><constraints nullable="false" unique="true"/></column>
+			<column name="local_patient_uuid" type="varchar(128)"><constraints nullable="false"/></column>
+			<column name="source_birthdate" type="varchar(32)"/>
+			<column name="source_family" type="varchar(512)"/>
+			<column name="source_given" type="varchar(512)"/>
+			<column name="source_gender_code" type="varchar(16)"/>
+			<column name="source_telecom" type="varchar(256)"/>
+			<column name="source_address_lines" type="longtext"/>
+			<column name="source_address_city" type="varchar(256)"/>
+			<column name="source_address_district" type="varchar(256)"/>
+			<column name="source_address_state" type="varchar(256)"/>
+			<column name="source_address_postal_code" type="varchar(64)"/>
+			<column name="source_address_country" type="varchar(128)"/>
+			<column name="source_address_snapshot" type="longtext"/>
+			<column name="candidate_count" type="int(11)"><constraints nullable="false"/></column>
+			<column name="review_status" type="varchar(32)"><constraints nullable="false"/></column>
+			<column name="chosen_fhir_patient_logical_id" type="varchar(128)"/>
+			<column name="chosen_mpi_identifier_value" type="varchar(256)"/>
+			<column name="resolution_notes" type="longtext"/>
+			<column name="resolved_by" type="varchar(128)"/>
+			<column name="date_created" type="varchar(32)"/>
+			<column name="date_resolved" type="varchar(32)"/>
+			<column name="outbound_bundle_json" type="longtext"/>
+			<column name="search_bundle_json" type="longtext"/>
+		</createTable>
+	</changeSet>
+
+	<changeSet id="mpi-duplicate-review-candidate-1.0.0" author="codex">
+		<preConditions onFail="MARK_RAN">
+			<not><tableExists tableName="mpi_patient_duplicate_review_candidate"/></not>
+		</preConditions>
+		<createTable tableName="mpi_patient_duplicate_review_candidate">
+			<column name="id" type="bigint(20)" autoIncrement="true"><constraints primaryKey="true" nullable="false"/></column>
+			<column name="review_case_id" type="bigint(20)"><constraints nullable="false"/></column>
+			<column name="fhir_patient_logical_id" type="varchar(128)"><constraints nullable="false"/></column>
+			<column name="mpi_identifier_value" type="varchar(256)"/>
+			<column name="candidate_birthdate" type="varchar(32)"/>
+			<column name="candidate_family" type="varchar(512)"/>
+			<column name="candidate_given" type="varchar(512)"/>
+			<column name="candidate_gender_code" type="varchar(16)"/>
+			<column name="candidate_telecom" type="varchar(256)"/>
+			<column name="candidate_address_lines" type="longtext"/>
+			<column name="candidate_address_city" type="varchar(256)"/>
+			<column name="candidate_address_district" type="varchar(256)"/>
+			<column name="candidate_address_state" type="varchar(256)"/>
+			<column name="candidate_address_postal_code" type="varchar(64)"/>
+			<column name="candidate_address_country" type="varchar(128)"/>
+			<column name="candidate_address_snapshot" type="longtext"/>
+			<column name="patient_resource_json" type="longtext"/>
+		</createTable>
+		<addForeignKeyConstraint baseTableName="mpi_patient_duplicate_review_candidate" baseColumnNames="review_case_id"
+			constraintName="fk_mpi_dup_candidate_case" referencedTableName="mpi_patient_duplicate_review_case"
+			referencedColumnNames="id"/>
+	</changeSet>
+
+	<changeSet id="fhir-resource-validation-record-1.0.0" author="codex">
+		<preConditions onFail="MARK_RAN">
+			<not><tableExists tableName="fhir_resource_validation_record"/></not>
+		</preConditions>
+		<createTable tableName="fhir_resource_validation_record">
+			<column name="id" type="bigint(20)" autoIncrement="true"><constraints primaryKey="true" nullable="false"/></column>
+			<column name="resource_type" type="varchar(64)"><constraints nullable="false"/></column>
+			<column name="resource_logical_id" type="varchar(256)"/>
+			<column name="outcome" type="varchar(32)"><constraints nullable="false"/></column>
+			<column name="message" type="text"/>
+			<column name="payload_json" type="longtext"/>
+			<column name="date_created" type="varchar(32)"/>
+			<column name="record_uuid" type="varchar(64)"><constraints nullable="false"/></column>
+		</createTable>
+	</changeSet>
+
+	<changeSet id="mpi-duplicate-review-case-source-of-patient-1.0.0" author="ihmodule">
+		<preConditions onFail="MARK_RAN">
+			<not>
+				<columnExists tableName="mpi_patient_duplicate_review_case" columnName="source_of_patient"/>
+			</not>
+		</preConditions>
+		<comment>Legacy: duplicate origin was first modeled on the case row; prefer mpi_patient_duplicate_review_candidate.match_source for new data.</comment>
+		<addColumn tableName="mpi_patient_duplicate_review_case">
+			<column name="source_of_patient" type="varchar(32)">
+				<constraints nullable="true"/>
+			</column>
+		</addColumn>
+	</changeSet>
+
+	<changeSet id="mpi-duplicate-review-candidate-match-score-source-1.0.0" author="ihmodule">
+		<preConditions onFail="MARK_RAN">
+			<not>
+				<columnExists tableName="mpi_patient_duplicate_review_candidate" columnName="match_score"/>
+			</not>
+		</preConditions>
+		<comment>FHIR Bundle.entry.search.score and which API produced the candidate (openmrs vs fhir MDM).</comment>
+		<addColumn tableName="mpi_patient_duplicate_review_candidate">
+			<column name="match_score" type="double">
+				<constraints nullable="true"/>
+			</column>
+		</addColumn>
+	</changeSet>
+
+	<changeSet id="mpi-duplicate-review-candidate-match-source-1.0.0" author="ihmodule">
+		<preConditions onFail="MARK_RAN">
+			<not>
+				<columnExists tableName="mpi_patient_duplicate_review_candidate" columnName="match_source"/>
+			</not>
+		</preConditions>
+		<addColumn tableName="mpi_patient_duplicate_review_candidate">
+			<column name="match_source" type="varchar(32)">
+				<constraints nullable="true"/>
+			</column>
+		</addColumn>
+	</changeSet>
+
+	<changeSet id="mpi-duplicate-review-candidate-match-type-1.0.0" author="ihmodule">
+		<preConditions onFail="MARK_RAN">
+			<not>
+				<columnExists tableName="mpi_patient_duplicate_review_candidate" columnName="match_type"/>
+			</not>
+		</preConditions>
+		<comment>FHIR Bundle.entry.search extension match-grade valueCode (e.g. certain, probable, possible).</comment>
+		<addColumn tableName="mpi_patient_duplicate_review_candidate">
+			<column name="match_type" type="varchar(32)">
+				<constraints nullable="true"/>
+			</column>
+		</addColumn>
+	</changeSet>
+
+	<changeSet id="mpi-duplicate-review-candidate-review-status-1.0.0" author="ihmodule">
+		<preConditions onFail="MARK_RAN">
+			<not>
+				<columnExists tableName="mpi_patient_duplicate_review_candidate" columnName="review_status"/>
+			</not>
+		</preConditions>
+		<comment>Per-candidate outcome for duplicate-review UI (PENDING implied when null; COMPLETED/SKIPPED).</comment>
+		<addColumn tableName="mpi_patient_duplicate_review_candidate">
+			<column name="review_status" type="varchar(32)">
+				<constraints nullable="true"/>
+			</column>
+		</addColumn>
+	</changeSet>
+
+	<changeSet id="unsync-patient-1.0.0" author="ihmodule">
+		<preConditions onFail="MARK_RAN">
+			<not><tableExists tableName="unsync_patient"/></not>
+		</preConditions>
+		<comment>Patients not sent to central FHIR while published-config sync is disabled.</comment>
+		<createTable tableName="unsync_patient">
+			<column name="id" type="bigint(20)" autoIncrement="true">
+				<constraints primaryKey="true" nullable="false"/>
+			</column>
+			<column name="patient_uuid" type="varchar(38)">
+				<constraints nullable="false" unique="true"/>
+			</column>
+		</createTable>
+	</changeSet>
+
+	<!-- Existing installs may have created patient_uuid as UNIQUE; drop it so duplicates are allowed. -->
+	<!-- Liquibase 3.x (OpenMRS 2.4): indexExists does not support tableName; use sqlCheck for MySQL/MariaDB. -->
+	<changeSet id="unsync-patient-drop-unique-patient-uuid-1.0.0" author="ihmodule" dbms="mysql,mariadb">
+		<preConditions onFail="MARK_RAN">
+			<sqlCheck expectedResult="1">
+				SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+				WHERE TABLE_SCHEMA = DATABASE()
+				AND TABLE_NAME = 'unsync_patient'
+				AND INDEX_NAME = 'patient_uuid'
+				AND NON_UNIQUE = 0
+			</sqlCheck>
+		</preConditions>
+		<comment>Allow multiple unsync_patient rows per patient_uuid (no unique constraint).</comment>
+		<dropIndex indexName="patient_uuid" tableName="unsync_patient"/>
+	</changeSet>
+
+	<changeSet id="ih-marker-last-id-1.0.0" author="ihmodule">
+		<preConditions onFail="MARK_RAN">
+			<not>
+				<columnExists tableName="ih_marker" columnName="last_id"/>
+			</not>
+		</preConditions>
+		<comment>Progress cursor for unsync_patient replay (UNSYNCED_PATIENT marker).</comment>
+		<addColumn tableName="ih_marker">
+			<column name="last_id" type="int(11)" defaultValueNumeric="0">
+				<constraints nullable="true"/>
+			</column>
+		</addColumn>
+	</changeSet>
+
+	<!--
+		Some databases have ih_marker.id as NOT NULL without AUTO_INCREMENT (e.g. manual DDL or older deploys).
+		Hibernate native id generation omits id on INSERT; MySQL then raises "Field 'id' doesn't have a default value".
+	-->
+	<changeSet id="ih-marker-id-auto-increment-mysql-1.0.0" author="ihmodule" dbms="mysql,mariadb">
+		<preConditions onFail="MARK_RAN">
+			<sqlCheck expectedResult="1">
+				SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+				WHERE TABLE_SCHEMA = DATABASE()
+				AND TABLE_NAME = 'ih_marker'
+				AND COLUMN_NAME = 'id'
+				AND IFNULL(EXTRA, '') NOT LIKE '%auto_increment%'
+			</sqlCheck>
+		</preConditions>
+		<comment>Ensure ih_marker.id is AUTO_INCREMENT for Hibernate-generated inserts.</comment>
+		<sql>ALTER TABLE ih_marker MODIFY COLUMN id INT(11) NOT NULL AUTO_INCREMENT;</sql>
 	</changeSet>
 
 </databaseChangeLog>
