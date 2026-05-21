@@ -25,20 +25,28 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 /**
  * REST API: upsert facility <b>Source Patient Id</b> (central FHIR Patient logical id).
  * <p>
- * <b>Base URL:</b> {@code {openmrsBase}/ws/rest/v1/ihmodule/patient/source-identifier}
+ * <b>Base URL:</b> {@code openmrsBase}/ws/rest/v1/ihmodule/patient/source-identifier}
  * <p>
  * <table border="1" summary="Active endpoints">
- * <tr><th>Method</th><th>Path</th><th>Description</th></tr>
- * <tr><td>POST</td><td>{@code /rest/v1/ihmodule/patient/source-identifier}</td><td>Create or update Source Patient Id on local patient</td></tr>
+ * <tr>
+ * <th>Method</th>
+ * <th>Path</th>
+ * <th>Description</th>
+ * </tr>
+ * <tr>
+ * <td>POST</td>
+ * <td>{@code /rest/v1/ihmodule/patient/source-identifier}</td>
+ * <td>Create or update Source Patient Id on local patient</td>
+ * </tr>
  * </table>
  * Legacy alias: {@code module/ihmodule/patientSourceIdentifier.form}.
  * <p>
- * Request JSON: {@code patientUuid}, {@code identifierValue} (required); {@code locationUuid} (required when
- * creating a new identifier row). Response: {@link SourcePatientIdentifierUpdateResponse} or
- * {@code {"error":"..."}}.
+ * Request JSON: {@code patientUuid}, {@code identifierValue} (required); {@code locationUuid}
+ * (required when creating a new identifier row). Response:
+ * {@link SourcePatientIdentifierUpdateResponse} or {@code "error":"..."}}.
  * <p>
  * Full reference: {@code docs/ihmodule-rest-api-documentation.md} (section 3).
- *
+ * 
  * @see LocalPatientMpiUpdateService#upsertSourcePatientIdentifier
  */
 @Controller

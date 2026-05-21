@@ -11,9 +11,11 @@ package org.openmrs.module.ihmodule;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.openmrs.api.context.Context;
 import org.openmrs.module.BaseModuleActivator;
 import org.openmrs.module.DaemonToken;
 import org.openmrs.module.DaemonTokenAware;
+import org.openmrs.module.ihmodule.setup.PatientIdentifierTypeBootstrap;
 
 /**
  * This class contains the logic that is run every time this module is either started or shutdown
@@ -29,6 +31,20 @@ public class APIfordoctorUIActivator extends BaseModuleActivator implements Daem
 	 */
 	public void started() {
 		log.info("Started API for doctor UI");
+		bootstrapPatientIdentifierTypes();
+	}
+	
+	private void bootstrapPatientIdentifierTypes() {
+		Context.openSession();
+		try {
+			PatientIdentifierTypeBootstrap.ensureRequiredIdentifierTypes();
+		}
+		catch (Exception ex) {
+			log.error("ihmodule patient identifier type bootstrap failed", ex);
+		}
+		finally {
+			Context.closeSession();
+		}
 	}
 	
 	/**

@@ -43,26 +43,58 @@ import org.springframework.beans.factory.annotation.Autowired;
 /**
  * REST API: patient exchange proxy (duplicate review, import, export).
  * <p>
- * <b>Base URL:</b> {@code {openmrsBase}/ws/rest/v1/ihmodule/patient-exchange/...} (also legacy
+ * <b>Base URL:</b> {@code openmrsBase}/ws/rest/v1/ihmodule/patient-exchange/...} (also legacy
  * {@code module/ihmodule/patientExchange*.form}). JSON handlers use {@link HttpServletResponse} for
  * Servlet 3 / Tomcat 7 compatibility.
  * <p>
  * <b>Active endpoints (non-deprecated):</b>
  * <table border="1" summary="Active endpoints">
- * <tr><th>Method</th><th>Path</th><th>Description</th></tr>
- * <tr><td>GET</td><td>{@code .../pending}</td><td>List pending duplicate-review cases</td></tr>
- * <tr><td>GET</td><td>{@code .../candidates?caseUuid=}</td><td>OpenMRS + FHIR candidates for a case</td></tr>
- * <tr><td>POST</td><td>{@code .../force-sync}</td><td>Register new patient (with caseUuid) or local upsert by patientUuid</td></tr>
- * <tr><td>POST</td><td>{@code .../duplicate-review/add-patient-candidate}</td><td>Link and join — enrich existing candidate</td></tr>
- * <tr><td>POST</td><td>{@code .../duplicate-review/skip}</td><td>Skip case or single candidate</td></tr>
- * <tr><td>POST</td><td>{@code .../import-upload}</td><td>Multipart FHIR Patient/Bundle import</td></tr>
- * <tr><td>GET</td><td>{@code .../export-created?startDate=&amp;endDate=}</td><td>Export created patients (FHIR JSON attachment)</td></tr>
+ * <tr>
+ * <th>Method</th>
+ * <th>Path</th>
+ * <th>Description</th>
+ * </tr>
+ * <tr>
+ * <td>GET</td>
+ * <td>{@code .../pending}</td>
+ * <td>List pending duplicate-review cases</td>
+ * </tr>
+ * <tr>
+ * <td>GET</td>
+ * <td>{@code .../candidates?caseUuid=}</td>
+ * <td>OpenMRS + FHIR candidates for a case</td>
+ * </tr>
+ * <tr>
+ * <td>POST</td>
+ * <td>{@code .../force-sync}</td>
+ * <td>Register new patient (with caseUuid) or local upsert by patientUuid</td>
+ * </tr>
+ * <tr>
+ * <td>POST</td>
+ * <td>{@code .../duplicate-review/add-patient-candidate}</td>
+ * <td>Link and join — enrich existing candidate</td>
+ * </tr>
+ * <tr>
+ * <td>POST</td>
+ * <td>{@code .../duplicate-review/skip}</td>
+ * <td>Skip case or single candidate</td>
+ * </tr>
+ * <tr>
+ * <td>POST</td>
+ * <td>{@code .../import-upload}</td>
+ * <td>Multipart FHIR Patient/Bundle import</td>
+ * </tr>
+ * <tr>
+ * <td>GET</td>
+ * <td>{@code .../export-created?startDate=&amp;endDate=}</td>
+ * <td>Export created patients (FHIR JSON attachment)</td>
+ * </tr>
  * </table>
  * <p>
  * <b>Deprecated (not documented in API reference):</b> {@code GET .../cases/statistics},
  * {@code POST .../mpi-local}.
  * <p>
- * Auth: OpenMRS session. Errors: {@code {"error":"..."}} JSON.
+ * Auth: OpenMRS session. Errors: {@code "error":"..."}} JSON.
  * <p>
  * Full reference: {@code docs/ihmodule-rest-api-documentation.md} (section 2).
  */
@@ -120,9 +152,9 @@ public class PatientExchangeProxyRestController {
 	}
 	
 	/**
-	 * @deprecated Aggregate duplicate-review case counts. Still used by {@code duplicatePatientReview.js};
-	 *             do not use from new integrations. Legacy form URL {@code patientExchangeDupStatistics.form}
-	 *             is deprecated as well.
+	 * @deprecated Aggregate duplicate-review case counts. Still used by
+	 *             {@code duplicatePatientReview.js}; do not use from new integrations. Legacy form
+	 *             URL {@code patientExchangeDupStatistics.form} is deprecated as well.
 	 */
 	@Deprecated
 	@RequestMapping(value = { "module/ihmodule/patientExchangeDupStatistics.form",

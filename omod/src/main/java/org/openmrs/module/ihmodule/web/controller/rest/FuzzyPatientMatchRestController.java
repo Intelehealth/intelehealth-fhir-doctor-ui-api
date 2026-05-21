@@ -23,20 +23,32 @@ import ca.uhn.fhir.context.FhirContext;
 /**
  * REST API: local OpenMRS FHIR R4 patient {@code $match} (fuzzy duplicate detection).
  * <p>
- * <b>Base URL:</b> {@code {openmrsBase}/ws/rest/v1/ihmodule/patient/$match}
+ * <b>Base URL:</b> {@code openmrsBase}/ws/rest/v1/ihmodule/patient/$match}
  * <p>
  * <table border="1" summary="Active endpoints">
- * <tr><th>Method</th><th>Path</th><th>Description</th></tr>
- * <tr><td>POST</td><td>{@code /rest/v1/ihmodule/patient/$match}</td><td>Match input Patient/Parameters against local DB; returns FHIR Bundle (searchset)</td></tr>
- * <tr><td>GET, etc.</td><td>same</td><td>405 — only POST allowed</td></tr>
+ * <tr>
+ * <th>Method</th>
+ * <th>Path</th>
+ * <th>Description</th>
+ * </tr>
+ * <tr>
+ * <td>POST</td>
+ * <td>{@code /rest/v1/ihmodule/patient/$match}</td>
+ * <td>Match input Patient/Parameters against local DB; returns FHIR Bundle (searchset)</td>
+ * </tr>
+ * <tr>
+ * <td>GET, etc.</td>
+ * <td>same</td>
+ * <td>405 — only POST allowed</td>
+ * </tr>
  * </table>
  * Legacy alias: {@code module/ihmodule/patientFuzzyMatch.form}.
  * <p>
- * Auth: OpenMRS session (401 if not authenticated). Request: {@code application/fhir+json}. Response: FHIR
- * {@code OperationOutcome} on error.
+ * Auth: OpenMRS session (401 if not authenticated). Request: {@code application/fhir+json}.
+ * Response: FHIR {@code OperationOutcome} on error.
  * <p>
  * Full reference: {@code docs/ihmodule-rest-api-documentation.md} (section 1).
- *
+ * 
  * @see FhirPatientMatchService
  */
 @Controller
