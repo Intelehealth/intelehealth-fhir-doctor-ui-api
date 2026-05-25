@@ -593,4 +593,16 @@
 		</addColumn>
 	</changeSet>
 
+	<changeSet id="unsync-patient-error-message-1.0.0" author="ihmodule">
+		<preConditions onFail="MARK_RAN">
+			<not>
+				<columnExists tableName="unsync_patient" columnName="error_message"/>
+			</not>
+		</preConditions>
+		<comment>Last sync failure reason for unsync_patient resync.</comment>
+		<addColumn tableName="unsync_patient">
+			<column name="error_message" type="varchar(512)"/>
+		</addColumn>
+	</changeSet>
+
 </databaseChangeLog>

@@ -7,6 +7,7 @@ import org.openmrs.module.DaemonToken;
 import org.openmrs.module.ihmodule.APIfordoctorUIActivator;
 import org.openmrs.module.ihmodule.api.patientexchange.domain.FhirResponse;
 import org.openmrs.module.ihmodule.api.patientexchange.scheduler.DataSendToFHIR;
+import org.openmrs.module.ihmodule.api.patientexchange.sync.UnsyncPatientService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,6 +27,9 @@ public class PatientEventHandlerService {
 	
 	@Autowired
 	private DataSendToFHIR dataSendToFHIR;
+	
+	@Autowired
+	private UnsyncPatientService unsyncPatientService;
 	
 	@Autowired
 	@Qualifier("patientEventTaskExecutor")
@@ -104,6 +108,7 @@ public class PatientEventHandlerService {
 						});
 					}
 					catch (Exception ex) {
+						unsyncPatientService.recordForResync(patientUuid, UnsyncPatientService.formatSyncFailureMessage(ex));
 						log.error("Failed to send patient {}", patientUuid, ex);
 					}
 				}

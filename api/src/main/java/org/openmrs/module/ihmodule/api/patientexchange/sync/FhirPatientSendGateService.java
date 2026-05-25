@@ -41,17 +41,25 @@ public class FhirPatientSendGateService {
 			throw new IllegalArgumentException("patientUuid is required");
 		}
 		String uuid = patientUuid.trim();
-		log.error("publishedConfigFhirSyncGateService.isFhirSyncEnabled():"
-		        + publishedConfigFhirSyncGateService.isFhirSyncEnabled());
 		if (!publishedConfigFhirSyncGateService.isFhirSyncEnabled()) {
-			unsyncPatientService.enqueue(uuid);
+			unsyncPatientService.recordForResync(uuid, SKIPPED_MESSAGE);
 			return buildSkippedResponse(uuid);
 		}
-		return executor.send(uuid);
+		try {
+			FhirResponse response = executor.send(uuid);
+			if (!UnsyncPatientService.isSuccessfulCentralWrite(response)) {
+				unsyncPatientService.recordForResync(uuid, UnsyncPatientService.formatSyncFailureMessage(response));
+			}
+			return response;
+		}
+		catch (Exception ex) {
+			unsyncPatientService.recordForResync(uuid, UnsyncPatientService.formatSyncFailureMessage(ex));
+			throw ex;
+		}
 	}
 	
 	private static FhirResponse buildSkippedResponse(String patientUuid) {
-		log.error("FHIR sync disabled; queued patientUuid={} in unsync_patient", patientUuid);
+		log.info("FHIR sync disabled; queued patientUuid={} in unsync_patient", patientUuid);
 		FhirResponse response = new FhirResponse();
 		response.setStatusCode(SKIPPED_STATUS);
 		response.setMessage(SKIPPED_MESSAGE);

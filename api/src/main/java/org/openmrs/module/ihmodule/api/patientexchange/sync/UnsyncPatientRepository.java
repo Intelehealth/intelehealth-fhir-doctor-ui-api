@@ -25,23 +25,52 @@ public class UnsyncPatientRepository {
 		return (UnsyncPatient) query.uniqueResult();
 	}
 	
+	@SuppressWarnings("unchecked")
+	public UnsyncPatient findLatestRetryableByPatientUuid(String patientUuid) {
+		if (StringUtils.isBlank(patientUuid)) {
+			return null;
+		}
+		Query query = sessionFactory.getCurrentSession().createQuery(
+		    "from UnsyncPatient u where u.patientUuid = :patientUuid and u.status in (:statuses) order by u.id desc");
+		query.setParameter("patientUuid", patientUuid.trim());
+		query.setParameterList("statuses",
+		    new String[] { UnsyncPatientStatus.PENDING.name(), UnsyncPatientStatus.FAILED.name() });
+		query.setMaxResults(1);
+		return (UnsyncPatient) query.uniqueResult();
+	}
+	
 	public void save(UnsyncPatient row) {
 		sessionFactory.getCurrentSession().saveOrUpdate(row);
 	}
 	
 	public void updateStatus(Long id, UnsyncPatientStatus status) {
+		updateStatusAndErrorMessage(id, status, null);
+	}
+	
+	public void updateStatusAndErrorMessage(Long id, UnsyncPatientStatus status, String errorMessage) {
 		if (id == null || status == null) {
 			return;
 		}
-		sessionFactory.getCurrentSession().createQuery("update UnsyncPatient u set u.status = :status where u.id = :id")
-		        .setParameter("status", status.name()).setParameter("id", id).executeUpdate();
+		String hql = "update UnsyncPatient u set u.status = :status";
+		if (errorMessage != null) {
+			hql += ", u.errorMessage = :errorMessage";
+		}
+		hql += " where u.id = :id";
+		Query query = sessionFactory.getCurrentSession().createQuery(hql);
+		query.setParameter("status", status.name());
+		query.setParameter("id", id);
+		if (errorMessage != null) {
+			query.setParameter("errorMessage", errorMessage);
+		}
+		query.executeUpdate();
 	}
 	
 	@SuppressWarnings("unchecked")
-	public List<UnsyncPatient> findWhereIdGreaterThan(long lastId) {
+	public List<UnsyncPatient> findPendingWhereIdGreaterThan(long lastId) {
 		Query query = sessionFactory.getCurrentSession().createQuery(
-		    "from UnsyncPatient u where u.id > :lastId order by u.id asc");
+		    "from UnsyncPatient u where u.id > :lastId and u.status = :status order by u.id asc");
 		query.setParameter("lastId", lastId);
+		query.setParameter("status", UnsyncPatientStatus.PENDING.name());
 		query.setMaxResults(100);
 		return query.list();
 	}

@@ -55,6 +55,7 @@ import org.openmrs.module.ihmodule.api.patientexchange.sync.UnsyncPatientService
 import org.openmrs.module.ihmodule.api.patientexchange.sync.UnsyncPatientStatus;
 import org.openmrs.module.ihmodule.api.patientexchange.telecom.PatientTelecomMappingUtil;
 import org.openmrs.module.ihmodule.api.patientexchange.utils.DateUtils;
+import org.openmrs.module.ihmodule.api.patientexchange.utils.HttpTimeoutSupport;
 import org.openmrs.module.ihmodule.api.patientexchange.utils.HttpWebClient;
 import org.openmrs.module.ihmodule.api.patientexchange.utils.IHConstant;
 import org.openmrs.module.ihmodule.api.patientexchange.validation.PatientFhirExchangeValidationService;
@@ -220,34 +221,37 @@ public class DataSendToFHIR extends IHConstant {
 		}
 		IHMarker unsyncMarker = ihMarkerService.getOrCreateUnsyncedPatientProgressMarker();
 		long lastId = unsyncMarker.getLastId() != null ? unsyncMarker.getLastId().longValue() : 0L;
-		List<UnsyncPatient> pending = unsyncPatientRepository.findWhereIdGreaterThan(lastId);
-		LOGGER.info("Unsynced patient transfer: {} row(s) with unsync_patient.id > {}", pending.size(), lastId);
+		List<UnsyncPatient> pending = unsyncPatientRepository.findPendingWhereIdGreaterThan(lastId);
+		LOGGER.info("Unsynced patient transfer: {} pending row(s) with unsync_patient.id > {}", pending.size(), lastId);
 		for (UnsyncPatient row : pending) {
 			if (row == null || row.getPatientUuid() == null || row.getId() == null) {
 				continue;
 			}
 			String patientUuid = row.getPatientUuid().trim();
 			int cursor = row.getId() > Integer.MAX_VALUE ? Integer.MAX_VALUE : row.getId().intValue();
-			UnsyncPatientStatus replayStatus = UnsyncPatientStatus.FAILED;
+			UnsyncPatientStatus replayStatus = UnsyncPatientStatus.PENDING;
+			String replayError = null;
 			boolean sendSucceeded = false;
 			try {
 				FhirResponse result = executeCentralSend("Patient", patientUuid);
-				sendSucceeded = isSuccessfulStatus(result != null ? result.getStatusCode() : null);
-				replayStatus = sendSucceeded ? UnsyncPatientStatus.COMPLETED : UnsyncPatientStatus.FAILED;
-				if (!sendSucceeded) {
-					LOGGER.warn("Unsynced patient send failed: unsync_patient.id={} patientUuid={} httpStatus={}",
-					    row.getId(), patientUuid, result != null ? result.getStatusCode() : null);
-				} else {
+				sendSucceeded = UnsyncPatientService.isSuccessfulCentralWrite(result);
+				if (sendSucceeded) {
+					replayStatus = UnsyncPatientStatus.COMPLETED;
 					LOGGER.info("Unsynced patient sent: unsync_patient.id={} patientUuid={}", row.getId(), patientUuid);
+				} else {
+					replayError = UnsyncPatientService.formatSyncFailureMessage(result);
+					LOGGER.warn("Unsynced patient send failed: unsync_patient.id={} patientUuid={} {}", row.getId(),
+					    patientUuid, replayError);
 				}
 			}
 			catch (Exception ex) {
+				replayError = UnsyncPatientService.formatSyncFailureMessage(ex);
 				LOGGER.error("Unsynced patient send error: unsync_patient.id={} patientUuid={}: {}", row.getId(),
-				    patientUuid, ex.getMessage(), ex);
+				    patientUuid, replayError, ex);
 			}
 			finally {
 				try {
-					unsyncPatientService.finalizeUnsyncReplayAttempt(row.getId(), cursor, replayStatus);
+					unsyncPatientService.finalizeUnsyncReplayAttempt(row.getId(), cursor, replayStatus, replayError);
 				}
 				catch (Exception persistEx) {
 					LOGGER.error(
@@ -388,10 +392,17 @@ public class DataSendToFHIR extends IHConstant {
 				uLog.setResponse(res.getResponse());
 				uLog.setResponseStatus(res.getStatusCode());
 			}
-			if (isSuccessfulStatus(res.getStatusCode())) {
+			if (!UnsyncPatientService.isSuccessfulCentralWrite(res)) {
+				recordUnsyncPatientFailure(localPatientUUID, UnsyncPatientService.formatSyncFailureMessage(res));
+				if (uLog != null) {
+					uLog.setStatus(false);
+				}
+			} else {
 				Patient remotePatient = parseCentralResponsePatient(res.getResponse());
 				if (remotePatient == null) {
-					throw new IllegalStateException("Central FHIR response did not contain a Patient resource");
+					String msg = "Central FHIR response did not contain a Patient resource";
+					recordUnsyncPatientFailure(localPatientUUID, msg);
+					throw new IllegalStateException(msg);
 				}
 				if (trimToNull(res.getCentralServerPatientLogicalId()) == null) {
 					String idFromBody = extractCentralServerPatientLogicalIdFromPatient(remotePatient);
@@ -399,10 +410,13 @@ public class DataSendToFHIR extends IHConstant {
 						res.setCentralServerPatientLogicalId(idFromBody);
 					}
 				}
-				System.err.println("Response from central fhir: " + res.getResponse());
+				//System.err.println("Response from central fhir: " + res.getResponse());
 				String returnedMpi = extractMpiIdentifierValueForLocalOpenMrsPatient(remotePatient);
+				
 				if (returnedMpi == null || returnedMpi.trim().isEmpty()) {
-					throw new IllegalStateException("Central FHIR response did not contain an MPI identifier value");
+					String msg = "Central FHIR response did not contain an MPI identifier value";
+					recordUnsyncPatientFailure(localPatientUUID, msg);
+					throw new IllegalStateException(msg);
 				}
 				String mpiTrim = returnedMpi.trim();
 				String centralSourcePatientId = trimToNull(res.getCentralServerPatientLogicalId());
@@ -443,10 +457,6 @@ public class DataSendToFHIR extends IHConstant {
 							        + localPatientUUID + ": " + ex.getMessage(), ex);
 						}
 					}
-				}
-			} else {
-				if (uLog != null) {
-					uLog.setStatus(false);
 				}
 			}
 			if (uLog != null) {
@@ -598,6 +608,7 @@ public class DataSendToFHIR extends IHConstant {
 	 */
 	private FhirResponse sendPatientToCentral(Patient sourcePatient) {
 		FhirResponse response = new FhirResponse();
+		String localPatientUuid = resolveLocalOpenMrsPatientUuid(sourcePatient);
 		try {
 			Patient patient = sourcePatient.copy();
 			// FHIR2 may emit multiple names; central IG expects a single HumanName on outbound writes.
@@ -606,7 +617,6 @@ public class DataSendToFHIR extends IHConstant {
 			normalizePatientForLatestIg(patient);
 			normalizeIdentifierStandards(patient);
 			PatientTelecomMappingUtil.removeInvalidPhoneTelecom(patient);
-			String localPatientUuid = resolveLocalOpenMrsPatientUuid(sourcePatient);
 			
 			String sourcePatientId = trimToNull(getSourcePatientIdentifier(patient));
 			if (sourcePatientId != null) {
@@ -639,8 +649,10 @@ public class DataSendToFHIR extends IHConstant {
 				mpiForLocalSync = trimToNull(extractResponseId(createOutcome.getBundle()));
 			}
 			if (mpiForLocalSync == null || mpiForLocalSync.isEmpty()) {
+				String mpiMessage = "Patient create succeeded but MPI id was not returned by central FHIR";
+				recordUnsyncPatientFailure(localPatientUuid, mpiMessage);
 				response.setStatusCode("502");
-				response.setMessage("Patient create succeeded but MPI id was not returned by central FHIR");
+				response.setMessage(mpiMessage);
 				response.setResponse(fhirContext.newJsonParser().encodeResourceToString(createOutcome.getBundle()));
 				response.setCentralServerPatientLogicalId(createOutcome.getCentralServerPatientLogicalId());
 				return response;
@@ -665,11 +677,26 @@ public class DataSendToFHIR extends IHConstant {
 			return response;
 		}
 		catch (Exception e) {
-			LOGGER.error("Central patient write failed: {}", e.getMessage(), e);
-			response.setStatusCode("500");
-			response.setMessage(e.getMessage());
+			String failureMessage = UnsyncPatientService.formatSyncFailureMessage(e);
+			LOGGER.error("Central patient write failed: {}", failureMessage, e);
+			recordUnsyncPatientFailure(localPatientUuid, failureMessage);
+			response.setStatusCode(HttpTimeoutSupport.failureStatusCode(e));
+			response.setMessage(failureMessage);
 			response.setResponse("");
 			return response;
+		}
+	}
+	
+	private void recordUnsyncPatientFailure(String patientUuid, String errorMessage) {
+		if (patientUuid == null || patientUuid.trim().isEmpty()) {
+			return;
+		}
+		ensureDependencies();
+		try {
+			unsyncPatientService.recordForResync(patientUuid.trim(), errorMessage);
+		}
+		catch (Exception ex) {
+			LOGGER.error("Failed to record unsync_patient for patientUuid={}: {}", patientUuid, ex.getMessage(), ex);
 		}
 	}
 	
