@@ -16,7 +16,6 @@ import org.openmrs.api.APIException;
 import org.openmrs.api.db.hibernate.DbSession;
 import org.openmrs.api.db.hibernate.DbSessionFactory;
 import org.openmrs.module.ihmodule.ConfigFacility;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 
 public class ConfigFacilityDao {
@@ -24,7 +23,6 @@ public class ConfigFacilityDao {
 	DbSessionFactory sessionFactory;
 	
 	@SuppressWarnings("unchecked")
-	@Transactional
 	public ConfigFacility save(ConfigFacility entity) throws APIException {
 		DbSession session = sessionFactory.getCurrentSession();
 		Serializable id = null;

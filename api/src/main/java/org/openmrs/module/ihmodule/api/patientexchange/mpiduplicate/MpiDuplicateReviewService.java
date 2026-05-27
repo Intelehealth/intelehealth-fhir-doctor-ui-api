@@ -31,7 +31,7 @@ import org.springframework.beans.factory.annotation.Autowired;
  * detecting multiple matches.
  */
 @Service
-public class MpiDuplicateReviewService {
+public class MpiDuplicateReviewService implements MpiDuplicateReviewServicePort {
 	
 	private static final Logger LOGGER = LoggerFactory.getLogger(MpiDuplicateReviewService.class);
 	

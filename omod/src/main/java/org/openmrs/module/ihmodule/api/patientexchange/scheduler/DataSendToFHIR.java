@@ -147,7 +147,7 @@ public class DataSendToFHIR extends IHConstant {
 			firFhirConfig = Context.getRegisteredComponent("fhirConfig", FhirConfig.class);
 		}
 		if (ihMarkerService == null) {
-			ihMarkerService = Context.getRegisteredComponent("IHMarkerService", IHMarkerService.class);
+			ihMarkerService = Context.getRegisteredComponent("ihmoduleIHMarkerService", IHMarkerService.class);
 		}
 		if (commonOperationService == null) {
 			commonOperationService = Context.getRegisteredComponent("commonOperationService", CommonOperationService.class);

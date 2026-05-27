@@ -10,7 +10,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.openmrs.api.context.Context;
 import org.openmrs.module.ihmodule.api.patientexchange.config.FhirContextHolder;
-import org.openmrs.module.ihmodule.api.patientmatch.service.FhirPatientMatchService;
+import org.openmrs.module.ihmodule.api.patientmatch.service.FhirPatientMatchServicePort;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Controller;
@@ -59,7 +59,7 @@ public class FuzzyPatientMatchRestController {
 	private final FhirContext fhirContext = FhirContextHolder.R4;
 	
 	@Autowired
-	private FhirPatientMatchService fuzzyPatientMatchService;
+	private FhirPatientMatchServicePort fuzzyPatientMatchService;
 	
 	@RequestMapping(value = { "module/ihmodule/patientFuzzyMatch.form", "/rest/v1/ihmodule/patient/$match" }, method = RequestMethod.POST)
 	public void patientMatch(@RequestBody(required = false) String body, HttpServletResponse response) throws IOException {

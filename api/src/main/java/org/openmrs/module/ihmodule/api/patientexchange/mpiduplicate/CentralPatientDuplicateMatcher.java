@@ -25,7 +25,7 @@ public class CentralPatientDuplicateMatcher {
 	private CentralPatientSearchService centralPatientSearchService;
 	
 	@Autowired
-	private MpiDuplicateReviewService mpiDuplicateReviewService;
+	private MpiDuplicateReviewServicePort mpiDuplicateReviewService;
 	
 	@Value("${intelehealth.fhir.mpi.duplicate.precheck.enabled:true}")
 	private boolean duplicatePrecheckEnabled;
