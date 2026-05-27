@@ -4,7 +4,7 @@ import javax.persistence.Column;
 import javax.persistence.Id;
 
 /**
- * Patients not sent to central FHIR while sync was disabled ({@code fhir_module.fhir=false}).
+ * Patients queued for central FHIR resync (sync disabled, send failure, missing MPI, etc.).
  */
 public class UnsyncPatient {
 	
@@ -17,6 +17,9 @@ public class UnsyncPatient {
 	
 	@Column(name = "status", nullable = false, length = 32)
 	private String status = UnsyncPatientStatus.PENDING.name();
+	
+	@Column(name = "error_message", length = 512)
+	private String errorMessage;
 	
 	public Long getId() {
 		return id;
@@ -56,5 +59,13 @@ public class UnsyncPatient {
 	
 	public void setStatusEnum(UnsyncPatientStatus statusEnum) {
 		this.status = statusEnum != null ? statusEnum.name() : UnsyncPatientStatus.PENDING.name();
+	}
+	
+	public String getErrorMessage() {
+		return errorMessage;
+	}
+	
+	public void setErrorMessage(String errorMessage) {
+		this.errorMessage = errorMessage;
 	}
 }

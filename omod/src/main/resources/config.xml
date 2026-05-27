@@ -101,6 +101,20 @@
 			its bundled patient-match-rules.json defaults.
 		</description>
 	</globalProperty>
+	<globalProperty>
+		<property>intelehealth.fhir.central.http.connect.timeout.ms</property>
+		<defaultValue>60000</defaultValue>
+		<description>
+			Connect timeout in milliseconds for central FHIR / OpenHIM patient writes (HttpWebClient and HAPI client).
+		</description>
+	</globalProperty>
+	<globalProperty>
+		<property>intelehealth.fhir.central.http.read.timeout.ms</property>
+		<defaultValue>120000</defaultValue>
+		<description>
+			Read timeout in milliseconds for central FHIR / OpenHIM patient writes (HttpWebClient and HAPI client).
+		</description>
+	</globalProperty>
 	
 	<!--
 	<dwr>

@@ -15,6 +15,7 @@ import org.openmrs.api.context.Context;
 import org.openmrs.module.BaseModuleActivator;
 import org.openmrs.module.DaemonToken;
 import org.openmrs.module.DaemonTokenAware;
+import org.openmrs.module.ihmodule.api.patientexchange.config.CentralFhirHttpTimeoutConfigurer;
 import org.openmrs.module.ihmodule.setup.PatientIdentifierTypeBootstrap;
 
 /**
@@ -31,11 +32,17 @@ public class APIfordoctorUIActivator extends BaseModuleActivator implements Daem
 	 */
 	public void started() {
 		log.info("Started API for doctor UI");
+		CentralFhirHttpTimeoutConfigurer.applyConfiguredTimeouts();
 		bootstrapPatientIdentifierTypes();
 	}
 	
 	private void bootstrapPatientIdentifierTypes() {
-		Context.openSession();
+		// During web startup, Context already has an open session from Context.startup().
+		// Do not call closeSession() here unless we opened it — that breaks SchedulerUtil.startup().
+		boolean openedHere = !Context.isSessionOpen();
+		if (openedHere) {
+			Context.openSession();
+		}
 		try {
 			PatientIdentifierTypeBootstrap.ensureRequiredIdentifierTypes();
 		}
@@ -43,7 +50,9 @@ public class APIfordoctorUIActivator extends BaseModuleActivator implements Daem
 			log.error("ihmodule patient identifier type bootstrap failed", ex);
 		}
 		finally {
-			Context.closeSession();
+			if (openedHere) {
+				Context.closeSession();
+			}
 		}
 	}
 	

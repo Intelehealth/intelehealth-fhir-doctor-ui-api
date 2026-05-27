@@ -4,6 +4,7 @@ import java.io.UnsupportedEncodingException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 
+import org.openmrs.module.ihmodule.api.patientexchange.config.CentralFhirHttpTimeoutConfigurer;
 import org.openmrs.module.ihmodule.api.patientexchange.domain.FhirResponse;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -22,12 +23,38 @@ import org.springframework.web.client.RestTemplate;
  */
 public class HttpWebClient {
 	
-	private static final RestTemplate REST_TEMPLATE = createRestTemplate();
+	private static volatile int connectTimeoutMs = CentralFhirHttpTimeoutConfigurer.DEFAULT_CONNECT_TIMEOUT_MS;
+	
+	private static volatile int readTimeoutMs = CentralFhirHttpTimeoutConfigurer.DEFAULT_READ_TIMEOUT_MS;
+	
+	private static volatile RestTemplate REST_TEMPLATE = createRestTemplate();
+	
+	private static RestTemplate restTemplate() {
+		CentralFhirHttpTimeoutConfigurer.ensureDefaultsConfigured();
+		return REST_TEMPLATE;
+	}
+	
+	/**
+	 * Applies connect/read timeouts to the shared {@link RestTemplate} (called at module startup).
+	 */
+	public static void configureTimeouts(int connectTimeoutMsValue, int readTimeoutMsValue) {
+		connectTimeoutMs = connectTimeoutMsValue;
+		readTimeoutMs = readTimeoutMsValue;
+		REST_TEMPLATE = createRestTemplate();
+	}
+	
+	public static int getConnectTimeoutMs() {
+		return connectTimeoutMs;
+	}
+	
+	public static int getReadTimeoutMs() {
+		return readTimeoutMs;
+	}
 	
 	private static RestTemplate createRestTemplate() {
 		SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
-		requestFactory.setConnectTimeout(60_000);
-		requestFactory.setReadTimeout(120_000);
+		requestFactory.setConnectTimeout(connectTimeoutMs);
+		requestFactory.setReadTimeout(readTimeoutMs);
 		BufferingClientHttpRequestFactory bufferingFactory = new BufferingClientHttpRequestFactory(requestFactory);
 		RestTemplate template = new RestTemplate(bufferingFactory);
 		for (int i = 0; i < template.getMessageConverters().size(); i++) {
@@ -50,7 +77,7 @@ public class HttpWebClient {
 		headers.setBasicAuth(username, password, StandardCharsets.UTF_8);
 		HttpEntity<Void> entity = new HttpEntity<>(headers);
 		try {
-			ResponseEntity<String> response = REST_TEMPLATE.exchange(uri, HttpMethod.GET, entity, String.class);
+			ResponseEntity<String> response = restTemplate().exchange(uri, HttpMethod.GET, entity, String.class);
 			return response.getBody();
 		}
 		catch (HttpStatusCodeException e) {
@@ -72,7 +99,7 @@ public class HttpWebClient {
 		headers.set(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE);
 		HttpEntity<Void> entity = new HttpEntity<>(headers);
 		try {
-			return REST_TEMPLATE.exchange(absoluteUrl.trim(), HttpMethod.GET, entity, String.class).getBody();
+			return restTemplate().exchange(absoluteUrl.trim(), HttpMethod.GET, entity, String.class).getBody();
 		}
 		catch (HttpStatusCodeException e) {
 			System.err.println(e);
@@ -90,7 +117,7 @@ public class HttpWebClient {
 		headers.setBasicAuth(username, password, StandardCharsets.UTF_8);
 		HttpEntity<Void> entity = new HttpEntity<>(headers);
 		try {
-			return REST_TEMPLATE.exchange(url, HttpMethod.GET, entity, String.class).getBody();
+			return restTemplate().exchange(url, HttpMethod.GET, entity, String.class).getBody();
 		}
 		catch (HttpStatusCodeException e) {
 			System.err.println(e);
@@ -108,7 +135,7 @@ public class HttpWebClient {
 		headers.setBasicAuth(username, password, StandardCharsets.UTF_8);
 		HttpEntity<String> entity = new HttpEntity<>(paylaod, headers);
 		try {
-			return REST_TEMPLATE.exchange(url, HttpMethod.POST, entity, String.class).getBody();
+			return restTemplate().exchange(url, HttpMethod.POST, entity, String.class).getBody();
 		}
 		catch (HttpStatusCodeException e) {
 			System.err.println(e);
@@ -131,7 +158,7 @@ public class HttpWebClient {
 		HttpEntity<String> entity = new HttpEntity<>(payload, headers);
 		FhirResponse response = new FhirResponse();
 		try {
-			ResponseEntity<String> entityResponse = REST_TEMPLATE.exchange(url, HttpMethod.POST, entity, String.class);
+			ResponseEntity<String> entityResponse = restTemplate().exchange(url, HttpMethod.POST, entity, String.class);
 			response.setResponse(entityResponse.getBody());
 			response.setStatusCode(String.valueOf(entityResponse.getStatusCode().value()));
 			response.setMessage(null);
@@ -151,9 +178,7 @@ public class HttpWebClient {
 			response.setResponse(e.getResponseBodyAsString());
 		}
 		catch (Exception e) {
-			response.setMessage(e.getMessage());
-			response.setStatusCode("500");
-			response.setResponse(null);
+			populateFailureResponse(response, e);
 		}
 		return response;
 	}
@@ -161,7 +186,6 @@ public class HttpWebClient {
 	public static FhirResponse postWithBasicAuth(String baseURL, String APIURL, String username, String password,
 	        String payload) {
 		String url = concatBaseAndPath(baseURL, APIURL);
-		System.err.println(url + "-" + username + "-" + password + "-" + payload);
 		HttpHeaders headers = new HttpHeaders();
 		headers.setContentType(MediaType.APPLICATION_JSON);
 		headers.setBasicAuth(username, password, StandardCharsets.UTF_8);
@@ -169,7 +193,7 @@ public class HttpWebClient {
 		
 		FhirResponse response = new FhirResponse();
 		try {
-			ResponseEntity<String> entityResponse = REST_TEMPLATE.exchange(url, HttpMethod.POST, entity, String.class);
+			ResponseEntity<String> entityResponse = restTemplate().exchange(url, HttpMethod.POST, entity, String.class);
 			response.setResponse(entityResponse.getBody());
 			response.setStatusCode(String.valueOf(entityResponse.getStatusCode().value()));
 			response.setMessage(null);
@@ -193,9 +217,7 @@ public class HttpWebClient {
 		}
 		catch (Exception e) {
 			System.err.println("Unexpected error: " + e.getMessage());
-			response.setMessage(e.getMessage());
-			response.setStatusCode("500");
-			response.setResponse(null);
+			populateFailureResponse(response, e);
 		}
 		return response;
 	}
@@ -213,7 +235,7 @@ public class HttpWebClient {
 		
 		FhirResponse response = new FhirResponse();
 		try {
-			ResponseEntity<String> entityResponse = REST_TEMPLATE.exchange(url, HttpMethod.PUT, entity, String.class);
+			ResponseEntity<String> entityResponse = restTemplate().exchange(url, HttpMethod.PUT, entity, String.class);
 			response.setResponse(entityResponse.getBody());
 			response.setStatusCode(String.valueOf(entityResponse.getStatusCode().value()));
 			response.setMessage(null);
@@ -237,22 +259,26 @@ public class HttpWebClient {
 		}
 		catch (Exception e) {
 			System.err.println("Unexpected error: " + e.getMessage());
-			response.setMessage(e.getMessage());
-			response.setStatusCode("500");
-			response.setResponse(null);
+			populateFailureResponse(response, e);
 		}
 		return response;
+	}
+	
+	private static void populateFailureResponse(FhirResponse response, Exception exception) {
+		Throwable root = HttpTimeoutSupport.unwrapResourceAccessCause(exception);
+		response.setStatusCode(HttpTimeoutSupport.failureStatusCode(root));
+		response.setMessage(HttpTimeoutSupport.formatFailureMessage(root, connectTimeoutMs, readTimeoutMs));
+		response.setResponse(null);
 	}
 	
 	public static String postWithBasicAuthV2(String baseURL, String APIURL, String username, String password,
 	        String paylaod) throws UnsupportedEncodingException {
 		String url = concatBaseAndPath(baseURL, APIURL);
-		System.err.println(url + "-" + username + "-" + password + "-" + paylaod);
 		HttpHeaders headers = new HttpHeaders();
 		headers.setContentType(MediaType.APPLICATION_JSON);
 		headers.setBasicAuth(username, password, StandardCharsets.UTF_8);
 		HttpEntity<String> entity = new HttpEntity<>(paylaod, headers);
-		return REST_TEMPLATE.exchange(url, HttpMethod.POST, entity, String.class).getBody();
+		return restTemplate().exchange(url, HttpMethod.POST, entity, String.class).getBody();
 	}
 	
 	static String concatBaseAndPath(String baseURL, String pathOrRelativeUri) {

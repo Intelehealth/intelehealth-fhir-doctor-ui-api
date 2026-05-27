@@ -36,6 +36,7 @@ public class FhirConfig extends IHConstant {
 	}
 	
 	public IGenericClient getOpenCRFhirContext() {
+		CentralFhirHttpTimeoutConfigurer.ensureDefaultsConfigured();
 		String resolvedOpencrUrl = resolveStringProperty(opencrOpenhimURL, "opencr.openhim.url",
 		    "intelehealth.fhir.opencr.openhim.url");
 		System.err.println("opencrOpenhimURL:" + resolvedOpencrUrl);
@@ -215,35 +216,13 @@ public class FhirConfig extends IHConstant {
 	}
 	
 	private String[] splitCredentials(String rawCredential, String propertyName) {
-		log.info("Credential debug property={} rawLength={} maskedValue={}", propertyName,
-		    rawCredential != null ? rawCredential.length() : 0, maskCredential(rawCredential));
 		String[] parts = StringUtils.defaultString(rawCredential).split(":", 2);
 		if (parts.length != 2 || StringUtils.isBlank(parts[0])) {
-			log.warn("Invalid basic-auth credential format for property={} rawLength={} maskedValue={}", propertyName,
-			    rawCredential != null ? rawCredential.length() : 0, maskCredential(rawCredential));
+			log.warn("Invalid basic-auth credential format for property={}", propertyName);
 			throw new IllegalStateException("Invalid basic-auth config for " + propertyName
 			        + ". Expected format: username:password");
 		}
 		return parts;
-	}
-	
-	private String maskCredential(String rawCredential) {
-		if (rawCredential == null) {
-			return "<null>";
-		}
-		String[] parts = rawCredential.split(":", 2);
-		if (parts.length != 2) {
-			return "<invalid-format>";
-		}
-		String username = StringUtils.defaultString(parts[0]);
-		String password = StringUtils.defaultString(parts[1]);
-		if (password.isEmpty()) {
-			return username + ":<empty>";
-		}
-		if (password.length() <= 2) {
-			return username + ":" + StringUtils.repeat('*', password.length());
-		}
-		return username + ":" + StringUtils.repeat('*', password.length() - 2) + password.substring(password.length() - 2);
 	}
 	
 	private boolean resolveBooleanProperty(String key, boolean defaultValue) {

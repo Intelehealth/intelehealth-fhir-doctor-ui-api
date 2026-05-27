@@ -94,7 +94,7 @@ import org.springframework.beans.factory.annotation.Autowired;
  * <b>Deprecated (not documented in API reference):</b> {@code GET .../cases/statistics},
  * {@code POST .../mpi-local}.
  * <p>
- * Auth: OpenMRS session. Errors: {@code "error":"..."}} JSON.
+ * Auth: OpenMRS session. Errors: {@code "error":"..."} JSON.
  * <p>
  * Full reference: {@code docs/ihmodule-rest-api-documentation.md} (section 2).
  */
