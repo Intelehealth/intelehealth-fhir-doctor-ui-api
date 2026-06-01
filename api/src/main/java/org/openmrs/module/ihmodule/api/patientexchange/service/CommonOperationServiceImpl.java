@@ -113,8 +113,7 @@ public class CommonOperationServiceImpl implements CommonOperationService {
 	public String findFrequencyUuidByMappingCode(String codes) {
 		String sql = " SELECT ofre.uuid  from concept c join concept_reference_map crm on c.concept_id =crm.concept_id "
 		        + " join concept_reference_term crt on crm.concept_reference_term_id =crt.concept_reference_term_id "
-		        + " join order_frequency ofre on ofre.concept_id =c.concept_id "
-		        + " where crt.code in(" + codes + ") ";
+		        + " join order_frequency ofre on ofre.concept_id =c.concept_id " + " where crt.code in(" + codes + ") ";
 		System.err.println(sql);
 		String uuid = null;
 		List l = em.createNativeQuery(sql)
@@ -449,4 +448,3 @@ public class CommonOperationServiceImpl implements CommonOperationService {
 	}
 	
 }
-

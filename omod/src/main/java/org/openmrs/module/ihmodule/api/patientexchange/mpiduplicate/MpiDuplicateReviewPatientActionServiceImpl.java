@@ -7,7 +7,6 @@ import org.apache.commons.lang3.StringUtils;
 import org.hl7.fhir.instance.model.api.IBaseResource;
 import org.hl7.fhir.r4.model.Bundle;
 import org.hl7.fhir.r4.model.Patient;
-import org.json.JSONException;
 import org.openmrs.PatientIdentifier;
 import org.openmrs.module.ihmodule.api.patientexchange.config.FhirContextHolder;
 import org.openmrs.module.ihmodule.api.patientexchange.importupload.OpenmrsPatientUpsertResult;
@@ -63,7 +62,7 @@ public class MpiDuplicateReviewPatientActionServiceImpl implements MpiDuplicateR
 	@Override
 	@Transactional
 	public void addPatientFromPendingCase(String caseUuid, String patientUuidForLegacyForceSync, String resolvedBy)
-	        throws ParseException, DataFormatException, JSONException, ConfigurationException, IOException {
+	        throws ParseException, DataFormatException, ConfigurationException, IOException {
 		MpiPatientDuplicateReviewCase reviewCase = requirePendingCase(caseUuid);
 		String outbound = StringUtils.trimToNull(reviewCase.getOutboundBundleJson());
 		if (outbound != null) {
@@ -88,7 +87,7 @@ public class MpiDuplicateReviewPatientActionServiceImpl implements MpiDuplicateR
 	@Override
 	@Transactional
 	public void addPatientFromCandidate(String caseUuid, long candidateId, String resolvedBy) throws ParseException,
-	        DataFormatException, JSONException, ConfigurationException, IOException {
+	        DataFormatException, ConfigurationException, IOException {
 		MpiPatientDuplicateReviewCase reviewCase = requirePendingCase(caseUuid);
 		MpiPatientDuplicateReviewCandidate row = candidateRepository.findById(candidateId);
 		if (row == null || row.getReviewCase() == null || !reviewCase.getId().equals(row.getReviewCase().getId())) {

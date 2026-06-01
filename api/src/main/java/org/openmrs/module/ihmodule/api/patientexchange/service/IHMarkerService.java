@@ -9,7 +9,8 @@ public interface IHMarkerService {
 	
 	/**
 	 * Progress marker for
-	 * {@link org.openmrs.module.ihmodule.api.patientexchange.scheduler.DataSendToFHIR#transferUnsyncedPatient()}.
+	 * {@link org.openmrs.module.ihmodule.api.patientexchange.scheduler.DataSendToFHIR#transferUnsyncedPatient()}
+	 * .
 	 */
 	String MARKER_UNSYNCED_PATIENT = "UNSYNCED_PATIENT";
 	

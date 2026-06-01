@@ -6,8 +6,7 @@ import java.util.Properties;
 
 public abstract class IHConstant {
 	
-	private static final Properties MODULE_PROPERTIES = ModuleClasspathPropertiesLoader.loadMergedInOrder(
-	    "ihmodule.properties", "patientdataexchange-application.properties");
+	private static final Properties MODULE_PROPERTIES = ModuleClasspathPropertiesLoader.loadModuleProperties();
 	
 	protected String importLocation = resolveProperty("intelehealth.fhir.resource.location.import", null);
 	
@@ -39,11 +38,9 @@ public abstract class IHConstant {
 	protected String sourcePatientIdTypeName = resolveProperty("intelehealth.fhir.patient.source.identifier.type.name",
 	    null, "Source Patient Id");
 	
-	public String localOpenmrsOpenhimURL = resolveProperty("local.openmrs.openhim.url",
-	    "intelehealth.fhir.local.openmrs.openhim.url");
+	public String localOpenmrsOpenhimURL = resolveLocalOpenmrsUrl();
 	
-	protected String localOpenmrsOpenhimAuthentication = resolveProperty(
-	    "local.openmrs.openhim.clientid.password.basic.auth", "intelehealth.fhir.local.openmrs.openhim.authentication");
+	protected String localOpenmrsOpenhimAuthentication = resolveLocalOpenmrsAuthentication();
 	
 	protected String opencrOpenhimURL = resolveProperty("opencr.openhim.url", "intelehealth.fhir.opencr.openhim.url");
 	
@@ -92,6 +89,22 @@ public abstract class IHConstant {
 			return v.trim();
 		}
 		return resolveProperty("intelehealth.fhir.opencr.openhim.authentication", null);
+	}
+	
+	private static String resolveLocalOpenmrsUrl() {
+		String v = resolveProperty("local.openmrs.url", "local.openmrs.openhim.url");
+		if (StringUtils.isNotBlank(v)) {
+			return v;
+		}
+		return resolveProperty("intelehealth.fhir.local.openmrs.openhim.url", null);
+	}
+	
+	private static String resolveLocalOpenmrsAuthentication() {
+		String v = resolveProperty("local.openmrs.password.basic.auth", "local.openmrs.openhim.clientid.password.basic.auth");
+		if (StringUtils.isNotBlank(v)) {
+			return v;
+		}
+		return resolveProperty("intelehealth.fhir.local.openmrs.openhim.authentication", null);
 	}
 	
 }

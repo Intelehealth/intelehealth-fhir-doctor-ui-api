@@ -11,4 +11,3 @@ public interface FuzzyMatchPatientResponseMapperPort {
 	void enrich(Patient patient, FuzzyPatientCandidate candidate);
 	
 }
-

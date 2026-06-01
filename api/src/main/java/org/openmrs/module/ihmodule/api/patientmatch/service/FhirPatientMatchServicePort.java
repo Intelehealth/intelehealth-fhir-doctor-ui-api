@@ -17,4 +17,3 @@ public interface FhirPatientMatchServicePort {
 	String encodeResource(FhirContext fhirContext, org.hl7.fhir.r4.model.Resource resource);
 	
 }
-

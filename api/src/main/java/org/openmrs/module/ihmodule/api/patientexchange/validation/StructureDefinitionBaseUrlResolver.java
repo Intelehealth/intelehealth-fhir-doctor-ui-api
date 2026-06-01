@@ -25,8 +25,7 @@ public final class StructureDefinitionBaseUrlResolver {
 				return fromBean;
 			}
 		}
-		Properties properties = ModuleClasspathPropertiesLoader.loadMergedInOrder("ihmodule.properties",
-		    "patientdataexchange-application.properties");
+		Properties properties = ModuleClasspathPropertiesLoader.loadModuleProperties();
 		if (properties != null) {
 			String fromSd = parseBaseFromStructureDefinitionProperty(properties
 			        .getProperty(PROP_STRUCTURE_DEFINITION_EXTENSION_URL));

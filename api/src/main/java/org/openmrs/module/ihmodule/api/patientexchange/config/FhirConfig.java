@@ -52,8 +52,8 @@ public class FhirConfig extends IHConstant {
 		String resolvedLocalUrl = getResolvedLocalOpenmrsBaseUrl();
 		IGenericClient openMRSServer = fhirContext.newRestfulGenericClient(resolvedLocalUrl + "/ws/fhir2/R4");
 		String resolvedLocalAuth = resolveStringProperty(localOpenmrsOpenhimAuthentication,
-		    "local.openmrs.openhim.clientid.password.basic.auth", "intelehealth.fhir.local.openmrs.openhim.authentication");
-		String[] credentials = splitCredentials(resolvedLocalAuth, "local.openmrs.openhim.clientid.password.basic.auth");
+		    "local.openmrs.password.basic.auth", "local.openmrs.openhim.clientid.password.basic.auth");
+		String[] credentials = splitCredentials(resolvedLocalAuth, "local.openmrs.password.basic.auth");
 		BasicAuthInterceptor openmrsAuthentication = new BasicAuthInterceptor(credentials[0], credentials[1]);
 		openMRSServer.registerInterceptor(openmrsAuthentication);
 		return openMRSServer;
@@ -75,8 +75,8 @@ public class FhirConfig extends IHConstant {
 	
 	public String[] getOpenMRSCredentials() {
 		String resolvedLocalAuth = resolveStringProperty(localOpenmrsOpenhimAuthentication,
-		    "local.openmrs.openhim.clientid.password.basic.auth", "intelehealth.fhir.local.openmrs.openhim.authentication");
-		return splitCredentials(resolvedLocalAuth, "local.openmrs.openhim.clientid.password.basic.auth");
+		    "local.openmrs.password.basic.auth", "local.openmrs.openhim.clientid.password.basic.auth");
+		return splitCredentials(resolvedLocalAuth, "local.openmrs.password.basic.auth");
 	}
 	
 	/**
@@ -135,8 +135,7 @@ public class FhirConfig extends IHConstant {
 	}
 	
 	public String getResolvedLocalOpenmrsBaseUrl() {
-		return resolveStringProperty(localOpenmrsOpenhimURL, "local.openmrs.openhim.url",
-		    "intelehealth.fhir.local.openmrs.openhim.url");
+		return resolveStringProperty(localOpenmrsOpenhimURL, "local.openmrs.url", "local.openmrs.openhim.url");
 	}
 	
 	public String getPatientImportPreferredIdentifierTypeUuid() {
@@ -144,7 +143,7 @@ public class FhirConfig extends IHConstant {
 	}
 	
 	public boolean isPatientImportDemographicDuplicateCheckEnabled() {
-		return resolveBooleanProperty("intelehealth.fhir.patient.import.demographic.duplicate.check.enabled", false);
+		return resolveBooleanProperty("intelehealth.fhir.patient.import.demographic.duplicate.check.enabled", true);
 	}
 	
 	public int getPatientImportDemographicDuplicateCheckSearchCount() {
@@ -165,20 +164,30 @@ public class FhirConfig extends IHConstant {
 	
 	/**
 	 * When {@code true}, upload import creates {@link org.openmrs.Patient} via
-	 * {@code PatientService.savePatient} instead of FHIR2 {@code POST Patient}. Default
-	 * {@code false} preserves legacy FHIR2 create behaviour.
+	 * {@code PatientService.savePatient} instead of FHIR2 {@code POST Patient}.
 	 */
 	public boolean isPatientImportNativeCreateEnabled() {
-		return resolveBooleanProperty("intelehealth.fhir.patient.import.native.create.enabled", false);
+		return resolveBooleanProperty("intelehealth.fhir.patient.import.native.create.enabled", true);
 	}
 	
 	/**
 	 * When {@code true}, patient upload import uses OpenMRS fuzzy {@code $match} plus central FHIR
-	 * {@code $mdm-match} instead of exact identifier / demographic duplicate checks. Default
-	 * {@code false} preserves legacy import behaviour.
+	 * {@code $mdm-match} instead of exact identifier / demographic duplicate checks.
 	 */
 	public boolean isPatientImportFuzzyMatchEnabled() {
-		return resolveBooleanProperty("mpi.import.fuzzy.match.enabled", false);
+		return resolveBooleanProperty("mpi.import.fuzzy.match.enabled", true);
+	}
+	
+	public boolean isMpiDuplicatePrecheckEnabled() {
+		return resolveBooleanProperty("intelehealth.fhir.mpi.duplicate.precheck.enabled", true);
+	}
+	
+	public int getMpiDuplicatePrecheckSearchCount() {
+		return resolveIntProperty("intelehealth.fhir.mpi.duplicate.precheck.search.count", 50);
+	}
+	
+	public boolean isValidationAuditStoreEnabled() {
+		return resolveBooleanProperty("intelehealth.fhir.validation.audit.store.enabled", true);
 	}
 	
 	/**
@@ -284,10 +293,9 @@ public class FhirConfig extends IHConstant {
 			if (cachedModuleProperties != null) {
 				return cachedModuleProperties;
 			}
-			cachedModuleProperties = ModuleClasspathPropertiesLoader.loadMergedInOrder("ihmodule.properties",
-			    "patientdataexchange-application.properties");
+			cachedModuleProperties = ModuleClasspathPropertiesLoader.loadModuleProperties();
 			if (cachedModuleProperties == null) {
-				log.warn("No module classpath properties merged (ihmodule.properties / patientdataexchange-application.properties)");
+				log.warn("No module classpath properties loaded (ihmodule.properties)");
 			}
 			return cachedModuleProperties;
 		}

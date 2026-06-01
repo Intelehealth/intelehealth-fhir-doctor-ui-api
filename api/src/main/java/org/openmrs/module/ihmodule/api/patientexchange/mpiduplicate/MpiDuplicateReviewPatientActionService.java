@@ -5,7 +5,6 @@ import java.text.ParseException;
 
 import ca.uhn.fhir.context.ConfigurationException;
 import ca.uhn.fhir.parser.DataFormatException;
-import org.json.JSONException;
 
 /**
  * MPI duplicate-review UI: add patient (pending row or candidate) and skip flows. Implemented by
@@ -18,8 +17,8 @@ public interface MpiDuplicateReviewPatientActionService {
 	void skipCaseByCaseUuid(String caseUuid, String resolvedBy);
 	
 	void addPatientFromPendingCase(String caseUuid, String patientUuidForLegacyForceSync, String resolvedBy)
-	        throws ParseException, DataFormatException, JSONException, ConfigurationException, IOException;
+	        throws ParseException, DataFormatException, ConfigurationException, IOException;
 	
 	void addPatientFromCandidate(String caseUuid, long candidateId, String resolvedBy) throws ParseException,
-	        DataFormatException, JSONException, ConfigurationException, IOException;
+	        DataFormatException, ConfigurationException, IOException;
 }

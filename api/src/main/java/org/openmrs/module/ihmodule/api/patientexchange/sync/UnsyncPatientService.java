@@ -49,5 +49,4 @@ public interface UnsyncPatientService {
 		return HttpTimeoutSupport.formatFailureMessage(throwable, HttpWebClient.getConnectTimeoutMs(),
 		    HttpWebClient.getReadTimeoutMs());
 	}
-	
 }

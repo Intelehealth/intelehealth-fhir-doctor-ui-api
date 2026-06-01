@@ -170,8 +170,7 @@ public class CreatedPatientExportService extends IHConstant {
 				LOGGER.warn("WebClient/reactive dependency missing ({}); falling back to HttpURLConnection for uuid={}",
 				    err.getMessage(), uuid);
 				if (isUnresolvedPropertyPlaceholder(localOpenmrsOpenhimURL)) {
-					LOGGER.warn(
-					    "Property local.openmrs.openhim.url appears unresolved (value='{}'); using HAPI client fallback",
+					LOGGER.warn("Property local.openmrs.url appears unresolved (value='{}'); using HAPI client fallback",
 					    localOpenmrsOpenhimURL);
 					Bundle bundle = fhirConfig.getLocalOpenMRSFhirContext().search().byUrl("Patient?_id=" + uuid)
 					        .returnBundle(Bundle.class).execute();

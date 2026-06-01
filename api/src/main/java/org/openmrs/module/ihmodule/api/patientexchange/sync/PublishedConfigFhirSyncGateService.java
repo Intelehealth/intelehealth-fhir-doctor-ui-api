@@ -88,8 +88,7 @@ public class PublishedConfigFhirSyncGateService {
 			/* use properties file */
 		}
 		if (StringUtils.isBlank(raw)) {
-			java.util.Properties props = ModuleClasspathPropertiesLoader.loadMergedInOrder("ihmodule.properties",
-			    "patientdataexchange-application.properties");
+			java.util.Properties props = ModuleClasspathPropertiesLoader.loadModuleProperties();
 			if (props != null) {
 				raw = props.getProperty(PROP_CACHE_SECONDS);
 			}
@@ -120,8 +119,7 @@ public class PublishedConfigFhirSyncGateService {
 			/* use properties file */
 		}
 		if (StringUtils.isBlank(raw)) {
-			java.util.Properties props = ModuleClasspathPropertiesLoader.loadMergedInOrder("ihmodule.properties",
-			    "patientdataexchange-application.properties");
+			java.util.Properties props = ModuleClasspathPropertiesLoader.loadModuleProperties();
 			if (props != null) {
 				raw = props.getProperty(PROP_PUBLISHED_CONFIG_URL);
 			}

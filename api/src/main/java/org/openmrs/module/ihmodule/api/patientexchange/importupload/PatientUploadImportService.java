@@ -112,7 +112,7 @@ public class PatientUploadImportService {
 		PatientUploadImportResponse response = new PatientUploadImportResponse();
 		response.setTotal(patients.size());
 		log.error(
-		    "IMPORT_UPLOAD_DEBUG batch start patientCount={} mpi.import.fuzzy.match.effective={} (GP overrides classpath; merged ihmodule+patientdataexchange)",
+		    "IMPORT_UPLOAD_DEBUG batch start patientCount={} mpi.import.fuzzy.match.effective={} (GP overrides classpath; ihmodule.properties)",
 		    patients.size(), fhirConfig.isPatientImportFuzzyMatchEnabled());
 		
 		for (Patient patient : patients) {

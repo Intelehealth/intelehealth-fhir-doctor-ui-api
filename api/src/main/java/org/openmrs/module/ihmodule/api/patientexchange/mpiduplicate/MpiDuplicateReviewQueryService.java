@@ -7,7 +7,8 @@ import org.openmrs.module.ihmodule.api.patientexchange.api.dto.MpiDuplicateRevie
 import org.openmrs.module.ihmodule.api.patientexchange.api.dto.MpiDuplicateReviewStatisticsDto;
 
 /**
- * Read-only MPI duplicate-review queries. Implemented by {@link MpiDuplicateReviewQueryServiceImpl}.
+ * Read-only MPI duplicate-review queries. Implemented by {@link MpiDuplicateReviewQueryServiceImpl}
+ * .
  */
 public interface MpiDuplicateReviewQueryService {
 	

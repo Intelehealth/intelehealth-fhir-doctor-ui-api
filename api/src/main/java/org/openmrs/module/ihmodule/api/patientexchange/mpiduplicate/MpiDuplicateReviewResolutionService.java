@@ -8,8 +8,7 @@ import org.hl7.fhir.r4.model.Bundle;
  */
 public interface MpiDuplicateReviewResolutionService {
 	
-	void resolvePendingCaseAfterSuccessfulForceSync(String localPatientUuid, Bundle mciResponseBundle,
-	        String resolvedBy);
+	void resolvePendingCaseAfterSuccessfulForceSync(String localPatientUuid, Bundle mciResponseBundle, String resolvedBy);
 	
 	/**
 	 * @deprecated Only used by deprecated {@code POST .../patient-exchange/mpi-local}.
