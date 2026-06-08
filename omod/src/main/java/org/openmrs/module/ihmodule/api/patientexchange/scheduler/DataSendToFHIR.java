@@ -369,8 +369,6 @@ public class DataSendToFHIR extends IHConstant {
 			        .setPrettyPrint(true).encodeResourceToString(localPatient) : fhirContext.newJsonParser()
 			        .setPrettyPrint(true).encodeResourceToString(transactionBundle);
 			
-			Optional<MpiPatientDuplicateReviewCase> duplicateReview = Optional.empty();
-			
 			DataExchangeAuditLog log = new DataExchangeAuditLog();
 			log.setResourceName(resourceType);
 			log.setResourceUuid(localPatientUUID);
@@ -387,7 +385,7 @@ public class DataSendToFHIR extends IHConstant {
 			}
 			
 			FhirResponse res = sendPatientToCentral(localPatient);
-			LOGGER.error("res MDM  uuid={}", res);
+			
 			if (uLog != null) {
 				uLog.setResponse(res.getResponse());
 				uLog.setResponseStatus(res.getStatusCode());
@@ -445,19 +443,16 @@ public class DataSendToFHIR extends IHConstant {
 				} else if (uLog != null && remotePatient.getIdElement() != null && remotePatient.getIdElement().hasIdPart()) {
 					uLog.setFhirId(remotePatient.getIdElement().getIdPart());
 				}
-				if (skipCentralMpiDuplicateSearch) {
-					String resolvedBy = ForceSyncDuplicateResolutionContext.peekResolvedBy();
-					if (resolvedBy != null) {
-						try {
-							mpiDuplicateReviewResolutionService.resolvePendingCaseAfterSuccessfulForceSync(localPatientUUID,
-							    singlePatientBundle(remotePatient), resolvedBy);
-						}
-						catch (RuntimeException ex) {
-							LOGGER.warn("Duplicate-review resolution after force-sync failed for patient "
-							        + localPatientUUID + ": " + ex.getMessage(), ex);
-						}
-					}
-				}
+				/*
+				 * if (skipCentralMpiDuplicateSearch) { String resolvedBy =
+				 * ForceSyncDuplicateResolutionContext.peekResolvedBy(); if (resolvedBy != null)
+				 * { try { mpiDuplicateReviewResolutionService.
+				 * resolvePendingCaseAfterSuccessfulForceSync(localPatientUUID,
+				 * singlePatientBundle(remotePatient), resolvedBy); } catch (RuntimeException
+				 * ex) { LOGGER.
+				 * warn("Duplicate-review resolution after force-sync failed for patient " +
+				 * localPatientUUID + ": " + ex.getMessage(), ex); } } }
+				 */
 			}
 			if (uLog != null) {
 				uLog.setChangedBy(1); // Admin-OpenMRS

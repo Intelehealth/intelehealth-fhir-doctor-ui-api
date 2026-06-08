@@ -21,6 +21,7 @@ import java.lang.reflect.Method;
 import org.apache.commons.lang3.StringUtils;
 import org.hl7.fhir.r4.model.Address;
 import org.hl7.fhir.r4.model.Bundle;
+import org.hl7.fhir.r4.model.Coding;
 import org.hl7.fhir.r4.model.ContactPoint;
 import org.hl7.fhir.r4.model.BooleanType;
 import org.hl7.fhir.r4.model.DateType;
@@ -47,13 +48,12 @@ import org.openmrs.module.ihmodule.api.patientexchange.telecom.PatientTelecomMap
 import org.openmrs.module.ihmodule.api.patientexchange.validation.PatientFhirExchangeValidationResult;
 import org.openmrs.module.ihmodule.api.patientexchange.validation.PatientFhirExchangeValidationService;
 import org.openmrs.module.ihmodule.api.patientexchange.validation.PatientProfileExtensionRules;
+import org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate.MpiPatientDuplicateReviewCandidate;
 import org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate.MpiPatientDuplicateReviewCase;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.util.UriUtils;
-
 import ca.uhn.fhir.context.FhirContext;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -119,16 +119,23 @@ public class PatientUploadImportService {
 			PatientUploadImportItemResult item = new PatientUploadImportItemResult();
 			try {
 				ensurePreferredOpenMrsIdentifier(patient, effectiveLocationUuid);
+				validateAndLogImportIdentifierMappings(patient);
 				ensureIdentifierLocation(patient, effectiveLocationUuid);
 				normalizeBirthDateDayPrecision(patient);
 				item.setInputId(correlationIdForImportItem(patient));
 				validatePatientAgainstProfileBeforeCreate(patient);
 				String outboundSnapshotForDuplicateReview = fhirContext.newJsonParser().encodeResourceToString(patient);
-				if (fhirConfig.isPatientImportFuzzyMatchEnabled()) {
-					String importCorrelationKey = buildImportDuplicateCorrelationKey(patient);
-					Optional<MpiPatientDuplicateReviewCase> fuzzyDup = importPatientFuzzyDuplicateDetectionService
-					        .evaluateAndPersistIfDuplicate(patient, outboundSnapshotForDuplicateReview, importCorrelationKey);
-					if (fuzzyDup.isPresent()) {
+				String importCorrelationKey = buildImportDuplicateCorrelationKey(patient);
+				Optional<MpiPatientDuplicateReviewCase> fuzzyDup = importPatientFuzzyDuplicateDetectionService
+				        .evaluateAndPersistIfDuplicate(patient, outboundSnapshotForDuplicateReview, importCorrelationKey);
+				if (fuzzyDup.isPresent()) {
+					double fuzzyDuplicateThreshold = fhirConfig.getPatientImportFuzzyDuplicateThreshold();
+					Double highestCandidateScore = resolveHighestCandidateMatchScorePercent(fuzzyDup.get());
+					if (shouldDeferImportForFuzzyDuplicate(highestCandidateScore, fuzzyDuplicateThreshold)) {
+						log.info(
+						    "Import fuzzy duplicate review: highestScore={} threshold={} decision=DUPLICATE_REVIEW inputId={} caseUuid={}",
+						    highestCandidateScore, normalizeThresholdToPercent(fuzzyDuplicateThreshold), item.getInputId(),
+						    fuzzyDup.get().getCaseUuid());
 						item.setStatus("DUPLICATE_REVIEW");
 						item.setDuplicateReviewCaseUuid(fuzzyDup.get().getCaseUuid());
 						item.setDuplicateDetectedSource(fuzzyDup.get().getCandidates().stream()
@@ -141,31 +148,35 @@ public class PatientUploadImportService {
 						response.getItems().add(item);
 						continue;
 					}
-				} else {
-					if (existsByIdentifier(patient)) {
-						item.setStatus("SKIPPED");
-						item.setMessage("Patient already exists by identifier");
-						response.setSkipped(response.getSkipped() + 1);
-						response.getItems().add(item);
-						continue;
-					}
-					boolean demographicDuplicateCheckEnabled = fhirConfig.isPatientImportDemographicDuplicateCheckEnabled();
-					if (demographicDuplicateCheckEnabled && existsByDemographics(patient)) {
-						item.setStatus("SKIPPED");
-						item.setMessage("Patient already exists (same family, given, gender, birth date)");
-						response.setSkipped(response.getSkipped() + 1);
-						log.info(
-						    "Import duplicate-check: skipped — demographic match in DB (identifier search did not fire first). correlationId={}, family={}, given={}, birthDate={}",
-						    item.getInputId(), safeFamily(patient), safeGiven(patient), formatBirthDateYyyyMmDd(patient));
-						response.getItems().add(item);
-						continue;
-					}
-					if (!demographicDuplicateCheckEnabled) {
-						log.debug(
-						    "Import duplicate-check disabled by config intelehealth.fhir.patient.import.demographic.duplicate.check.enabled for correlationId={}",
-						    item.getInputId());
-					}
+					log.info(
+					    "Import fuzzy duplicate below threshold: highestScore={} threshold={} decision=CONTINUE_IMPORT inputId={} caseUuid={}",
+					    highestCandidateScore, normalizeThresholdToPercent(fuzzyDuplicateThreshold), item.getInputId(),
+					    fuzzyDup.get().getCaseUuid());
 				}
+				ImportIdentifierDuplicateMatch duplicateIdentifier = findDuplicateByAnyIdentifier(patient);
+				if (duplicateIdentifier != null) {
+					item.setStatus("SKIPPED");
+					item.setMessage("Patient already exists by identifier: "
+					        + duplicateIdentifier.getIdentifierTypeName() + "="
+					        + duplicateIdentifier.getIdentifierValue());
+					response.setSkipped(response.getSkipped() + 1);
+					response.getItems().add(item);
+					continue;
+				}
+				/*
+				 * boolean demographicDuplicateCheckEnabled =
+				 * fhirConfig.isPatientImportDemographicDuplicateCheckEnabled(); if
+				 * (demographicDuplicateCheckEnabled && existsByDemographics(patient)) {
+				 * item.setStatus("SKIPPED"); item.
+				 * setMessage("Patient already exists (same family, given, gender, birth date)"
+				 * ); response.setSkipped(response.getSkipped() + 1); log.info(
+				 * "Import duplicate-check: skipped — demographic match in DB (identifier search did not fire first). correlationId={}, family={}, given={}, birthDate={}"
+				 * , item.getInputId(), safeFamily(patient), safeGiven(patient),
+				 * formatBirthDateYyyyMmDd(patient)); response.getItems().add(item); continue; }
+				 * if (!demographicDuplicateCheckEnabled) { log.debug(
+				 * "Import duplicate-check disabled by config intelehealth.fhir.patient.import.demographic.duplicate.check.enabled for correlationId={}"
+				 * , item.getInputId()); }
+				 */
 				if (!hasPreferredIdentifier(patient)) {
 					throw new IllegalArgumentException("No preferred identifier available for create");
 				}
@@ -458,25 +469,158 @@ public class PatientUploadImportService {
 		return false;
 	}
 	
-	private boolean existsByIdentifier(Patient patient) {
-		if (patient == null || patient.getIdentifier() == null || patient.getIdentifier().isEmpty()) {
+	/**
+	 * Checks every incoming FHIR identifier against OpenMRS native patient identifiers (type +
+	 * value).
+	 */
+	private ImportIdentifierDuplicateMatch findDuplicateByAnyIdentifier(Patient patient) {
+		return findFirstDuplicateIdentifier(patient, (typeName, value) -> {
+			PatientIdentifierType idType = resolvePatientIdentifierTypeByImportName(typeName);
+			if (idType == null) {
+				log.info("Import identifier-check skipped unmapped type='{}' value='{}'", typeName, value);
+				return false;
+			}
+			org.openmrs.Patient existing = findOpenmrsPatientByIdentifierValue(value, idType);
+			if (existing != null) {
+				log.info("Import identifier-check matched existing patient uuid={} type='{}' value='{}'",
+				    existing.getUuid(), typeName, value);
+				return true;
+			}
 			return false;
+		}).orElse(null);
+	}
+	
+	static Optional<ImportIdentifierDuplicateMatch> findFirstDuplicateIdentifier(Patient patient,
+	        ImportIdentifierExistenceChecker checker) {
+		if (patient == null || patient.getIdentifier() == null || checker == null) {
+			return Optional.empty();
 		}
-		Identifier jsonOpenMrsId = findOpenMrsIdentifierFromJson(patient);
-		if (jsonOpenMrsId == null || StringUtils.isBlank(jsonOpenMrsId.getValue())) {
-			log.info("Import identifier-check skipped: JSON OpenMRS-ID not present");
-			return false;
+		for (Identifier identifier : patient.getIdentifier()) {
+			String typeName = extractImportIdentifierTypeName(identifier);
+			String value = identifier != null ? StringUtils.trimToNull(identifier.getValue()) : null;
+			if (StringUtils.isBlank(typeName) || StringUtils.isBlank(value)) {
+				continue;
+			}
+			if (checker.exists(typeName, value)) {
+				return Optional.of(new ImportIdentifierDuplicateMatch(typeName, value));
+			}
 		}
-		String identifierValue = jsonOpenMrsId.getValue();
-		log.info("Import identifier-check using JSON OpenMRS-ID value='{}'", identifierValue);
-		String encoded = UriUtils.encodeQueryParam(identifierValue, StandardCharsets.UTF_8.name());
-		Bundle result = fhirConfig.getLocalOpenMRSFhirContext().search().byUrl("Patient?identifier=" + encoded)
-		        .returnBundle(Bundle.class).execute();
-		if (result != null && result.hasEntry()) {
-			return true;
+		return Optional.empty();
+	}
+	
+	static String extractImportIdentifierTypeName(Identifier identifier) {
+		if (identifier == null || StringUtils.isBlank(identifier.getValue())) {
+			return null;
 		}
-		log.info("Import identifier-check no match for JSON OpenMRS-ID value='{}'", identifierValue);
-		return false;
+		if (isOpenMrsIdentifier(identifier)) {
+			return "OpenMRS ID";
+		}
+		if (identifier.hasType()) {
+			if (StringUtils.isNotBlank(identifier.getType().getText())) {
+				return identifier.getType().getText().trim();
+			}
+			if (identifier.getType().hasCoding()) {
+				for (Coding coding : identifier.getType().getCoding()) {
+					if (coding != null && StringUtils.isNotBlank(coding.getCode())) {
+						return coding.getCode().trim();
+					}
+				}
+			}
+		}
+		return extractTypeNameFromIdentifierSystem(identifier.getSystem());
+	}
+	
+	static String extractTypeNameFromIdentifierSystem(String system) {
+		if (StringUtils.isBlank(system)) {
+			return null;
+		}
+		String trimmed = system.trim();
+		int slash = trimmed.lastIndexOf('/');
+		if (slash >= 0 && slash < trimmed.length() - 1) {
+			return trimmed.substring(slash + 1).trim();
+		}
+		return trimmed;
+	}
+	
+	static List<String> buildIdentifierTypeNameCandidates(String typeName) {
+		List<String> candidates = new ArrayList<String>();
+		if (StringUtils.isBlank(typeName)) {
+			return candidates;
+		}
+		String trimmed = typeName.trim();
+		candidates.add(trimmed);
+		if ("OpenMRS ID".equalsIgnoreCase(trimmed) || "MR".equalsIgnoreCase(trimmed)) {
+			candidates.add("OpenMRS ID");
+		}
+		if ("NID".equalsIgnoreCase(trimmed)) {
+			candidates.add("National ID");
+			candidates.add("NationalID");
+		}
+		if ("BRN".equalsIgnoreCase(trimmed)) {
+			candidates.add("BRN");
+		}
+		return candidates;
+	}
+	
+	private PatientIdentifierType resolvePatientIdentifierTypeByImportName(String typeName) {
+		if (StringUtils.isBlank(typeName)) {
+			return null;
+		}
+		if ("OpenMRS ID".equalsIgnoreCase(typeName.trim()) || "MR".equalsIgnoreCase(typeName.trim())) {
+			PatientIdentifierType preferred = resolvePreferredIdentifierType();
+			if (preferred != null) {
+				return preferred;
+			}
+		}
+		for (String candidate : buildIdentifierTypeNameCandidates(typeName)) {
+			PatientIdentifierType resolved = Context.getPatientService().getPatientIdentifierTypeByName(candidate);
+			if (resolved != null && !resolved.getRetired()) {
+				return resolved;
+			}
+		}
+		String normalized = normalizeIdentifierTypeName(typeName);
+		for (PatientIdentifierType candidate : Context.getPatientService().getAllPatientIdentifierTypes()) {
+			if (candidate == null || candidate.getRetired() || StringUtils.isBlank(candidate.getName())) {
+				continue;
+			}
+			if (normalized.equals(normalizeIdentifierTypeName(candidate.getName()))) {
+				return candidate;
+			}
+		}
+		return null;
+	}
+	
+	static String normalizeIdentifierTypeName(String name) {
+		if (name == null) {
+			return "";
+		}
+		return name.trim().toLowerCase().replaceAll("[\\s_-]+", "");
+	}
+	
+	@FunctionalInterface
+	interface ImportIdentifierExistenceChecker {
+		
+		boolean exists(String identifierTypeName, String identifierValue);
+	}
+	
+	static final class ImportIdentifierDuplicateMatch {
+		
+		private final String identifierTypeName;
+		
+		private final String identifierValue;
+		
+		ImportIdentifierDuplicateMatch(String identifierTypeName, String identifierValue) {
+			this.identifierTypeName = identifierTypeName;
+			this.identifierValue = identifierValue;
+		}
+		
+		String getIdentifierTypeName() {
+			return identifierTypeName;
+		}
+		
+		String getIdentifierValue() {
+			return identifierValue;
+		}
 	}
 	
 	private static Identifier findOpenMrsIdentifierFromJson(Patient patient) {
@@ -541,18 +685,152 @@ public class PatientUploadImportService {
 		if (identifier == null) {
 			return false;
 		}
-		boolean systemMatch = StringUtils.equals(StringUtils.trimToEmpty(identifier.getSystem()), OPENMRS_ID_SYSTEM);
-		boolean mrCodeMatch = identifier.hasType() && identifier.getType().hasCoding()
-				&& identifier.getType().getCoding().stream()
-						.anyMatch(coding -> StringUtils.equals(coding.getSystem(), V2_IDENTIFIER_SYSTEM)
-								&& StringUtils.equals(coding.getCode(), MR_IDENTIFIER_CODE));
-		return systemMatch || mrCodeMatch;
+		if (StringUtils.equals(StringUtils.trimToEmpty(identifier.getSystem()), OPENMRS_ID_SYSTEM)) {
+			return true;
+		}
+		String typeText = identifier.hasType() ? StringUtils.trimToNull(identifier.getType().getText()) : null;
+		if (typeText != null && "OpenMRS ID".equalsIgnoreCase(typeText)) {
+			return true;
+		}
+		if (typeText == null && identifier.hasType() && identifier.getType().hasCoding()) {
+			return identifier.getType().getCoding().stream()
+			        .anyMatch(coding -> StringUtils.equals(coding.getSystem(), V2_IDENTIFIER_SYSTEM)
+			                && StringUtils.equals(coding.getCode(), MR_IDENTIFIER_CODE));
+		}
+		return false;
+	}
+	
+	static List<ImportFhirIdentifierSpec> collectImportIdentifierSpecs(Patient patient) {
+		List<ImportFhirIdentifierSpec> specs = new ArrayList<ImportFhirIdentifierSpec>();
+		if (patient == null || patient.getIdentifier() == null) {
+			return specs;
+		}
+		for (Identifier identifier : patient.getIdentifier()) {
+			if (identifier == null) {
+				continue;
+			}
+			String value = StringUtils.trimToNull(identifier.getValue());
+			if (value == null) {
+				continue;
+			}
+			boolean openMrsId = isOpenMrsIdentifier(identifier);
+			String typeName = openMrsId ? "OpenMRS ID" : extractImportIdentifierTypeName(identifier);
+			if (StringUtils.isBlank(typeName)) {
+				continue;
+			}
+			specs.add(new ImportFhirIdentifierSpec(typeName, value, openMrsId));
+		}
+		return specs;
+	}
+	
+	static void validateImportIdentifierTypesResolvable(List<ImportFhirIdentifierSpec> specs,
+	        ImportIdentifierTypeResolver typeResolver) {
+		if (specs == null || specs.isEmpty() || typeResolver == null) {
+			return;
+		}
+		for (ImportFhirIdentifierSpec spec : specs) {
+			if (spec == null || spec.isOpenMrsId()) {
+				continue;
+			}
+			if (typeResolver.resolve(spec.getTypeName()) == null) {
+				throw new IllegalArgumentException("Unknown OpenMRS patient identifier type: " + spec.getTypeName());
+			}
+		}
+	}
+	
+	private void validateAndLogImportIdentifierMappings(Patient fhirPatient) {
+		List<ImportFhirIdentifierSpec> specs = collectImportIdentifierSpecs(fhirPatient);
+		try {
+			validateImportIdentifierTypesResolvable(specs, this::resolvePatientIdentifierTypeByImportName);
+		}
+		catch (IllegalArgumentException ex) {
+			for (ImportFhirIdentifierSpec spec : specs) {
+				if (spec == null || spec.isOpenMrsId()) {
+					continue;
+				}
+				if (resolvePatientIdentifierTypeByImportName(spec.getTypeName()) == null) {
+					log.error("Import identifier validation failed: type='{}' value='{}' reason={}", spec.getTypeName(),
+					    spec.getValue(), ex.getMessage());
+				}
+			}
+			throw ex;
+		}
+		for (ImportFhirIdentifierSpec spec : specs) {
+			if (spec.isOpenMrsId()) {
+				log.info("Import identifier mapping: type='OpenMRS ID' value='{}' (preferred)", spec.getValue());
+				continue;
+			}
+			PatientIdentifierType idType = resolvePatientIdentifierTypeByImportName(spec.getTypeName());
+			log.info("Import identifier mapping: type='{}' openmrsType='{}' value='{}'", spec.getTypeName(),
+			    idType != null ? idType.getName() : null, spec.getValue());
+		}
+	}
+	
+	private void appendAdditionalImportIdentifiers(org.openmrs.Patient omrsPatient, Patient fhirPatient, Location location) {
+		if (omrsPatient == null || fhirPatient == null || location == null) {
+			return;
+		}
+		java.util.Set<String> added = new java.util.LinkedHashSet<String>();
+		for (ImportFhirIdentifierSpec spec : collectImportIdentifierSpecs(fhirPatient)) {
+			if (spec == null || spec.isOpenMrsId()) {
+				continue;
+			}
+			String dedupeKey = spec.getTypeName() + "|" + spec.getValue();
+			if (!added.add(dedupeKey)) {
+				continue;
+			}
+			PatientIdentifierType idType = resolvePatientIdentifierTypeByImportName(spec.getTypeName());
+			if (idType == null) {
+				throw new IllegalArgumentException("Unknown OpenMRS patient identifier type: " + spec.getTypeName());
+			}
+			PatientIdentifier pid = new PatientIdentifier();
+			pid.setIdentifier(spec.getValue());
+			pid.setIdentifierType(idType);
+			pid.setLocation(location);
+			pid.setPreferred(false);
+			omrsPatient.addIdentifier(pid);
+			log.info("Import identifier added: type='{}' openmrsType='{}' value='{}'", spec.getTypeName(), idType.getName(),
+			    spec.getValue());
+		}
+	}
+	
+	@FunctionalInterface
+	interface ImportIdentifierTypeResolver {
+		
+		PatientIdentifierType resolve(String identifierTypeName);
+	}
+	
+	static final class ImportFhirIdentifierSpec {
+		
+		private final String typeName;
+		
+		private final String value;
+		
+		private final boolean openMrsId;
+		
+		ImportFhirIdentifierSpec(String typeName, String value, boolean openMrsId) {
+			this.typeName = typeName;
+			this.value = value;
+			this.openMrsId = openMrsId;
+		}
+		
+		String getTypeName() {
+			return typeName;
+		}
+		
+		String getValue() {
+			return value;
+		}
+		
+		boolean isOpenMrsId() {
+			return openMrsId;
+		}
 	}
 	
 	/**
 	 * When family, given, gender, and birth date are all present, searches the local OpenMRS FHIR
 	 * store and skips create if a patient matches all of those fields. Does not alter
-	 * {@link #existsByIdentifier(Patient)} behavior.
+	 * {@link #findDuplicateByAnyIdentifier(Patient)} behavior.
 	 * <p>
 	 * The server query uses only {@code birthdate}, {@code family}, and {@code _count}: OpenMRS
 	 * FHIR2 returns HTTP 400 for compound searches that include {@code telecom} (and similar
@@ -988,6 +1266,7 @@ public class PatientUploadImportService {
 		pid.setLocation(location);
 		pid.setPreferred(true);
 		omrsPatient.addIdentifier(pid);
+		appendAdditionalImportIdentifiers(omrsPatient, fhirPatient, location);
 		
 		Context.getPatientService().savePatient(omrsPatient);
 		return omrsPatient.getUuid();
@@ -1213,6 +1492,7 @@ public class PatientUploadImportService {
 		copy.setId((String) null);
 		String loc = resolveIdentifierLocationUuid(locationUuid);
 		ensurePreferredOpenMrsIdentifier(copy, loc);
+		validateAndLogImportIdentifierMappings(copy);
 		ensureIdentifierLocation(copy, loc);
 		normalizeBirthDateDayPrecision(copy);
 		validatePatientAgainstProfileBeforeCreate(copy);
@@ -1903,6 +2183,50 @@ public class PatientUploadImportService {
 	
 	private static String safePhone(Patient patient) {
 		return StringUtils.defaultString(PatientTelecomMappingUtil.extractRankedPhoneTelecom(patient).getTelephoneNumber());
+	}
+	
+	/**
+	 * Highest {@link MpiPatientDuplicateReviewCandidate#getMatchScore()} on the case, normalized to
+	 * percent (0–100). Returns {@code null} when candidates are missing, empty, or have no scores.
+	 */
+	static Double resolveHighestCandidateMatchScorePercent(MpiPatientDuplicateReviewCase reviewCase) {
+		if (reviewCase == null || reviewCase.getCandidates() == null || reviewCase.getCandidates().isEmpty()) {
+			return null;
+		}
+		Double highest = null;
+		for (MpiPatientDuplicateReviewCandidate candidate : reviewCase.getCandidates()) {
+			if (candidate == null || candidate.getMatchScore() == null) {
+				continue;
+			}
+			double normalized = normalizeMatchScoreToPercent(candidate.getMatchScore());
+			if (highest == null || normalized > highest.doubleValue()) {
+				highest = Double.valueOf(normalized);
+			}
+		}
+		return highest;
+	}
+	
+	/**
+	 * {@code true} when import should be deferred to duplicate review (score at or above
+	 * threshold).
+	 */
+	static boolean shouldDeferImportForFuzzyDuplicate(Double highestScorePercent, double configuredThreshold) {
+		if (highestScorePercent == null) {
+			return false;
+		}
+		return highestScorePercent.doubleValue() >= normalizeThresholdToPercent(configuredThreshold);
+	}
+	
+	static double normalizeThresholdToPercent(double configuredThreshold) {
+		return configuredThreshold <= 1.0d ? configuredThreshold * 100.0d : configuredThreshold;
+	}
+	
+	static double normalizeMatchScoreToPercent(Double matchScore) {
+		if (matchScore == null) {
+			return 0.0d;
+		}
+		double value = matchScore.doubleValue();
+		return value <= 1.0d ? value * 100.0d : value;
 	}
 	
 	/**

@@ -178,6 +178,15 @@ public class FhirConfig extends IHConstant {
 		return resolveBooleanProperty("mpi.import.fuzzy.match.enabled", true);
 	}
 	
+	/**
+	 * Minimum highest fuzzy candidate score (percent, 0–100) required to defer import into
+	 * {@code DUPLICATE_REVIEW}. Values {@code <= 1.0} in config are treated as fractions (e.g.
+	 * {@code 0.6} → 60%). Property: {@code patient.import.fuzzy.duplicate.threshold}.
+	 */
+	public double getPatientImportFuzzyDuplicateThreshold() {
+		return resolveDoubleProperty("patient.import.fuzzy.duplicate.threshold", 60.0d);
+	}
+	
 	public boolean isMpiDuplicatePrecheckEnabled() {
 		return resolveBooleanProperty("intelehealth.fhir.mpi.duplicate.precheck.enabled", true);
 	}
@@ -252,6 +261,20 @@ public class FhirConfig extends IHConstant {
 		}
 		catch (NumberFormatException ex) {
 			log.warn("Invalid integer for property '{}': '{}'. Using default={}", key, raw, defaultValue);
+			return defaultValue;
+		}
+	}
+	
+	private double resolveDoubleProperty(String key, double defaultValue) {
+		String raw = resolveStringProperty("", key, null);
+		if (StringUtils.isBlank(raw)) {
+			return defaultValue;
+		}
+		try {
+			return Double.parseDouble(raw.trim());
+		}
+		catch (NumberFormatException ex) {
+			log.warn("Invalid double for property '{}': '{}'. Using default={}", key, raw, defaultValue);
 			return defaultValue;
 		}
 	}

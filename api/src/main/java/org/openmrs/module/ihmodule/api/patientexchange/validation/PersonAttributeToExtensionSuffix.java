@@ -55,7 +55,7 @@ public final class PersonAttributeToExtensionSuffix {
 			case "householdnumber":
 				return "Household-Number";
 			default:
-				return null;
+				return attributeName;
 		}
 	}
 	
