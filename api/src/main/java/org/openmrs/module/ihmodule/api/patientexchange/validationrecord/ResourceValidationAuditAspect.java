@@ -4,6 +4,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
+import org.openmrs.module.ihmodule.api.patientexchange.config.FhirConfig;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
@@ -26,8 +27,14 @@ public class ResourceValidationAuditAspect {
 	@Autowired
 	private FhirResourceValidationRecordService validationRecordService;
 	
+	@Autowired
+	private FhirConfig fhirConfig;
+	
 	@Around("(execution(public * org.openmrs.module.ihmodule.api.patientexchange.scheduler.DataSendToFHIR.sendFHIRBundle(org.hl7.fhir.r4.model.Bundle, java.lang.String)) || execution(public * org.openmrs.module.ihmodule.api.patientexchange.scheduler.DataSendToFHIR.sendFHIRBundle(org.hl7.fhir.r4.model.Bundle, java.lang.String, boolean)))")
 	public Object aroundSendFhirBundle(ProceedingJoinPoint joinPoint) throws Throwable {
+		if (!fhirConfig.isValidationAuditStoreEnabled()) {
+			return joinPoint.proceed();
+		}
 		Bundle bundle = (Bundle) joinPoint.getArgs()[0];
 		String resourceType = (String) joinPoint.getArgs()[1];
 		ValidationRecordContext.clear();

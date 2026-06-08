@@ -36,8 +36,8 @@ import org.springframework.transaction.annotation.Transactional;
  * {@link PersonAttributeToExtensionSuffix}), ranked phone {@code telecom}, and structured
  * {@link Address} data converted from {@link AddressAPIDTO}.
  */
-@Component
-public class FuzzyMatchPatientResponseMapper {
+@Component("fuzzyMatchPatientResponseMapper")
+public class FuzzyMatchPatientResponseMapper implements FuzzyMatchPatientResponseMapperPort {
 	
 	private static final Logger log = LoggerFactory.getLogger(FuzzyMatchPatientResponseMapper.class);
 	
@@ -50,6 +50,7 @@ public class FuzzyMatchPatientResponseMapper {
 	@Autowired(required = false)
 	private FhirConfig fhirConfig;
 	
+	@Override
 	@Transactional(readOnly = true)
 	public void enrich(Patient patient, FuzzyPatientCandidate candidate) {
 		if (patient == null || candidate == null) {

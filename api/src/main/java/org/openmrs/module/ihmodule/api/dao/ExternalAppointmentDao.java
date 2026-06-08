@@ -18,8 +18,6 @@ import org.openmrs.module.ihmodule.ExternalAppointment;
 import org.openmrs.module.ihmodule.api.impl.exp.DuplicateEntryException;
 import org.openmrs.module.ihmodule.api.impl.exp.InvalidInputParamException;
 import org.openmrs.module.ihmodule.dto.ExternalAppointmentDTO;
-import org.springframework.transaction.annotation.Transactional;
-
 import javax.persistence.EntityNotFoundException;
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -31,7 +29,6 @@ public class ExternalAppointmentDao {
 	DbSessionFactory sessionFactory;
 	
 	@SuppressWarnings("unchecked")
-	@Transactional
 	public ExternalAppointment save(ExternalAppointment appointment) throws APIException, DuplicateEntryException {
 		DbSession session = sessionFactory.getCurrentSession();
 		
@@ -138,7 +135,6 @@ public class ExternalAppointmentDao {
 		
 	}
 	
-	@Transactional
 	public void deleteAppointmentById(String extAppointmentId) {
 		DbSession session = sessionFactory.getCurrentSession();
 		try {

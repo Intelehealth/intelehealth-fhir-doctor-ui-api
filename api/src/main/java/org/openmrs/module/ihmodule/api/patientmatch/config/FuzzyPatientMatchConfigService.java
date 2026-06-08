@@ -451,8 +451,7 @@ public class FuzzyPatientMatchConfigService {
 			if (cachedModuleProperties != null) {
 				return cachedModuleProperties;
 			}
-			cachedModuleProperties = ModuleClasspathPropertiesLoader.loadMergedInOrder("ihmodule.properties",
-			    "patientdataexchange-application.properties");
+			cachedModuleProperties = ModuleClasspathPropertiesLoader.loadModuleProperties();
 			return cachedModuleProperties;
 		}
 	}

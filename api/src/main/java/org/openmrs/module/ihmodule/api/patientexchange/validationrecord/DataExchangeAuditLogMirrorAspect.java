@@ -3,6 +3,7 @@ package org.openmrs.module.ihmodule.api.patientexchange.validationrecord;
 import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.annotation.AfterReturning;
 import org.aspectj.lang.annotation.Aspect;
+import org.openmrs.module.ihmodule.api.patientexchange.config.FhirConfig;
 import org.openmrs.module.ihmodule.api.patientexchange.model.DataExchangeAuditLog;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
@@ -23,8 +24,14 @@ public class DataExchangeAuditLogMirrorAspect {
 	@Autowired
 	private FhirResourceValidationRecordService validationRecordService;
 	
+	@Autowired
+	private FhirConfig fhirConfig;
+	
 	@AfterReturning(pointcut = "execution(public * org.openmrs.module.ihmodule.api.patientexchange.service.DataExchangeAuditLogService.save(..))", returning = "saved")
 	public void afterAuditSave(JoinPoint joinPoint, Object saved) {
+		if (!fhirConfig.isValidationAuditStoreEnabled()) {
+			return;
+		}
 		DataExchangeAuditLog log = asAuditLog(saved);
 		if (log == null) {
 			return;

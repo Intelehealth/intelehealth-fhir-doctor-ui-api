@@ -4,7 +4,6 @@ import java.io.IOException;
 import java.text.ParseException;
 
 import org.apache.commons.lang3.StringUtils;
-import org.json.JSONException;
 import org.openmrs.module.ihmodule.api.patientexchange.domain.FhirResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,7 +35,7 @@ public class FhirPatientSendGateService {
 	private UnsyncPatientService unsyncPatientService;
 	
 	public FhirResponse handlePatientSend(String patientUuid, FhirPatientSendExecutor executor) throws ParseException,
-	        DataFormatException, JSONException, ConfigurationException, IOException {
+	        DataFormatException, ConfigurationException, IOException {
 		if (StringUtils.isBlank(patientUuid)) {
 			throw new IllegalArgumentException("patientUuid is required");
 		}

@@ -47,8 +47,8 @@ public class PatientFuzzyMatchingEngine {
 		        || StringUtils.isBlank(candidate.getIdentifier())) {
 			return 0.0d;
 		}
-		String queryIdentifier = FuzzyTextUtils.normalize(request.getIdentifier());
-		String candidateIdentifier = FuzzyTextUtils.normalize(candidate.getIdentifier());
+		String queryIdentifier = FuzzyTextUtils.normalize(request.getIdentifier()); //1234ew
+		String candidateIdentifier = FuzzyTextUtils.normalize(candidate.getIdentifier()); // 1436w
 		if (StringUtils.equals(queryIdentifier, candidateIdentifier)) {
 			return 100.0d;
 		}

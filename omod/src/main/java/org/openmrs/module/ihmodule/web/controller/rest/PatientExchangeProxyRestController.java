@@ -103,8 +103,6 @@ public class PatientExchangeProxyRestController {
 	
 	private static final Log log = LogFactory.getLog(PatientExchangeProxyRestController.class);
 	
-	public static final String GP_PATIENT_EXCHANGE_BASE_URL = "ihmodule.patientexchange.baseUrl";
-	
 	private static final Pattern DATE_YYYY_MM_DD = Pattern.compile("\\d{4}-\\d{2}-\\d{2}");
 	
 	@Autowired

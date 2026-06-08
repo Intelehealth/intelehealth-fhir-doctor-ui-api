@@ -8,15 +8,29 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Loads {@code ihmodule.properties} and {@code patientdataexchange-application.properties} from the
- * classpath and merges them in order (later files override keys from earlier ones). This replaces
- * "first file wins" behaviour so keys present only in the second file are visible at runtime.
+ * Loads module configuration from the classpath. Primary source is {@code ihmodule.properties}.
+ * {@code patientdataexchange-application.properties} is merged when present (later overrides) for
+ * backward compatibility with deployments that still ship a custom copy of that file.
  */
 public final class ModuleClasspathPropertiesLoader {
 	
 	private static final Logger log = LoggerFactory.getLogger(ModuleClasspathPropertiesLoader.class);
 	
+	/** Bundled defaults; optional legacy file overrides when still on the classpath. */
+	public static final String[] DEFAULT_MODULE_PROPERTY_RESOURCES = { "ihmodule.properties",
+	        "patientdataexchange-application.properties" };
+	
 	private ModuleClasspathPropertiesLoader() {
+	}
+	
+	/**
+	 * Loads {@link #DEFAULT_MODULE_PROPERTY_RESOURCES} in order (later files override earlier
+	 * keys).
+	 * 
+	 * @return merged properties, or {@code null} if no resource could be loaded
+	 */
+	public static Properties loadModuleProperties() {
+		return loadMergedInOrder(DEFAULT_MODULE_PROPERTY_RESOURCES);
 	}
 	
 	/**

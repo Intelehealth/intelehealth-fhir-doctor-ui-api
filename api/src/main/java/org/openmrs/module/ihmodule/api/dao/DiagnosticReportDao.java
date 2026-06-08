@@ -13,7 +13,6 @@ import org.openmrs.api.db.hibernate.DbSessionFactory;
 import org.openmrs.module.ihmodule.DiagnosticReport;
 import org.openmrs.module.ihmodule.dto.DiagnosticReportDTO;
 import org.openmrs.module.ihmodule.dto.ExternalAppointmentDTO;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 
 public class DiagnosticReportDao {
@@ -22,7 +21,6 @@ public class DiagnosticReportDao {
 	
 	UserDAO userDao;
 	
-	@Transactional
 	public void save(DiagnosticReport dreport) throws APIException {
 		if (dreport.getId() == null || dreport.getId() < 0) {
 			User user = userDao.getUserByUsername("admin");

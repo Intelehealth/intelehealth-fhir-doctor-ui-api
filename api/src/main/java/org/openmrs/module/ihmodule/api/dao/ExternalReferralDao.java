@@ -9,8 +9,6 @@ import org.openmrs.module.ihmodule.ExternalReferral;
 import org.openmrs.module.ihmodule.api.impl.exp.DuplicateEntryException;
 import org.openmrs.module.ihmodule.api.impl.exp.InvalidInputParamException;
 import org.openmrs.module.ihmodule.dto.ExternalReferralDTO;
-import org.springframework.transaction.annotation.Transactional;
-
 import javax.persistence.EntityNotFoundException;
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -21,7 +19,6 @@ public class ExternalReferralDao {
 	
 	DbSessionFactory sessionFactory;
 	
-	@Transactional
 	public ExternalReferral save(ExternalReferral referral) throws APIException, DuplicateEntryException {
 		DbSession session = sessionFactory.getCurrentSession();
 		
@@ -78,7 +75,6 @@ public class ExternalReferralDao {
 		
 	}
 	
-	@Transactional
 	public void deleteReferralById(String externalReferralId) throws InvalidInputParamException {
 		DbSession session = sessionFactory.getCurrentSession();
 		try {
@@ -90,7 +86,6 @@ public class ExternalReferralDao {
 		}
 	}
 	
-	@Transactional
 	public void deleteExternalReferral(ExternalReferral extRef) throws InvalidInputParamException {
 		DbSession session = sessionFactory.getCurrentSession();
 		try {
@@ -102,7 +97,6 @@ public class ExternalReferralDao {
 		}
 	}
 	
-	@Transactional
 	public void deleteReferralByUuid(String uuid) {
 		DbSession session = sessionFactory.getCurrentSession();
 		String hql = "DELETE FROM ExternalReferral WHERE uuid = :uuid";

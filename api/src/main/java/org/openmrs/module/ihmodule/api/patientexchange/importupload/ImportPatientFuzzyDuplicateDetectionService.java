@@ -17,10 +17,10 @@ import org.hl7.fhir.r4.model.StringType;
 import org.openmrs.module.ihmodule.api.patientexchange.config.FhirContextHolder;
 import org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate.BundleSearchMatchGradeExtractor;
 import org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate.MpiDuplicateReviewCandidateMatchRow;
-import org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate.MpiDuplicateReviewService;
+import org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate.MpiDuplicateReviewServicePort;
 import org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate.MpiImportDuplicateReviewSource;
 import org.openmrs.module.ihmodule.api.patientexchange.mpiduplicate.MpiPatientDuplicateReviewCase;
-import org.openmrs.module.ihmodule.api.patientmatch.service.FhirPatientMatchService;
+import org.openmrs.module.ihmodule.api.patientmatch.service.FhirPatientMatchServicePort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -48,10 +48,10 @@ public class ImportPatientFuzzyDuplicateDetectionService {
 	private final FhirContext fhirContext = FhirContextHolder.R4;
 	
 	@Autowired
-	private FhirPatientMatchService fhirPatientMatchService;
+	private FhirPatientMatchServicePort fhirPatientMatchService;
 	
 	@Autowired
-	private MpiDuplicateReviewService mpiDuplicateReviewService;
+	private MpiDuplicateReviewServicePort mpiDuplicateReviewService;
 	
 	/**
 	 * @param importCorrelationLocalKey stable key before patient exists (e.g.

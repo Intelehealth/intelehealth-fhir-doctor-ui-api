@@ -4,11 +4,11 @@ import java.io.UnsupportedEncodingException;
 import java.util.Optional;
 
 import org.hl7.fhir.r4.model.Patient;
+import org.openmrs.module.ihmodule.api.patientexchange.config.FhirConfig;
 import org.openmrs.module.ihmodule.api.patientexchange.search.CentralPatientSearchService;
 import org.openmrs.module.ihmodule.api.patientexchange.search.PatientDemographicSearchUriBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -25,10 +25,10 @@ public class CentralPatientDuplicateMatcher {
 	private CentralPatientSearchService centralPatientSearchService;
 	
 	@Autowired
-	private MpiDuplicateReviewService mpiDuplicateReviewService;
+	private MpiDuplicateReviewServicePort mpiDuplicateReviewService;
 	
-	@Value("${intelehealth.fhir.mpi.duplicate.precheck.enabled:true}")
-	private boolean duplicatePrecheckEnabled;
+	@Autowired
+	private FhirConfig fhirConfig;
 	
 	/**
 	 * @return persisted review case only when central search finds ≥2 Patient entries; otherwise
@@ -36,7 +36,7 @@ public class CentralPatientDuplicateMatcher {
 	 */
 	public Optional<MpiPatientDuplicateReviewCase> persistIfCentralSearchHasMultipleMatches(Patient patient,
 	        String localPatientUuid, String outboundBundleJson) {
-		if (!duplicatePrecheckEnabled) {
+		if (!fhirConfig.isMpiDuplicatePrecheckEnabled()) {
 			return Optional.empty();
 		}
 		if (!PatientDemographicSearchUriBuilder.hasFullDemographicsForPatientSearch(patient)) {

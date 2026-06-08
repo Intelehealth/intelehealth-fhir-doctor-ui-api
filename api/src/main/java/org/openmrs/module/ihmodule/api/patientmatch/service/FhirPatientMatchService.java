@@ -23,7 +23,7 @@ import org.openmrs.module.ihmodule.api.patientmatch.dto.FuzzyPatientCandidate;
 import org.openmrs.module.ihmodule.api.patientmatch.dto.FuzzyPatientMatchRequest;
 import org.openmrs.module.ihmodule.api.patientmatch.dto.FuzzyPatientMatchResult;
 import org.openmrs.module.ihmodule.api.patientmatch.engine.PatientFuzzyMatchingEngine;
-import org.openmrs.module.ihmodule.api.patientmatch.mapper.FuzzyMatchPatientResponseMapper;
+import org.openmrs.module.ihmodule.api.patientmatch.mapper.FuzzyMatchPatientResponseMapperPort;
 import org.openmrs.module.ihmodule.api.patientmatch.repository.PatientCandidateSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -34,8 +34,8 @@ import org.slf4j.LoggerFactory;
 
 import ca.uhn.fhir.context.FhirContext;
 
-@Service
-public class FhirPatientMatchService {
+@Service("fhirPatientMatchService")
+public class FhirPatientMatchService implements FhirPatientMatchServicePort {
 	
 	private static final Logger log = LoggerFactory.getLogger(FhirPatientMatchService.class);
 	
@@ -58,8 +58,9 @@ public class FhirPatientMatchService {
 	private PatientFuzzyMatchingEngine matchingEngine;
 	
 	@Autowired(required = false)
-	private FuzzyMatchPatientResponseMapper responseMapper;
+	private FuzzyMatchPatientResponseMapperPort responseMapper;
 	
+	@Override
 	@Transactional(readOnly = true)
 	public Bundle match(String body) {
 		log.error("{} match() start rawBodyLength={} bodyPreview={}", FUZZY_MATCH_DEBUG,
@@ -113,6 +114,7 @@ public class FhirPatientMatchService {
 		return t.length() <= max ? t : t.substring(0, max) + "...(truncated)";
 	}
 	
+	@Override
 	public OperationOutcome errorOutcome(String code, String diagnostics) {
 		OperationOutcome outcome = new OperationOutcome();
 		outcome.addIssue().setSeverity(OperationOutcome.IssueSeverity.ERROR).setCode(OperationOutcome.IssueType.EXCEPTION)
@@ -120,6 +122,7 @@ public class FhirPatientMatchService {
 		return outcome;
 	}
 	
+	@Override
 	public String encodeResource(FhirContext fhirContext, org.hl7.fhir.r4.model.Resource resource) {
 		return fhirContext.newJsonParser().setPrettyPrint(true).encodeResourceToString(resource);
 	}
