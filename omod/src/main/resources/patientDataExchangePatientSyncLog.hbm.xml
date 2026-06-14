@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE hibernate-mapping PUBLIC "-//Hibernate/Hibernate Mapping DTD 3.0//EN"
+        "http://hibernate.sourceforge.net/hibernate-mapping-3.0.dtd">
+<hibernate-mapping package="org.openmrs.module.ihmodule.api.patientexchange.sync">
+	<class name="PatientSyncLog" table="patient_sync_log">
+		<id name="id" type="long" column="id">
+			<generator class="native"/>
+		</id>
+		<property name="patientUuid" type="string" column="patient_uuid" not-null="true"/>
+		<property name="attemptNumber" type="int" column="attempt_number" not-null="true"/>
+		<property name="status" type="string" column="status" not-null="true" length="32"/>
+		<property name="failureReason" type="string" column="failure_reason" length="512"/>
+		<property name="httpStatusCode" type="integer" column="http_status_code"/>
+		<property name="startedAt" type="timestamp" column="started_at"/>
+		<property name="completedAt" type="timestamp" column="completed_at"/>
+		<property name="nextRetryAt" type="timestamp" column="next_retry_at"/>
+		<property name="createdAt" type="timestamp" column="created_at"/>
+		<property name="updatedAt" type="timestamp" column="updated_at"/>
+	</class>
+</hibernate-mapping>

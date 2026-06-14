@@ -12,58 +12,80 @@ package org.openmrs.module.ihmodule.api.impl;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.UUID;
 
+import org.apache.commons.lang3.StringUtils;
 import org.openmrs.User;
 import org.openmrs.api.APIException;
-import org.openmrs.api.db.UserDAO;
+import org.openmrs.api.context.Context;
 import org.openmrs.api.impl.BaseOpenmrsService;
 import org.openmrs.module.ihmodule.ConfigDataSyncModule;
 import org.openmrs.module.ihmodule.api.ConfigDataSyncModuleService;
 import org.openmrs.module.ihmodule.api.dao.ConfigDataSyncModuleDao;
 import org.openmrs.module.ihmodule.dto.ConfigDataSyncModuleDTO;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 public class ConfigDataSyncModuleServiceImpl extends BaseOpenmrsService implements ConfigDataSyncModuleService {
 	
 	ConfigDataSyncModuleDao dao;
 	
-	UserDAO userDao;
+	PlatformTransactionManager transactionManager;
 	
 	public void setDao(ConfigDataSyncModuleDao dao) {
 		this.dao = dao;
 	}
 	
-	@Override
-	@Transactional
-	public ConfigDataSyncModuleDTO save(ConfigDataSyncModule entity) throws APIException {
-		User user = userDao.getUserByUsername("admin");
-		entity.setCreator(user);
-		entity.setDateCreated(new Date());
-		entity.setVoided(false);
-		ConfigDataSyncModule e = dao.save(entity);
-		if (e != null) {
-			return mapToConfigDTO(e);
-		}
-		throw new APIException("Couldn't find config data sync entity ");
-		
+	public void setTransactionManager(PlatformTransactionManager transactionManager) {
+		this.transactionManager = transactionManager;
 	}
 	
 	@Override
-	@Transactional
+	public ConfigDataSyncModuleDTO save(ConfigDataSyncModule entity) throws APIException {
+		return createWriteTransactionTemplate().execute(status -> doSave(entity));
+	}
+	
+	@Override
 	public ConfigDataSyncModuleDTO changeStatus(ConfigDataSyncModule entity) throws APIException {
-		ConfigDataSyncModule e = dao.getById(entity.getId());
-		if (e == null)
-			throw new APIException("Couldn't find config data sync entity using id: " + entity.getId());
-		User user = userDao.getUserByUsername("admin");
-		e.setDateChanged(new Date());
-		e.setChangedBy(user);
-		e.setStatus(entity.isStatus());
-		return save(e);
+		return createWriteTransactionTemplate().execute(status -> {
+			ConfigDataSyncModule existing = dao.getById(entity.getId());
+			if (existing == null) {
+				throw new APIException("Couldn't find config data sync entity using id: " + entity.getId());
+			}
+			User user = requireAdminUser();
+			existing.setDateChanged(new Date());
+			existing.setChangedBy(user);
+			existing.setStatus(entity.isStatus());
+			return doSave(existing);
+		});
+	}
+	
+	private ConfigDataSyncModuleDTO doSave(ConfigDataSyncModule entity) throws APIException {
+		User user = requireAdminUser();
+		Date now = new Date();
+		if (StringUtils.isBlank(entity.getUuid())) {
+			entity.setUuid(UUID.randomUUID().toString());
+		}
+		if (entity.getId() == null) {
+			entity.setCreator(user);
+			entity.setDateCreated(now);
+			entity.setVoided(false);
+		} else {
+			entity.setChangedBy(user);
+			entity.setDateChanged(now);
+		}
+		ConfigDataSyncModule saved = dao.save(entity);
+		Context.flushSession();
+		if (saved == null || saved.getId() == null) {
+			throw new APIException("Couldn't save config data sync entity");
+		}
+		return mapToConfigDTO(dao.getById(saved.getId()));
 	}
 	
 	@Override
 	public List<ConfigDataSyncModuleDTO> getAll() throws APIException {
+		Context.clearSession();
 		ArrayList<ConfigDataSyncModuleDTO> items = new ArrayList<>();
 		List<ConfigDataSyncModule> listItem = dao.getAll();
 		for (ConfigDataSyncModule conf : listItem) {
@@ -74,11 +96,27 @@ public class ConfigDataSyncModuleServiceImpl extends BaseOpenmrsService implemen
 	
 	@Override
 	public ConfigDataSyncModuleDTO getById(Integer id) throws APIException {
+		Context.clearSession();
 		ConfigDataSyncModule entity = dao.getById(id);
-		if (entity == null)
+		if (entity == null || entity.isVoided()) {
 			throw new APIException("Invalid entity found for id " + id);
-		
+		}
 		return mapToConfigDTO(entity);
+	}
+	
+	private TransactionTemplate createWriteTransactionTemplate() {
+		TransactionTemplate txTemplate = new TransactionTemplate(transactionManager);
+		txTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+		txTemplate.setReadOnly(false);
+		return txTemplate;
+	}
+	
+	private User requireAdminUser() throws APIException {
+		User user = Context.getUserService().getUserByUsername("admin");
+		if (user == null) {
+			throw new APIException("Unable to resolve admin user for audit fields");
+		}
+		return user;
 	}
 	
 	private ConfigDataSyncModuleDTO mapToConfigDTO(ConfigDataSyncModule conf) {

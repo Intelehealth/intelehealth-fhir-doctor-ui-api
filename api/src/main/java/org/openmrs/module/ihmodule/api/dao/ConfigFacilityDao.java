@@ -9,49 +9,49 @@
  */
 package org.openmrs.module.ihmodule.api.dao;
 
-import java.io.Serializable;
 import java.util.List;
 
+import org.hibernate.Session;
+import org.hibernate.SessionFactory;
 import org.openmrs.api.APIException;
-import org.openmrs.api.db.hibernate.DbSession;
-import org.openmrs.api.db.hibernate.DbSessionFactory;
 import org.openmrs.module.ihmodule.ConfigFacility;
-import org.springframework.beans.factory.annotation.Autowired;
 
 public class ConfigFacilityDao {
 	
-	DbSessionFactory sessionFactory;
+	private SessionFactory sessionFactory;
 	
-	@SuppressWarnings("unchecked")
+	public void setSessionFactory(SessionFactory sessionFactory) {
+		this.sessionFactory = sessionFactory;
+	}
+	
 	public ConfigFacility save(ConfigFacility entity) throws APIException {
-		DbSession session = sessionFactory.getCurrentSession();
-		Serializable id = null;
+		Session session = sessionFactory.getCurrentSession();
+		ConfigFacility persisted;
 		if (entity.getId() == null) {
-			id = session.save(entity);
+			session.save(entity);
+			persisted = entity;
 		} else {
-			session.saveOrUpdate(entity);
-			id = entity.getId();
+			persisted = (ConfigFacility) session.merge(entity);
 		}
-		
-		if (id != null) {
-			ConfigFacility saved = (ConfigFacility) session.get(ConfigFacility.class, id);
-			return saved;
-		}
-		return null;
+		session.flush();
+		session.refresh(persisted);
+		return persisted;
 	}
 	
 	@SuppressWarnings("unchecked")
 	public List<ConfigFacility> getAll() throws APIException {
-		
-		List<ConfigFacility> all = sessionFactory.getCurrentSession().createQuery(" from ConfigFacility").list();
-		return all;
-		
+		return sessionFactory.getCurrentSession()
+		        .createQuery("from ConfigFacility cf where cf.voided = false order by cf.id asc").list();
 	}
 	
-	@SuppressWarnings("unchecked")
 	public ConfigFacility getById(Integer id) throws APIException {
-		return (ConfigFacility) sessionFactory.getCurrentSession().createQuery(" from ConfigFacility where id = :id ")
-		        .setInteger("id", id).uniqueResult();
+		return (ConfigFacility) sessionFactory.getCurrentSession().get(ConfigFacility.class, id);
+	}
+	
+	public ConfigFacility getByFacilityUuid(String facilityUuid) throws APIException {
+		return (ConfigFacility) sessionFactory.getCurrentSession()
+		        .createQuery("from ConfigFacility cf where cf.facilityUuid = :facilityUuid")
+		        .setParameter("facilityUuid", facilityUuid).uniqueResult();
 	}
 	
 }

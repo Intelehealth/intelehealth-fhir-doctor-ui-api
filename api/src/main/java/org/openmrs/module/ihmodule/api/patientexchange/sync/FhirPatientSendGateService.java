@@ -15,8 +15,8 @@ import ca.uhn.fhir.parser.DataFormatException;
 
 /**
  * Gates {@link org.openmrs.module.ihmodule.api.patientexchange.scheduler.DataSendToFHIR#send} for
- * Patient resources using the published config API ({@code fhir_module.fhir}); records skipped
- * patients in {@code unsync_patient}.
+ * Patient resources using the published config API ({@code fhir_module.fhir}); logs every push
+ * attempt in {@code patient_sync_log}.
  */
 @Service("fhirPatientSendGateService")
 public class FhirPatientSendGateService {
@@ -32,7 +32,7 @@ public class FhirPatientSendGateService {
 	private PublishedConfigFhirSyncGateService publishedConfigFhirSyncGateService;
 	
 	@Autowired
-	private UnsyncPatientService unsyncPatientService;
+	private PatientSyncLogService patientSyncLogService;
 	
 	public FhirResponse handlePatientSend(String patientUuid, FhirPatientSendExecutor executor) throws ParseException,
 	        DataFormatException, ConfigurationException, IOException {
@@ -40,25 +40,28 @@ public class FhirPatientSendGateService {
 			throw new IllegalArgumentException("patientUuid is required");
 		}
 		String uuid = patientUuid.trim();
+		PatientSyncLog pending = patientSyncLogService.createPending(uuid);
 		if (!publishedConfigFhirSyncGateService.isFhirSyncEnabled()) {
-			unsyncPatientService.recordForResync(uuid, SKIPPED_MESSAGE);
+			patientSyncLogService.markDeferred(pending, SKIPPED_MESSAGE);
 			return buildSkippedResponse(uuid);
 		}
 		try {
+			PatientSyncLogContext.bind(pending.getId());
 			FhirResponse response = executor.send(uuid);
-			if (!UnsyncPatientService.isSuccessfulCentralWrite(response)) {
-				unsyncPatientService.recordForResync(uuid, UnsyncPatientService.formatSyncFailureMessage(response));
-			}
+			patientSyncLogService.completePendingPush(pending, response);
 			return response;
 		}
 		catch (Exception ex) {
-			unsyncPatientService.recordForResync(uuid, UnsyncPatientService.formatSyncFailureMessage(ex));
+			patientSyncLogService.markFailed(pending, null, PatientSyncLogService.formatSyncFailureMessage(ex), false);
 			throw ex;
+		}
+		finally {
+			PatientSyncLogContext.clear();
 		}
 	}
 	
 	private static FhirResponse buildSkippedResponse(String patientUuid) {
-		log.info("FHIR sync disabled; queued patientUuid={} in unsync_patient", patientUuid);
+		log.info("FHIR sync disabled; logged deferred patient sync for patientUuid={}", patientUuid);
 		FhirResponse response = new FhirResponse();
 		response.setStatusCode(SKIPPED_STATUS);
 		response.setMessage(SKIPPED_MESSAGE);

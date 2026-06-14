@@ -3,7 +3,7 @@
 
 <hibernate-mapping package="org.openmrs.module.ihmodule" >
 
-	<class name="ConfigFacility" table="config_fcility" abstract="true">
+	<class name="ConfigFacility" table="config_fcility">
 	
 		<id name="id" type="int" column="id" unsaved-value="0">
 			<generator class="native">

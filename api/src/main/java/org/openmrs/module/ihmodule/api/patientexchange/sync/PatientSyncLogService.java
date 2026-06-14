@@ -6,19 +6,23 @@ import org.openmrs.module.ihmodule.api.patientexchange.utils.HttpTimeoutSupport;
 import org.openmrs.module.ihmodule.api.patientexchange.utils.HttpWebClient;
 
 /**
- * Persists patients that could not be synced to central FHIR for later resync. Implemented by
- * {@link UnsyncPatientServiceImpl}.
+ * Central FHIR patient push sync log lifecycle (aligned with SHR {@code ShrSyncLogService}).
  */
-public interface UnsyncPatientService {
+public interface PatientSyncLogService {
 	
-	void recordForResync(String patientUuid, String errorMessage);
+	PatientSyncLog createPending(String patientUuid);
 	
-	void enqueue(String patientUuid);
+	void markDeferred(PatientSyncLog row, String reason);
 	
-	void finalizeUnsyncReplayAttempt(Long unsyncPatientRowId, int markerCursor, UnsyncPatientStatus status,
-	        String errorMessage);
+	void markSuccess(PatientSyncLog row, FhirResponse response);
 	
-	void finalizeUnsyncReplayAttempt(Long unsyncPatientRowId, int markerCursor, UnsyncPatientStatus status);
+	void markFailed(PatientSyncLog row, FhirResponse response, String failureReason, boolean permanent);
+	
+	void completePendingPush(PatientSyncLog pending, FhirResponse response);
+	
+	void tryPushPendingRow(PatientSyncLog pending, PatientSyncPushContract pushContract);
+	
+	int runSyncCycle(int limitPerCycle, PatientSyncPushContract pushContract);
 	
 	static boolean isSuccessfulCentralWrite(FhirResponse response) {
 		if (response == null || response.getStatusCode() == null) {
@@ -48,5 +52,17 @@ public interface UnsyncPatientService {
 	static String formatSyncFailureMessage(Throwable throwable) {
 		return HttpTimeoutSupport.formatFailureMessage(throwable, HttpWebClient.getConnectTimeoutMs(),
 		    HttpWebClient.getReadTimeoutMs());
+	}
+	
+	static Integer parseHttpStatusCode(FhirResponse response) {
+		if (response == null || StringUtils.isBlank(response.getStatusCode())) {
+			return null;
+		}
+		try {
+			return Integer.valueOf(response.getStatusCode().trim());
+		}
+		catch (NumberFormatException ex) {
+			return null;
+		}
 	}
 }

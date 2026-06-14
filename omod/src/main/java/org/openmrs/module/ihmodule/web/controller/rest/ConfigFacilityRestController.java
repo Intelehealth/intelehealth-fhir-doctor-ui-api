@@ -6,6 +6,7 @@ import org.openmrs.api.context.Context;
 import org.openmrs.module.ihmodule.ConfigFacility;
 import org.openmrs.module.ihmodule.api.ConfigFacilityService;
 import org.openmrs.module.ihmodule.dto.ConfigFacilityDTO;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
@@ -29,7 +30,7 @@ public class ConfigFacilityRestController<RequestAppointmentDTO> {
 		try {
 			ConfigFacilityDTO dto = Context.getService(ConfigFacilityService.class).save(param);
 			if (dto != null)
-				return new ResponseEntity<>(dto, HttpStatus.OK);
+				return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(dto);
 			else {
 				return new ResponseEntity<>("Couldn't save the config facility", HttpStatus.BAD_REQUEST);
 			}
@@ -43,20 +44,26 @@ public class ConfigFacilityRestController<RequestAppointmentDTO> {
 	@RequestMapping(value = "/getAll", method = RequestMethod.GET)
 	public ResponseEntity<?> getAll() throws Exception {
 
-		List<ConfigFacilityDTO> data = Context.getService(ConfigFacilityService.class).getAll();
-		System.err.println("Data::" + data);
-
-		return new ResponseEntity<>(data, HttpStatus.OK);
+		try {
+			List<ConfigFacilityDTO> data = Context.getService(ConfigFacilityService.class).getAll();
+			return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(data);
+		} catch (Exception e) {
+			e.printStackTrace();
+			return new ResponseEntity<>("Request failed", HttpStatus.INTERNAL_SERVER_ERROR);
+		}
 
 	}
 	
 	@RequestMapping(value = "/get/{id}", method = RequestMethod.GET)
 	public ResponseEntity<?> getById(@PathVariable("id") Integer id) throws Exception {
 
-		ConfigFacilityDTO data = Context.getService(ConfigFacilityService.class).getById(id);
-		System.err.println("Data::" + data);
-
-		return new ResponseEntity<>(data, HttpStatus.OK);
+		try {
+			ConfigFacilityDTO data = Context.getService(ConfigFacilityService.class).getById(id);
+			return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(data);
+		} catch (Exception e) {
+			e.printStackTrace();
+			return new ResponseEntity<>("Request failed", HttpStatus.INTERNAL_SERVER_ERROR);
+		}
 
 	}
 }

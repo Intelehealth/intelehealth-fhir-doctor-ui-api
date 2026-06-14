@@ -16,6 +16,7 @@ import org.openmrs.module.BaseModuleActivator;
 import org.openmrs.module.DaemonToken;
 import org.openmrs.module.DaemonTokenAware;
 import org.openmrs.module.ihmodule.api.patientexchange.config.CentralFhirHttpTimeoutConfigurer;
+import org.openmrs.module.ihmodule.setup.LocationTagBootstrap;
 import org.openmrs.module.ihmodule.setup.PatientIdentifierTypeBootstrap;
 
 /**
@@ -34,6 +35,25 @@ public class APIfordoctorUIActivator extends BaseModuleActivator implements Daem
 		log.info("Started API for doctor UI");
 		CentralFhirHttpTimeoutConfigurer.applyConfiguredTimeouts();
 		bootstrapPatientIdentifierTypes();
+		bootstrapLocationTags();
+	}
+	
+	private void bootstrapLocationTags() {
+		boolean openedHere = !Context.isSessionOpen();
+		if (openedHere) {
+			Context.openSession();
+		}
+		try {
+			LocationTagBootstrap.ensureFacilityLocationTag();
+		}
+		catch (Exception ex) {
+			log.error("ihmodule location tag bootstrap failed", ex);
+		}
+		finally {
+			if (openedHere) {
+				Context.closeSession();
+			}
+		}
 	}
 	
 	private void bootstrapPatientIdentifierTypes() {

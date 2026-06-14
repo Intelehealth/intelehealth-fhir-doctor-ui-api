@@ -2,12 +2,13 @@ package org.openmrs.module.ihmodule.api.patientexchange.event;
 
 import org.apache.commons.lang3.StringUtils;
 import org.openmrs.Patient;
+import org.openmrs.api.context.Context;
 import org.openmrs.api.context.Daemon;
 import org.openmrs.module.DaemonToken;
 import org.openmrs.module.ihmodule.APIfordoctorUIActivator;
 import org.openmrs.module.ihmodule.api.patientexchange.domain.FhirResponse;
 import org.openmrs.module.ihmodule.api.patientexchange.scheduler.DataSendToFHIR;
-import org.openmrs.module.ihmodule.api.patientexchange.sync.UnsyncPatientService;
+import org.openmrs.module.ihmodule.api.patientexchange.sync.PatientSyncLogService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,7 +30,7 @@ public class PatientEventHandlerService {
 	private DataSendToFHIR dataSendToFHIR;
 	
 	@Autowired
-	private UnsyncPatientService unsyncPatientService;
+	private PatientSyncLogService patientSyncLogService;
 	
 	@Autowired
 	@Qualifier("patientEventTaskExecutor")
@@ -82,6 +83,7 @@ public class PatientEventHandlerService {
 		final DaemonToken daemonToken = APIfordoctorUIActivator.getDaemonToken();
 		if (daemonToken == null) {
 			log.error("Failed to send patient {} because no OpenMRS daemon token is available", patientUuid);
+			recordDaemonUnavailableFailure(patientUuid);
 			return;
 		}
 		try {
@@ -91,7 +93,12 @@ public class PatientEventHandlerService {
 				
 				@Override
 				public void run() {
+					boolean sessionOpenedHere = false;
 					try {
+						if (!Context.isSessionOpen()) {
+							Context.openSession();
+							sessionOpenedHere = true;
+						}
 						FhirSyncSuppressionContext.runSuppressed(new Runnable() {
 							
 							@Override
@@ -108,14 +115,33 @@ public class PatientEventHandlerService {
 						});
 					}
 					catch (Exception ex) {
-						unsyncPatientService.recordForResync(patientUuid, UnsyncPatientService.formatSyncFailureMessage(ex));
 						log.error("Failed to send patient {}", patientUuid, ex);
+					}
+					finally {
+						if (sessionOpenedHere) {
+							Context.closeSession();
+						}
 					}
 				}
 			}, daemonToken);
 		}
 		catch (Exception ex) {
 			log.error("Failed to send patient {}", patientUuid, ex);
+		}
+	}
+	
+	private void recordDaemonUnavailableFailure(String patientUuid) {
+		try {
+			if (!Context.isSessionOpen()) {
+				Context.openSession();
+			}
+			org.openmrs.module.ihmodule.api.patientexchange.sync.PatientSyncLog row = patientSyncLogService
+			        .createPending(patientUuid);
+			patientSyncLogService.markFailed(row, null, "OpenMRS daemon token unavailable for patient FHIR sync", true);
+		}
+		catch (Exception ex) {
+			log.error("Unable to record patient_sync_log for daemon-unavailable patientUuid={}: {}", patientUuid,
+			    ex.getMessage(), ex);
 		}
 	}
 }

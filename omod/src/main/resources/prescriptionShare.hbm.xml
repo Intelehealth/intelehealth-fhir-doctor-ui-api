@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<!DOCTYPE hibernate-mapping PUBLIC "-//Hibernate/Hibernate Mapping DTD 3.0//EN" "http://www.hibernate.org/dtd/hibernate-mapping-3.0.dtd">
+
+<hibernate-mapping package="org.openmrs.module.ihmodule">
+
+	<class name="PrescriptionShare" table="prescription_share">
+
+		<id name="id" type="int" column="prescription_share_id" unsaved-value="0">
+			<generator class="native">
+				<param name="sequence">prescription_share_id_seq</param>
+			</generator>
+		</id>
+
+		<property name="uuid" column="uuid" type="string" not-null="true" unique="true" />
+		<property name="patientUuid" column="patient_uuid" type="string" not-null="true" />
+		<property name="visitUuid" column="visit_uuid" type="string" not-null="true" />
+		<property name="locationUuid" column="location_uuid" type="string" not-null="true" />
+
+		<property name="dateCreated" column="date_created" type="java.util.Date" not-null="true" />
+		<many-to-one name="creator" column="creator" class="org.openmrs.User" not-null="true" />
+		<many-to-one name="changedBy" column="changed_by" class="org.openmrs.User" />
+		<property name="dateChanged" column="date_changed" type="java.util.Date" />
+		<property name="voided" column="voided" type="boolean" not-null="true" />
+		<many-to-one name="voidedBy" column="voided_by" class="org.openmrs.User" />
+		<property name="dateVoided" column="date_voided" type="java.util.Date" />
+		<property name="voidReason" column="void_reason" type="string" />
+
+	</class>
+
+</hibernate-mapping>
