@@ -1,12 +1,30 @@
 package org.openmrs.module.ihmodule;
 
-import java.io.Serializable;
+import java.util.Date;
 
-import org.openmrs.BaseOpenmrsData;
+import org.openmrs.User;
 
-public class ConfigFacility extends BaseOpenmrsData {
+public class ConfigFacility {
 	
 	private Integer id;
+	
+	private String uuid;
+	
+	private User creator;
+	
+	private Date dateCreated;
+	
+	private User changedBy;
+	
+	private Date dateChanged;
+	
+	private boolean voided;
+	
+	private User voidedBy;
+	
+	private Date dateVoided;
+	
+	private String voidReason;
 	
 	private String facilityName;
 	
@@ -28,6 +46,78 @@ public class ConfigFacility extends BaseOpenmrsData {
 	
 	public void setId(Integer id) {
 		this.id = id;
+	}
+	
+	public String getUuid() {
+		return uuid;
+	}
+	
+	public void setUuid(String uuid) {
+		this.uuid = uuid;
+	}
+	
+	public User getCreator() {
+		return creator;
+	}
+	
+	public void setCreator(User creator) {
+		this.creator = creator;
+	}
+	
+	public Date getDateCreated() {
+		return dateCreated;
+	}
+	
+	public void setDateCreated(Date dateCreated) {
+		this.dateCreated = dateCreated;
+	}
+	
+	public User getChangedBy() {
+		return changedBy;
+	}
+	
+	public void setChangedBy(User changedBy) {
+		this.changedBy = changedBy;
+	}
+	
+	public Date getDateChanged() {
+		return dateChanged;
+	}
+	
+	public void setDateChanged(Date dateChanged) {
+		this.dateChanged = dateChanged;
+	}
+	
+	public boolean isVoided() {
+		return voided;
+	}
+	
+	public void setVoided(boolean voided) {
+		this.voided = voided;
+	}
+	
+	public User getVoidedBy() {
+		return voidedBy;
+	}
+	
+	public void setVoidedBy(User voidedBy) {
+		this.voidedBy = voidedBy;
+	}
+	
+	public Date getDateVoided() {
+		return dateVoided;
+	}
+	
+	public void setDateVoided(Date dateVoided) {
+		this.dateVoided = dateVoided;
+	}
+	
+	public String getVoidReason() {
+		return voidReason;
+	}
+	
+	public void setVoidReason(String voidReason) {
+		this.voidReason = voidReason;
 	}
 	
 	public String getFacilityName() {

@@ -605,4 +605,270 @@
 		</addColumn>
 	</changeSet>
 
+	<changeSet id="unsync-patient-retry-fields-1.0.0" author="ihmodule">
+		<preConditions onFail="MARK_RAN">
+			<not>
+				<columnExists tableName="unsync_patient" columnName="attempt_number"/>
+			</not>
+		</preConditions>
+		<comment>SHR-aligned retry metadata for unsync_patient replay.</comment>
+		<addColumn tableName="unsync_patient">
+			<column name="attempt_number" type="int" defaultValueNumeric="1">
+				<constraints nullable="false"/>
+			</column>
+			<column name="http_status_code" type="int"/>
+			<column name="started_at" type="datetime"/>
+			<column name="completed_at" type="datetime"/>
+			<column name="next_retry_at" type="datetime"/>
+		</addColumn>
+	</changeSet>
+
+	<changeSet id="unsync-patient-dedupe-before-unique-uuid-1.0.0" author="ihmodule" dbms="mysql,mariadb">
+		<preConditions onFail="MARK_RAN">
+			<tableExists tableName="unsync_patient"/>
+		</preConditions>
+		<comment>Keep one unsync_patient row per patient_uuid before unique constraint.</comment>
+		<sql>
+			DELETE u1 FROM unsync_patient u1
+			INNER JOIN unsync_patient u2 ON u1.patient_uuid = u2.patient_uuid AND u1.id &lt; u2.id
+		</sql>
+	</changeSet>
+
+	<changeSet id="unsync-patient-unique-patient-uuid-1.0.0" author="ihmodule" dbms="mysql,mariadb">
+		<preConditions onFail="MARK_RAN">
+			<sqlCheck expectedResult="0">
+				SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+				WHERE TABLE_SCHEMA = DATABASE()
+				AND TABLE_NAME = 'unsync_patient'
+				AND INDEX_NAME = 'uk_unsync_patient_patient_uuid'
+				AND NON_UNIQUE = 0
+			</sqlCheck>
+		</preConditions>
+		<comment>Exactly one unsync_patient row per patient_uuid.</comment>
+		<addUniqueConstraint tableName="unsync_patient"
+			columnNames="patient_uuid"
+			constraintName="uk_unsync_patient_patient_uuid"/>
+	</changeSet>
+
+	<changeSet id="unsync-patient-retry-index-1.0.0" author="ihmodule" dbms="mysql,mariadb">
+		<preConditions onFail="MARK_RAN">
+			<sqlCheck expectedResult="0">
+				SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+				WHERE TABLE_SCHEMA = DATABASE()
+				AND TABLE_NAME = 'unsync_patient'
+				AND INDEX_NAME = 'idx_unsync_patient_next_retry'
+			</sqlCheck>
+		</preConditions>
+		<comment>Index for due-for-retry scheduler queries.</comment>
+		<createIndex tableName="unsync_patient" indexName="idx_unsync_patient_next_retry">
+			<column name="next_retry_at"/>
+		</createIndex>
+	</changeSet>
+
+	<changeSet id="patient-sync-log-rename-table-1.0.0" author="ihmodule">
+		<preConditions onFail="MARK_RAN">
+			<tableExists tableName="unsync_patient"/>
+			<not><tableExists tableName="patient_sync_log"/></not>
+		</preConditions>
+		<comment>Rename unsync_patient to patient_sync_log (one row per FHIR push attempt).</comment>
+		<renameTable oldTableName="unsync_patient" newTableName="patient_sync_log"/>
+	</changeSet>
+
+	<changeSet id="patient-sync-log-drop-unique-patient-uuid-1.0.0" author="ihmodule" dbms="mysql,mariadb">
+		<preConditions onFail="MARK_RAN">
+			<tableExists tableName="patient_sync_log"/>
+			<sqlCheck expectedResult="1">
+				SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+				WHERE TABLE_SCHEMA = DATABASE()
+				AND TABLE_NAME = 'patient_sync_log'
+				AND INDEX_NAME = 'uk_unsync_patient_patient_uuid'
+				AND NON_UNIQUE = 0
+			</sqlCheck>
+		</preConditions>
+		<comment>Allow multiple patient_sync_log rows per patient_uuid (one per attempt).</comment>
+		<dropUniqueConstraint tableName="patient_sync_log" constraintName="uk_unsync_patient_patient_uuid"/>
+	</changeSet>
+
+	<changeSet id="patient-sync-log-rename-error-message-1.0.0" author="ihmodule">
+		<preConditions onFail="MARK_RAN">
+			<columnExists tableName="patient_sync_log" columnName="error_message"/>
+			<not><columnExists tableName="patient_sync_log" columnName="failure_reason"/></not>
+		</preConditions>
+		<comment>Align failure column name with SHR sync log.</comment>
+		<renameColumn tableName="patient_sync_log" oldColumnName="error_message" newColumnName="failure_reason"
+			columnDataType="varchar(512)"/>
+	</changeSet>
+
+	<changeSet id="patient-sync-log-audit-columns-1.0.0" author="ihmodule">
+		<preConditions onFail="MARK_RAN">
+			<tableExists tableName="patient_sync_log"/>
+			<not><columnExists tableName="patient_sync_log" columnName="created_at"/></not>
+		</preConditions>
+		<comment>Audit timestamps for patient_sync_log rows.</comment>
+		<addColumn tableName="patient_sync_log">
+			<column name="created_at" type="datetime"/>
+			<column name="updated_at" type="datetime"/>
+		</addColumn>
+		<sql>
+			UPDATE patient_sync_log SET created_at = COALESCE(started_at, NOW()), updated_at = COALESCE(completed_at, started_at, NOW())
+			WHERE created_at IS NULL
+		</sql>
+	</changeSet>
+
+	<changeSet id="patient-sync-log-migrate-completed-status-1.0.0" author="ihmodule">
+		<preConditions onFail="MARK_RAN">
+			<tableExists tableName="patient_sync_log"/>
+		</preConditions>
+		<comment>Migrate legacy COMPLETED status to SUCCESS.</comment>
+		<sql>UPDATE patient_sync_log SET status = 'SUCCESS' WHERE status = 'COMPLETED'</sql>
+	</changeSet>
+
+	<changeSet id="patient-sync-log-unique-patient-attempt-1.0.0" author="ihmodule" dbms="mysql,mariadb">
+		<preConditions onFail="MARK_RAN">
+			<tableExists tableName="patient_sync_log"/>
+			<sqlCheck expectedResult="0">
+				SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+				WHERE TABLE_SCHEMA = DATABASE()
+				AND TABLE_NAME = 'patient_sync_log'
+				AND INDEX_NAME = 'uk_patient_sync_log_patient_attempt'
+				AND NON_UNIQUE = 0
+			</sqlCheck>
+		</preConditions>
+		<comment>Exactly one patient_sync_log row per (patient_uuid, attempt_number).</comment>
+		<addUniqueConstraint tableName="patient_sync_log"
+			columnNames="patient_uuid, attempt_number"
+			constraintName="uk_patient_sync_log_patient_attempt"/>
+	</changeSet>
+
+	<changeSet id="patient-sync-log-retry-index-rename-1.0.0" author="ihmodule" dbms="mysql,mariadb">
+		<preConditions onFail="MARK_RAN">
+			<tableExists tableName="patient_sync_log"/>
+			<sqlCheck expectedResult="1">
+				SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+				WHERE TABLE_SCHEMA = DATABASE()
+				AND TABLE_NAME = 'patient_sync_log'
+				AND INDEX_NAME = 'idx_unsync_patient_next_retry'
+			</sqlCheck>
+			<sqlCheck expectedResult="0">
+				SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+				WHERE TABLE_SCHEMA = DATABASE()
+				AND TABLE_NAME = 'patient_sync_log'
+				AND INDEX_NAME = 'idx_patient_sync_log_next_retry'
+			</sqlCheck>
+		</preConditions>
+		<comment>Rename retry index after table rename.</comment>
+		<sql>ALTER TABLE patient_sync_log RENAME INDEX idx_unsync_patient_next_retry TO idx_patient_sync_log_next_retry</sql>
+	</changeSet>
+
+	<changeSet id="patient-sync-log-retry-index-create-1.0.0" author="ihmodule" dbms="mysql,mariadb">
+		<preConditions onFail="MARK_RAN">
+			<tableExists tableName="patient_sync_log"/>
+			<sqlCheck expectedResult="0">
+				SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+				WHERE TABLE_SCHEMA = DATABASE()
+				AND TABLE_NAME = 'patient_sync_log'
+				AND INDEX_NAME = 'idx_patient_sync_log_next_retry'
+			</sqlCheck>
+		</preConditions>
+		<comment>Index for due-for-retry scheduler queries on patient_sync_log.</comment>
+		<createIndex tableName="patient_sync_log" indexName="idx_patient_sync_log_next_retry">
+			<column name="next_retry_at"/>
+		</createIndex>
+	</changeSet>
+
+	<changeSet id="prescription_share-1.0.0" author="ihmodule">
+		<preConditions onFail="MARK_RAN">
+			<not><tableExists tableName="prescription_share"/></not>
+		</preConditions>
+		<createTable tableName="prescription_share">
+			<column name="prescription_share_id" type="int(11)" autoIncrement="true">
+				<constraints primaryKey="true" nullable="false" />
+			</column>
+			<column name="uuid" type="varchar(38)">
+				<constraints nullable="false" unique="true" />
+			</column>
+			<column name="patient_uuid" type="varchar(38)">
+				<constraints nullable="false" />
+			</column>
+			<column name="visit_uuid" type="varchar(38)">
+				<constraints nullable="false" />
+			</column>
+			<column name="location_uuid" type="varchar(38)">
+				<constraints nullable="false" />
+			</column>
+			<column name="date_created" type="datetime">
+				<constraints nullable="false" />
+			</column>
+			<column name="creator" type="int(11)">
+				<constraints nullable="false" />
+			</column>
+			<column name="changed_by" type="int(11)" />
+			<column name="date_changed" type="datetime" />
+			<column name="voided" type="boolean" defaultValueBoolean="false">
+				<constraints nullable="false" />
+			</column>
+			<column name="voided_by" type="int(11)" />
+			<column name="date_voided" type="datetime" />
+			<column name="void_reason" type="varchar(255)" />
+		</createTable>
+		<addForeignKeyConstraint constraintName="prescription_share_creator_fk"
+			baseTableName="prescription_share" baseColumnNames="creator"
+			referencedTableName="users" referencedColumnNames="user_id" />
+	</changeSet>
+
+	<changeSet id="prescription_share-1.0.1" author="ihmodule">
+		<preConditions onFail="MARK_RAN">
+			<tableExists tableName="prescription_share"/>
+			<sqlCheck expectedResult="0">
+				SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+				WHERE TABLE_SCHEMA = DATABASE()
+				AND TABLE_NAME = 'prescription_share'
+				AND INDEX_NAME = 'prescription_share_patient_visit_idx'
+			</sqlCheck>
+		</preConditions>
+		<createIndex tableName="prescription_share" indexName="prescription_share_patient_visit_idx">
+			<column name="patient_uuid"/>
+			<column name="visit_uuid"/>
+		</createIndex>
+	</changeSet>
+
+	<changeSet id="prescription_share-1.0.2" author="ihmodule">
+		<preConditions onFail="MARK_RAN">
+			<tableExists tableName="prescription_share"/>
+			<not><columnExists tableName="prescription_share" columnName="location_uuid"/></not>
+		</preConditions>
+		<addColumn tableName="prescription_share">
+			<column name="location_uuid" type="varchar(38)" defaultValue="">
+				<constraints nullable="false" />
+			</column>
+		</addColumn>
+		<addForeignKeyConstraint constraintName="prescription_share_creator_fk"
+			baseTableName="prescription_share" baseColumnNames="creator"
+			referencedTableName="users" referencedColumnNames="user_id" />
+	</changeSet>
+
+	<changeSet id="prescription_share-1.0.3" author="ihmodule">
+		<preConditions onFail="MARK_RAN">
+			<tableExists tableName="prescription_share_location"/>
+		</preConditions>
+		<sql>
+			INSERT INTO prescription_share (uuid, patient_uuid, visit_uuid, location_uuid, date_created, creator, changed_by, date_changed, voided, voided_by, date_voided, void_reason)
+			SELECT psl.uuid, ps.patient_uuid, ps.visit_uuid, psl.location_uuid, psl.date_created, psl.creator, psl.changed_by, psl.date_changed, psl.voided, psl.voided_by, psl.date_voided, psl.void_reason
+			FROM prescription_share_location psl
+			INNER JOIN prescription_share ps ON ps.prescription_share_id = psl.prescription_share_id
+			WHERE NOT EXISTS (SELECT 1 FROM prescription_share existing WHERE existing.uuid = psl.uuid)
+		</sql>
+		<sql>
+			UPDATE prescription_share ps
+			SET ps.voided = 1,
+				ps.void_reason = 'Migrated to per-location prescription_share rows',
+				ps.date_changed = NOW()
+			WHERE ps.location_uuid = ''
+			AND EXISTS (SELECT 1 FROM prescription_share_location psl WHERE psl.prescription_share_id = ps.prescription_share_id)
+		</sql>
+		<dropForeignKeyConstraint baseTableName="prescription_share_location" constraintName="prescription_share_location_share_fk"/>
+		<dropForeignKeyConstraint baseTableName="prescription_share_location" constraintName="prescription_share_location_creator_fk"/>
+		<dropTable tableName="prescription_share_location"/>
+	</changeSet>
+
 </databaseChangeLog>

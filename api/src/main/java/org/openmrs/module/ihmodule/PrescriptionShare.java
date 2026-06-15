@@ -1,17 +1,20 @@
 package org.openmrs.module.ihmodule;
 
-import java.io.Serializable;
 import java.util.Date;
 
 import org.openmrs.User;
 
-public class ConfigDataSyncModule implements Serializable {
-	
-	private static final long serialVersionUID = 1L;
+public class PrescriptionShare {
 	
 	private Integer id;
 	
 	private String uuid;
+	
+	private String patientUuid;
+	
+	private String visitUuid;
+	
+	private String locationUuid;
 	
 	private User creator;
 	
@@ -29,12 +32,6 @@ public class ConfigDataSyncModule implements Serializable {
 	
 	private String voidReason;
 	
-	private String name;
-	
-	private boolean status;
-	
-	private String processId;
-	
 	public Integer getId() {
 		return id;
 	}
@@ -49,6 +46,30 @@ public class ConfigDataSyncModule implements Serializable {
 	
 	public void setUuid(String uuid) {
 		this.uuid = uuid;
+	}
+	
+	public String getPatientUuid() {
+		return patientUuid;
+	}
+	
+	public void setPatientUuid(String patientUuid) {
+		this.patientUuid = patientUuid;
+	}
+	
+	public String getVisitUuid() {
+		return visitUuid;
+	}
+	
+	public void setVisitUuid(String visitUuid) {
+		this.visitUuid = visitUuid;
+	}
+	
+	public String getLocationUuid() {
+		return locationUuid;
+	}
+	
+	public void setLocationUuid(String locationUuid) {
+		this.locationUuid = locationUuid;
 	}
 	
 	public User getCreator() {
@@ -113,30 +134,6 @@ public class ConfigDataSyncModule implements Serializable {
 	
 	public void setVoidReason(String voidReason) {
 		this.voidReason = voidReason;
-	}
-	
-	public String getName() {
-		return name;
-	}
-	
-	public void setName(String name) {
-		this.name = name;
-	}
-	
-	public boolean isStatus() {
-		return status;
-	}
-	
-	public void setStatus(boolean status) {
-		this.status = status;
-	}
-	
-	public String getProcessId() {
-		return processId;
-	}
-	
-	public void setProcessId(String processId) {
-		this.processId = processId;
 	}
 	
 }

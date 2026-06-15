@@ -48,11 +48,10 @@ import org.openmrs.module.ihmodule.api.patientexchange.importupload.PatientUploa
 import org.openmrs.module.ihmodule.api.patientexchange.service.LocalPatientMpiUpdateService;
 import org.openmrs.module.ihmodule.api.patientexchange.service.PatientDataService;
 import org.openmrs.module.ihmodule.api.patientexchange.sync.FhirPatientSendGateService;
-import org.openmrs.module.ihmodule.api.patientexchange.sync.PublishedConfigFhirSyncGateService;
-import org.openmrs.module.ihmodule.api.patientexchange.sync.UnsyncPatient;
-import org.openmrs.module.ihmodule.api.patientexchange.sync.UnsyncPatientRepository;
-import org.openmrs.module.ihmodule.api.patientexchange.sync.UnsyncPatientService;
-import org.openmrs.module.ihmodule.api.patientexchange.sync.UnsyncPatientStatus;
+import org.openmrs.module.ihmodule.api.patientexchange.sync.PatientSyncLog;
+import org.openmrs.module.ihmodule.api.patientexchange.sync.PatientSyncLogContext;
+import org.openmrs.module.ihmodule.api.patientexchange.sync.PatientSyncLogService;
+import org.openmrs.module.ihmodule.api.patientexchange.sync.PatientSyncPushContract;
 import org.openmrs.module.ihmodule.api.patientexchange.telecom.PatientTelecomMappingUtil;
 import org.openmrs.module.ihmodule.api.patientexchange.utils.DateUtils;
 import org.openmrs.module.ihmodule.api.patientexchange.utils.HttpTimeoutSupport;
@@ -65,6 +64,7 @@ import org.openmrs.module.ihmodule.api.patientexchange.validationrecord.Validati
 import org.openmrs.module.ihmodule.api.patientexchange.validationrecord.ValidationOutcome;
 import org.openmrs.module.ihmodule.api.patientexchange.validationrecord.FhirResourceValidationRecordService;
 import org.json.JSONException;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -76,8 +76,8 @@ import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.parser.DataFormatException;
 import org.openmrs.module.ihmodule.api.patientexchange.config.FhirContextHolder;
 
-@Component
-public class DataSendToFHIR extends IHConstant {
+@Component("dataSendToFHIR")
+public class DataSendToFHIR extends IHConstant implements PatientSyncPushContract {
 	
 	private static final Logger LOGGER = LoggerFactory.getLogger(DataSendToFHIR.class);
 	
@@ -136,11 +136,7 @@ public class DataSendToFHIR extends IHConstant {
 	
 	private FhirPatientSendGateService fhirPatientSendGateService;
 	
-	private UnsyncPatientRepository unsyncPatientRepository;
-	
-	private UnsyncPatientService unsyncPatientService;
-	
-	private PublishedConfigFhirSyncGateService publishedConfigFhirSyncGateService;
+	private PatientSyncLogService patientSyncLogService;
 	
 	private void ensureDependencies() {
 		if (firFhirConfig == null) {
@@ -190,16 +186,8 @@ public class DataSendToFHIR extends IHConstant {
 			fhirPatientSendGateService = Context.getRegisteredComponent("fhirPatientSendGateService",
 			    FhirPatientSendGateService.class);
 		}
-		if (unsyncPatientRepository == null) {
-			unsyncPatientRepository = Context.getRegisteredComponent("unsyncPatientRepository",
-			    UnsyncPatientRepository.class);
-		}
-		if (unsyncPatientService == null) {
-			unsyncPatientService = Context.getRegisteredComponent("unsyncPatientService", UnsyncPatientService.class);
-		}
-		if (publishedConfigFhirSyncGateService == null) {
-			publishedConfigFhirSyncGateService = Context.getRegisteredComponent("publishedConfigFhirSyncGateService",
-			    PublishedConfigFhirSyncGateService.class);
+		if (patientSyncLogService == null) {
+			patientSyncLogService = Context.getRegisteredComponent("patientSyncLogService", PatientSyncLogService.class);
 		}
 	}
 	
@@ -207,63 +195,50 @@ public class DataSendToFHIR extends IHConstant {
 	        JsonProcessingException, JSONException {
 		ensureDependencies();
 		
-		transferUnsyncedPatient();
+		runPatientSyncRetryCycle();
 		
 		//transferModifiedPatient();
 	}
 	
-	public void transferUnsyncedPatient() {
+	/**
+	 * Replays deferred and failed rows from {@code patient_sync_log}. Prefer scheduling
+	 * {@link PatientSyncRetryTask} instead of calling this directly.
+	 */
+	public void runPatientSyncRetryCycle() {
 		ensureDependencies();
-		
-		if (!publishedConfigFhirSyncGateService.isFhirSyncEnabled()) {
-			LOGGER.info("transferUnsyncedPatient skipped: published config FHIR sync disabled (fhir_module.fhir=false)");
-			return;
+		final int limitPerCycle = 20;
+		int processed = patientSyncLogService.runSyncCycle(limitPerCycle, this);
+		LOGGER.info("Patient sync retry cycle: {} row(s) processed", processed);
+	}
+	
+	@Override
+	public boolean pushPatientForSyncLog(PatientSyncLog pushRow, String operationLabel) {
+		ensureDependencies();
+		if (pushRow == null || StringUtils.isBlank(pushRow.getPatientUuid())) {
+			if (pushRow != null) {
+				patientSyncLogService.markFailed(pushRow, null, "Missing patient UUID for " + operationLabel, true);
+			}
+			return false;
 		}
-		IHMarker unsyncMarker = ihMarkerService.getOrCreateUnsyncedPatientProgressMarker();
-		long lastId = unsyncMarker.getLastId() != null ? unsyncMarker.getLastId().longValue() : 0L;
-		List<UnsyncPatient> pending = unsyncPatientRepository.findPendingWhereIdGreaterThan(lastId);
-		LOGGER.info("Unsynced patient transfer: {} pending row(s) with unsync_patient.id > {}", pending.size(), lastId);
-		for (UnsyncPatient row : pending) {
-			if (row == null || row.getPatientUuid() == null || row.getId() == null) {
-				continue;
+		String patientUuid = pushRow.getPatientUuid().trim();
+		try {
+			FhirResponse result = executeCentralSend("Patient", patientUuid);
+			patientSyncLogService.completePendingPush(pushRow, result);
+			if (PatientSyncLogService.isSuccessfulCentralWrite(result)) {
+				LOGGER.info("Patient sync {} succeeded: logId={} patientUuid={}", operationLabel, pushRow.getId(),
+				    patientUuid);
+				return true;
 			}
-			String patientUuid = row.getPatientUuid().trim();
-			int cursor = row.getId() > Integer.MAX_VALUE ? Integer.MAX_VALUE : row.getId().intValue();
-			UnsyncPatientStatus replayStatus = UnsyncPatientStatus.PENDING;
-			String replayError = null;
-			boolean sendSucceeded = false;
-			try {
-				FhirResponse result = executeCentralSend("Patient", patientUuid);
-				sendSucceeded = UnsyncPatientService.isSuccessfulCentralWrite(result);
-				if (sendSucceeded) {
-					replayStatus = UnsyncPatientStatus.COMPLETED;
-					LOGGER.info("Unsynced patient sent: unsync_patient.id={} patientUuid={}", row.getId(), patientUuid);
-				} else {
-					replayError = UnsyncPatientService.formatSyncFailureMessage(result);
-					LOGGER.warn("Unsynced patient send failed: unsync_patient.id={} patientUuid={} {}", row.getId(),
-					    patientUuid, replayError);
-				}
-			}
-			catch (Exception ex) {
-				replayError = UnsyncPatientService.formatSyncFailureMessage(ex);
-				LOGGER.error("Unsynced patient send error: unsync_patient.id={} patientUuid={}: {}", row.getId(),
-				    patientUuid, replayError, ex);
-			}
-			finally {
-				try {
-					unsyncPatientService.finalizeUnsyncReplayAttempt(row.getId(), cursor, replayStatus, replayError);
-				}
-				catch (Exception persistEx) {
-					LOGGER.error(
-					    "Failed to persist unsync replay outcome for unsync_patient.id={} (ih_marker may be stale): {}",
-					    row.getId(), persistEx.getMessage(), persistEx);
-				}
-			}
-			if (!sendSucceeded) {
-				break;
-			}
+			LOGGER.warn("Patient sync {} failed: logId={} patientUuid={} {}", operationLabel, pushRow.getId(), patientUuid,
+			    PatientSyncLogService.formatSyncFailureMessage(result));
+			return false;
 		}
-		System.err.println("Unsynced patient transfer pass completed............");
+		catch (Exception ex) {
+			patientSyncLogService.markFailed(pushRow, null, PatientSyncLogService.formatSyncFailureMessage(ex), false);
+			LOGGER.error("Patient sync {} error: logId={} patientUuid={}: {}", operationLabel, pushRow.getId(), patientUuid,
+			    PatientSyncLogService.formatSyncFailureMessage(ex), ex);
+			return false;
+		}
 	}
 	
 	public FhirResponse send(String resourceType, String uuid) throws ParseException, DataFormatException, JSONException,
@@ -291,6 +266,13 @@ public class DataSendToFHIR extends IHConstant {
 		System.err.println("Local Fhir Bundle => " + data);
 		
 		Bundle theBundle = fhirContext.newJsonParser().parseResource(Bundle.class, data);
+		
+		if (theBundle == null || !theBundle.hasEntry()) {
+			FhirResponse missing = new FhirResponse();
+			missing.setStatusCode("404");
+			missing.setMessage("No " + resourceType + " resource found in local OpenMRS FHIR export for uuid=" + uuid);
+			return missing;
+		}
 		
 		return sendFHIRBundle(theBundle, resourceType, false);
 	}
@@ -390,8 +372,8 @@ public class DataSendToFHIR extends IHConstant {
 				uLog.setResponse(res.getResponse());
 				uLog.setResponseStatus(res.getStatusCode());
 			}
-			if (!UnsyncPatientService.isSuccessfulCentralWrite(res)) {
-				recordUnsyncPatientFailure(localPatientUUID, UnsyncPatientService.formatSyncFailureMessage(res));
+			if (!PatientSyncLogService.isSuccessfulCentralWrite(res)) {
+				recordPatientSyncFailure(localPatientUUID, PatientSyncLogService.formatSyncFailureMessage(res));
 				if (uLog != null) {
 					uLog.setStatus(false);
 				}
@@ -399,7 +381,7 @@ public class DataSendToFHIR extends IHConstant {
 				Patient remotePatient = parseCentralResponsePatient(res.getResponse());
 				if (remotePatient == null) {
 					String msg = "Central FHIR response did not contain a Patient resource";
-					recordUnsyncPatientFailure(localPatientUUID, msg);
+					recordPatientSyncFailure(localPatientUUID, msg);
 					throw new IllegalStateException(msg);
 				}
 				if (trimToNull(res.getCentralServerPatientLogicalId()) == null) {
@@ -413,7 +395,7 @@ public class DataSendToFHIR extends IHConstant {
 				
 				if (returnedMpi == null || returnedMpi.trim().isEmpty()) {
 					String msg = "Central FHIR response did not contain an MPI identifier value";
-					recordUnsyncPatientFailure(localPatientUUID, msg);
+					recordPatientSyncFailure(localPatientUUID, msg);
 					throw new IllegalStateException(msg);
 				}
 				String mpiTrim = returnedMpi.trim();
@@ -645,7 +627,7 @@ public class DataSendToFHIR extends IHConstant {
 			}
 			if (mpiForLocalSync == null || mpiForLocalSync.isEmpty()) {
 				String mpiMessage = "Patient create succeeded but MPI id was not returned by central FHIR";
-				recordUnsyncPatientFailure(localPatientUuid, mpiMessage);
+				recordPatientSyncFailure(localPatientUuid, mpiMessage);
 				response.setStatusCode("502");
 				response.setMessage(mpiMessage);
 				response.setResponse(fhirContext.newJsonParser().encodeResourceToString(createOutcome.getBundle()));
@@ -672,9 +654,9 @@ public class DataSendToFHIR extends IHConstant {
 			return response;
 		}
 		catch (Exception e) {
-			String failureMessage = UnsyncPatientService.formatSyncFailureMessage(e);
+			String failureMessage = PatientSyncLogService.formatSyncFailureMessage(e);
 			LOGGER.error("Central patient write failed: {}", failureMessage, e);
-			recordUnsyncPatientFailure(localPatientUuid, failureMessage);
+			recordPatientSyncFailure(localPatientUuid, failureMessage);
 			response.setStatusCode(HttpTimeoutSupport.failureStatusCode(e));
 			response.setMessage(failureMessage);
 			response.setResponse("");
@@ -682,16 +664,17 @@ public class DataSendToFHIR extends IHConstant {
 		}
 	}
 	
-	private void recordUnsyncPatientFailure(String patientUuid, String errorMessage) {
-		if (patientUuid == null || patientUuid.trim().isEmpty()) {
+	private void recordPatientSyncFailure(String patientUuid, String errorMessage) {
+		if (patientUuid == null || patientUuid.trim().isEmpty() || PatientSyncLogContext.isActive()) {
 			return;
 		}
 		ensureDependencies();
 		try {
-			unsyncPatientService.recordForResync(patientUuid.trim(), errorMessage);
+			PatientSyncLog row = patientSyncLogService.createPending(patientUuid.trim());
+			patientSyncLogService.markFailed(row, null, errorMessage, false);
 		}
 		catch (Exception ex) {
-			LOGGER.error("Failed to record unsync_patient for patientUuid={}: {}", patientUuid, ex.getMessage(), ex);
+			LOGGER.error("Failed to record patient_sync_log for patientUuid={}: {}", patientUuid, ex.getMessage(), ex);
 		}
 	}
 	

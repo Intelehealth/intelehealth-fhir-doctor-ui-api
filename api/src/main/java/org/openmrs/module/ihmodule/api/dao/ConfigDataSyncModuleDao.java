@@ -9,51 +9,43 @@
  */
 package org.openmrs.module.ihmodule.api.dao;
 
-import java.io.Serializable;
 import java.util.List;
 
+import org.hibernate.Session;
+import org.hibernate.SessionFactory;
 import org.openmrs.api.APIException;
-import org.openmrs.api.db.hibernate.DbSession;
-import org.openmrs.api.db.hibernate.DbSessionFactory;
 import org.openmrs.module.ihmodule.ConfigDataSyncModule;
-import org.springframework.beans.factory.annotation.Autowired;
 
 public class ConfigDataSyncModuleDao {
 	
-	DbSessionFactory sessionFactory;
+	private SessionFactory sessionFactory;
 	
-	@SuppressWarnings("unchecked")
+	public void setSessionFactory(SessionFactory sessionFactory) {
+		this.sessionFactory = sessionFactory;
+	}
+	
 	public ConfigDataSyncModule save(ConfigDataSyncModule entity) throws APIException {
-		DbSession session = sessionFactory.getCurrentSession();
-		Serializable id = null;
+		Session session = sessionFactory.getCurrentSession();
+		ConfigDataSyncModule persisted;
 		if (entity.getId() == null) {
-			id = session.save(entity);
+			session.save(entity);
+			persisted = entity;
 		} else {
-			session.saveOrUpdate(entity);
-			id = entity.getId();
+			persisted = (ConfigDataSyncModule) session.merge(entity);
 		}
-		if (id != null) {
-			ConfigDataSyncModule saved = (ConfigDataSyncModule) session.get(ConfigDataSyncModule.class, id);
-			return saved;
-		}
-		return null;
-		
+		session.flush();
+		session.refresh(persisted);
+		return persisted;
 	}
 	
 	@SuppressWarnings("unchecked")
 	public List<ConfigDataSyncModule> getAll() throws APIException {
-		
-		List<ConfigDataSyncModule> all = sessionFactory.getCurrentSession().createQuery(" from ConfigDataSyncModule").list();
-		return all;
-		
+		return sessionFactory.getCurrentSession()
+		        .createQuery("from ConfigDataSyncModule m where m.voided = false order by m.id asc").list();
 	}
 	
-	@SuppressWarnings("unchecked")
 	public ConfigDataSyncModule getById(Integer id) throws APIException {
-		
-		return (ConfigDataSyncModule) sessionFactory.getCurrentSession()
-		        .createQuery(" from ConfigDataSyncModule where id = :id ").setInteger("id", id).uniqueResult();
-		
+		return (ConfigDataSyncModule) sessionFactory.getCurrentSession().get(ConfigDataSyncModule.class, id);
 	}
 	
 }

@@ -3,11 +3,11 @@
 
 <hibernate-mapping package="org.openmrs.module.ihmodule" >
 
-	<class name="ConfigDataSyncModule" table="config_data_sync_module" abstract="true">
+	<class name="ConfigDataSyncModule" table="config_data_sync_module">
 	
 		<id name="id" type="int" column="id" unsaved-value="0">
 			<generator class="native">
-				<param name="sequence">config_fcility_id_seq</param>
+				<param name="sequence">config_data_sync_module_id_seq</param>
 			</generator>
 		</id>		
 	 	
