@@ -1,0 +1,218 @@
+{
+  "resourceType": "CapabilityStatement",
+  "id": "ihmodule-interface",
+  "url": "https://intelehealth.org/fhir/CapabilityStatement/ihmodule-interface",
+  "version": "1.0.0",
+  "name": "IHModuleInterface",
+  "title": "Intelehealth Doctor UI Module (ihmodule) — Interface Capability Statement",
+  "status": "active",
+  "experimental": false,
+  "date": "2026-06-18",
+  "publisher": "Intelehealth",
+  "description": "Describes the OpenMRS ihmodule integration interface. ihmodule is NOT a FHIR server and does not publish GET /metadata on the central SHR. It exposes OpenMRS REST endpoints (session auth) and acts as an FHIR R4 client to central OpenCR/OpenHIM and local OpenMRS FHIR2. Served live at GET {openmrsBase}/ws/rest/v1/ihmodule/capability-statement.",
+  "kind": "capability",
+  "fhirVersion": "4.0.1",
+  "format": [
+    "application/fhir+json",
+    "application/json"
+  ],
+  "software": {
+    "name": "ihmodule (Intelehealth FHIR Doctor UI API)",
+    "version": "1.0.0-SNAPSHOT"
+  },
+  "implementation": {
+    "description": "OpenMRS ihmodule REST base",
+    "url": "{openmrsBase}/ws/rest/v1/ihmodule"
+  },
+  "rest": [
+    {
+      "mode": "server",
+      "documentation": "FHIR-shaped and patient-exchange operations implemented in-process on OpenMRS (not OpenMRS FHIR2 module).",
+      "security": {
+        "cors": false,
+        "description": "OpenMRS session cookie (JSESSIONID) or equivalent authenticated session"
+      },
+      "resource": [
+        {
+          "type": "Patient",
+          "interaction": [
+            {
+              "code": "search-type"
+            }
+          ],
+          "operation": [
+            {
+              "name": "match",
+              "definition": "http://hl7.org/fhir/OperationDefinition/Patient-match"
+            }
+          ],
+          "documentation": "POST /patient/$match — local fuzzy duplicate detection; Parameters or Patient in, Bundle searchset out."
+        },
+        {
+          "type": "Parameters",
+          "interaction": [
+            {
+              "code": "create"
+            }
+          ],
+          "documentation": "Request body for patient/$match"
+        },
+        {
+          "type": "Bundle",
+          "interaction": [
+            {
+              "code": "search-type"
+            },
+            {
+              "code": "create"
+            }
+          ],
+          "documentation": "Response from patient/$match; import-upload accepts Patient or Bundle"
+        },
+        {
+          "type": "OperationOutcome",
+          "documentation": "Error responses for FHIR-shaped endpoints"
+        }
+      ]
+    },
+    {
+      "mode": "client",
+      "documentation": "Outbound FHIR R4 calls made by ihmodule schedulers and patient-exchange services.",
+      "resource": [
+        {
+          "type": "Patient",
+          "interaction": [
+            {
+              "code": "create"
+            },
+            {
+              "code": "update"
+            },
+            {
+              "code": "search-type"
+            },
+            {
+              "code": "read"
+            }
+          ],
+          "searchParam": [
+            {
+              "name": "identifier",
+              "type": "token",
+              "documentation": "urn:intelehealth:cruid and Source Patient Id"
+            }
+          ],
+          "operation": [
+            {
+              "name": "mdm-match",
+              "documentation": "POST {centralFhir}/$mdm-match — central MPI duplicate detection"
+            }
+          ]
+        }
+      ],
+      "operation": [
+        {
+          "name": "transaction",
+          "documentation": "Bundle.type=transaction for central Patient create/update via OpenCR HAPI client"
+        }
+      ]
+    }
+  ],
+  "ihmoduleRestEndpoints": [
+    {
+      "method": "GET",
+      "path": "/ws/rest/v1/ihmodule/capability-statement",
+      "purpose": "This CapabilityStatement (public, no auth)"
+    },
+    {
+      "method": "POST",
+      "path": "/ws/rest/v1/ihmodule/patient/$match",
+      "purpose": "Local fuzzy patient duplicate detection (FHIR R4 Patient $match)"
+    },
+    {
+      "method": "GET",
+      "path": "/ws/rest/v1/ihmodule/patient-exchange/pending",
+      "purpose": "Duplicate-review queue"
+    },
+    {
+      "method": "GET",
+      "path": "/ws/rest/v1/ihmodule/patient-exchange/candidates",
+      "purpose": "Duplicate-review candidates (query: caseUuid)"
+    },
+    {
+      "method": "POST",
+      "path": "/ws/rest/v1/ihmodule/patient-exchange/force-sync",
+      "purpose": "Force central FHIR patient sync or complete duplicate-review case"
+    },
+    {
+      "method": "POST",
+      "path": "/ws/rest/v1/ihmodule/patient-exchange/duplicate-review/add-patient-candidate",
+      "purpose": "Link and enrich duplicate-review candidate"
+    },
+    {
+      "method": "POST",
+      "path": "/ws/rest/v1/ihmodule/patient-exchange/duplicate-review/skip",
+      "purpose": "Skip duplicate-review case or candidate"
+    },
+    {
+      "method": "POST",
+      "path": "/ws/rest/v1/ihmodule/patient-exchange/mpi-local",
+      "purpose": "Local MPI duplicate review resolution"
+    },
+    {
+      "method": "POST",
+      "path": "/ws/rest/v1/ihmodule/patient-exchange/import-upload",
+      "purpose": "Patient file import (multipart FHIR JSON)"
+    },
+    {
+      "method": "GET",
+      "path": "/ws/rest/v1/ihmodule/patient-exchange/export-created",
+      "purpose": "Export created patients"
+    },
+    {
+      "method": "POST",
+      "path": "/ws/rest/v1/ihmodule/patient/source-identifier",
+      "purpose": "Persist central FHIR Patient id locally"
+    },
+    {
+      "method": "GET",
+      "path": "/ws/rest/v1/shr/bundle/{resourceType}",
+      "purpose": "Legacy SHR clinical read proxy (prefer ihshr pull API for new work)"
+    }
+  ],
+  "externalFhirDependencies": [
+    {
+      "system": "Central OpenCR / OpenHIM",
+      "required": true,
+      "base": "{centralFhir}",
+      "capabilities": [
+        "Patient create/update",
+        "POST /fhir/$mdm-match",
+        "Patient.identifier search"
+      ]
+    },
+    {
+      "system": "Local OpenMRS FHIR2",
+      "required": true,
+      "base": "{openmrsBase}/ws/fhir2/R4",
+      "capabilities": [
+        "Patient read/search",
+        "Clinical resource export for sync markers"
+      ]
+    },
+    {
+      "system": "SHR via ihshr",
+      "required": false,
+      "capabilities": [
+        "See ihshr GET /ws/rest/v1/ihshr/shr/capability-statement",
+        "shr/docs/SHR-CapabilityStatement.json"
+      ]
+    }
+  ],
+  "relatedDocumentation": [
+    "docs/IHMODULE-TECHNICAL-SPECIFICATION.md",
+    "docs/IHMODULE_CAPABILITY_STATEMENT.docx",
+    "docs/technical/02-openapi.yaml",
+    "docs/technical/01-api-reference.md"
+  ]
+}
