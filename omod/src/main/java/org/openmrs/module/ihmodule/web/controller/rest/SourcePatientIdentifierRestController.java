@@ -42,8 +42,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  * Legacy alias: {@code module/ihmodule/patientSourceIdentifier.form}.
  * <p>
  * Request JSON: {@code patientUuid}, {@code identifierValue} (required); {@code locationUuid}
- * (required when creating a new identifier row). Response:
- * {@link SourcePatientIdentifierUpdateResponse} or {@code "error":"..."} .
+ * (optional — defaults to the patient's preferred OpenMRS ID location, then module default).
+ * Response: {@link SourcePatientIdentifierUpdateResponse} or {@code "error":"..."} .
  * <p>
  * Full reference: {@code docs/ihmodule-rest-api-documentation.md} (section 3).
  * 

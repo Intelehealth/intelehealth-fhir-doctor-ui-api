@@ -10,7 +10,10 @@ public class SourcePatientIdentifierUpdateRequest {
 	
 	private String identifierValue;
 	
-	/** OpenMRS location UUID for the new source patient identifier (required when one is created). */
+	/**
+	 * OpenMRS location UUID for the source patient identifier (optional; preferred OpenMRS ID
+	 * location used when omitted).
+	 */
 	private String locationUuid;
 	
 	public String getPatientUuid() {
