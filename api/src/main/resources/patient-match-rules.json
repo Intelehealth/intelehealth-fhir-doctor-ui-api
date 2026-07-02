@@ -98,8 +98,7 @@
     "given-name-jw,family-name-jw,birthdate-exact,phone-exact": "MATCH",
     "given-name-jw,family-name-jw,birthdate-exact,gender-exact": "MATCH",
     "given-name-jw,family-name-jw,phone-exact": "POSSIBLE_MATCH",
-    "given-name-metaphone,family-name-jw,birthdate-exact,phone-exact": "POSSIBLE_MATCH",
-    "given-name-jw,birthdate-exact,gender-exact": "POSSIBLE_MATCH"
+    "given-name-metaphone,family-name-jw,birthdate-exact,phone-exact": "POSSIBLE_MATCH"
   },
   "settings": {
     "enabled": true,

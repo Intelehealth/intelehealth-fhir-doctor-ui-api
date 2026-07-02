@@ -163,8 +163,9 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 	 * REST entry: upsert source patient identifier (central FHIR Patient logical id) on the
 	 * facility patient — update when a matching row exists, otherwise create.
 	 * 
-	 * @param locationUuid OpenMRS location for the identifier row (from API); required when a new
-	 *            row is created; optional on update (module default used when omitted)
+	 * @param locationUuid OpenMRS location for the identifier row (optional). When omitted, uses
+	 *            the patient's preferred OpenMRS ID location, then the module default location.
+	 *            Required only when creating a new row and neither can be resolved.
 	 */
 	public SourcePatientIdentifierUpdateResponse upsertSourcePatientIdentifier(String patientUuid, String identifierValue,
 	        String locationUuid) {
@@ -182,7 +183,7 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 				org.openmrs.Patient patient = loadLocalPatientOrThrow(uuid);
 				List<PatientIdentifier> active = collectActiveCentralSourceLinkIdentifiers(patient, idVal);
 				PatientIdentifier canonical = chooseCanonicalSourceLinkIdentifier(active);
-				if (canonical == null && locUuid == null) {
+				if (canonical == null && locUuid == null && requiresExplicitLocationUuidForNewSourceIdentifier(patient)) {
 					throw new IllegalArgumentException(
 					        "locationUuid is required when adding a new source patient identifier");
 				}
@@ -266,7 +267,7 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 		}
 		String mpiVal = mpiIdentifierValue.trim();
 		PatientIdentifierType mpiType = resolveMpiIdentifierType();
-		Location location = resolveIdentifierLocation();
+		IdentifierLocationResolution locationResolution = resolveIdentifierLocationForPatient(patient, null);
 		List<PatientIdentifier> active = collectActiveMpiIdentifiers(patient);
 		PatientIdentifier canonical = chooseCanonicalIdentifier(active);
 		voidExtraMpiIdentifiers(patient, canonical);
@@ -276,14 +277,12 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 			}
 			canonical.setIdentifier(mpiVal);
 			canonical.setIdentifierType(mpiType);
-			if (canonical.getLocation() == null && location != null) {
-				canonical.setLocation(location);
-			}
+			applyResolvedLocation(canonical, locationResolution, true);
 		} else {
 			PatientIdentifier mpi = new PatientIdentifier();
 			mpi.setIdentifier(mpiVal);
 			mpi.setIdentifierType(mpiType);
-			mpi.setLocation(location);
+			applyResolvedLocation(mpi, locationResolution, false);
 			mpi.setPreferred(false);
 			patient.addIdentifier(mpi);
 		}
@@ -297,19 +296,18 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 	        String locationUuid) {
 		String idVal = centralLogicalId.trim();
 		PatientIdentifierType sourceIdType = resolveSourcePatientIdIdentifierType();
-		Location location = resolveIdentifierLocation(locationUuid);
+		IdentifierLocationResolution locationResolution = resolveIdentifierLocationForPatient(patient, locationUuid);
 		List<PatientIdentifier> active = collectActiveCentralSourceLinkIdentifiers(patient, idVal);
 		PatientIdentifier canonical = chooseCanonicalSourceLinkIdentifier(active);
 		voidExtraCentralSourceLinkIdentifiers(patient, canonical, idVal);
 		if (canonical != null) {
 			canonical.setIdentifier(idVal);
 			canonical.setIdentifierType(sourceIdType);
-			if (location != null && (StringUtils.isNotBlank(locationUuid) || canonical.getLocation() == null)) {
-				canonical.setLocation(location);
-			}
+			applyResolvedLocation(canonical, locationResolution, true);
 			return true;
 		}
-		addSourcePatientIdentifier(patient, idVal, sourceIdType, location);
+		addSourcePatientIdentifier(patient, idVal, sourceIdType, locationResolution != null ? locationResolution.location
+		        : null);
 		return false;
 	}
 	
@@ -546,26 +544,132 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 		throw new IllegalStateException("Patient identifier type not found for MPI name=" + globalIdentifierName);
 	}
 	
-	private Location resolveIdentifierLocation() {
-		return resolveIdentifierLocation(null);
-	}
-	
 	/**
-	 * @param locationUuid when non-blank, use this OpenMRS location (e.g. from REST API); otherwise
-	 *            module default {@link #OPENMRS_DEFAULT_IDENTIFIER_LOCATION_UUID}
+	 * Resolves the OpenMRS {@link Location} for MPI / Source Patient Id rows.
+	 * <ol>
+	 * <li>Explicit {@code locationUuid} from REST API (unchanged behaviour)</li>
+	 * <li>Location on the patient's preferred OpenMRS ID identifier (central sync path)</li>
+	 * <li>Module default {@link #OPENMRS_DEFAULT_IDENTIFIER_LOCATION_UUID}</li>
+	 * </ol>
 	 */
-	private Location resolveIdentifierLocation(String locationUuid) {
+	private IdentifierLocationResolution resolveIdentifierLocationForPatient(org.openmrs.Patient patient, String locationUuid) {
 		if (StringUtils.isNotBlank(locationUuid)) {
 			Location location = Context.getLocationService().getLocationByUuid(locationUuid.trim());
 			if (location == null) {
 				throw new IllegalArgumentException("Location not found for UUID: " + locationUuid.trim());
 			}
-			return location;
+			return new IdentifierLocationResolution(location, false, true);
 		}
+		Location preferredOpenMrsLocation = resolveLocationFromPatientPreferredOpenMrsIdentifier(patient);
+		if (preferredOpenMrsLocation != null) {
+			return new IdentifierLocationResolution(preferredOpenMrsLocation, true, false);
+		}
+		return new IdentifierLocationResolution(getDefaultIdentifierLocation(), false, false);
+	}
+	
+	/**
+	 * Preferred OpenMRS ID row first ({@code preferred=true}), then any active OpenMRS ID with a
+	 * location.
+	 */
+	/**
+	 * {@code true} when a new Source Patient Id row cannot be created without an explicit
+	 * {@code locationUuid} (no preferred OpenMRS ID location and module default location missing).
+	 */
+	private boolean requiresExplicitLocationUuidForNewSourceIdentifier(org.openmrs.Patient patient) {
+		if (resolveLocationFromPatientPreferredOpenMrsIdentifier(patient) != null) {
+			return false;
+		}
+		try {
+			getDefaultIdentifierLocation();
+			return false;
+		}
+		catch (IllegalStateException ex) {
+			return true;
+		}
+	}
+	
+	private Location resolveLocationFromPatientPreferredOpenMrsIdentifier(org.openmrs.Patient patient) {
+		PatientIdentifier openMrsId = findPreferredOpenMrsIdentifier(patient);
+		if (openMrsId == null || openMrsId.getLocation() == null) {
+			return null;
+		}
+		return openMrsId.getLocation();
+	}
+	
+	private PatientIdentifier findPreferredOpenMrsIdentifier(org.openmrs.Patient patient) {
+		if (patient == null || patient.getIdentifiers() == null) {
+			return null;
+		}
+		PatientIdentifier preferredOpenMrs = null;
+		PatientIdentifier anyOpenMrs = null;
+		for (PatientIdentifier identifier : patient.getIdentifiers()) {
+			if (identifier == null || identifier.getVoided() || identifier.getIdentifierType() == null) {
+				continue;
+			}
+			if (!isOpenMrsIdIdentifierType(identifier.getIdentifierType())) {
+				continue;
+			}
+			if (Boolean.TRUE.equals(identifier.getPreferred())) {
+				preferredOpenMrs = identifier;
+				break;
+			}
+			if (anyOpenMrs == null) {
+				anyOpenMrs = identifier;
+			}
+		}
+		return preferredOpenMrs != null ? preferredOpenMrs : anyOpenMrs;
+	}
+	
+	/**
+	 * Insert: always apply resolved location when present. Update: apply when the caller supplied
+	 * {@code locationUuid}, when aligned to preferred OpenMRS ID, or when the row has no location
+	 * yet (legacy default-backfill only).
+	 */
+	static void applyResolvedLocationForTest(PatientIdentifier identifier, IdentifierLocationResolution resolution,
+	        boolean isUpdate) {
+		applyResolvedLocation(identifier, resolution, isUpdate);
+	}
+	
+	boolean requiresExplicitLocationUuidForNewSourceIdentifierForTest(org.openmrs.Patient patient) {
+		return requiresExplicitLocationUuidForNewSourceIdentifier(patient);
+	}
+	
+	private static void applyResolvedLocation(PatientIdentifier identifier, IdentifierLocationResolution resolution,
+	        boolean isUpdate) {
+		if (identifier == null || resolution == null || resolution.location == null) {
+			return;
+		}
+		if (!isUpdate) {
+			identifier.setLocation(resolution.location);
+			return;
+		}
+		if (resolution.explicitFromRequest || resolution.fromPreferredOpenMrsIdentifier) {
+			identifier.setLocation(resolution.location);
+		} else if (identifier.getLocation() == null) {
+			identifier.setLocation(resolution.location);
+		}
+	}
+	
+	private Location getDefaultIdentifierLocation() {
 		Location location = Context.getLocationService().getLocationByUuid(OPENMRS_DEFAULT_IDENTIFIER_LOCATION_UUID);
 		if (location != null) {
 			return location;
 		}
 		throw new IllegalStateException("Location not found for UUID: " + OPENMRS_DEFAULT_IDENTIFIER_LOCATION_UUID);
+	}
+	
+	static final class IdentifierLocationResolution {
+		
+		private final Location location;
+		
+		private final boolean fromPreferredOpenMrsIdentifier;
+		
+		private final boolean explicitFromRequest;
+		
+		IdentifierLocationResolution(Location location, boolean fromPreferredOpenMrsIdentifier, boolean explicitFromRequest) {
+			this.location = location;
+			this.fromPreferredOpenMrsIdentifier = fromPreferredOpenMrsIdentifier;
+			this.explicitFromRequest = explicitFromRequest;
+		}
 	}
 }

@@ -64,53 +64,96 @@ public class PatientFuzzyMatchingEngine {
 		if (!config.isFieldEnabled("name") || !request.hasName() || StringUtils.isBlank(candidate.getName())) {
 			return 0.0d;
 		}
-		double baseScore = FuzzyTextUtils.jaroWinklerPercent(request.getName(), candidate.getName());
-		double tokenScore = FuzzyTextUtils.tokenJaccardPercent(request.getName(), candidate.getName());
-		double combined = Math.max(baseScore, ((baseScore * 0.7d) + (tokenScore * 0.3d)));
+		double fullNameFuzzyScore = fullNameFuzzyScore(request.getName(), candidate.getName());
 		double structuredNameScore = structuredNameScore(request, candidate);
-		if (structuredNameScore > 0.0d) {
-			combined = Math.max(combined, structuredNameScore);
+		double combined;
+		if (request.hasGivenName() && request.hasFamilyName()) {
+			combined = structuredNameScore;
+			if (namePartsAlignForFuzzyMerge(request, candidate, config)) {
+				combined = Math.max(combined, fullNameFuzzyScore);
+			}
+		} else {
+			combined = fullNameFuzzyScore;
+			if (structuredNameScore > 0.0d) {
+				combined = Math.max(combined, structuredNameScore);
+			}
 		}
-		if (config.isPhoneticBoostEnabled() && phoneticNameMatch(request, candidate, config)) {
+		if (config.isPhoneticBoostEnabled() && phoneticBoostEligible(request, candidate, config)) {
 			combined = Math.min(100.0d, combined + 10.0d);
 		}
 		return FuzzyTextUtils.round(combined);
+	}
+	
+	private double fullNameFuzzyScore(String requestName, String candidateName) {
+		double baseScore = FuzzyTextUtils.jaroWinklerPercent(requestName, candidateName);
+		double tokenScore = FuzzyTextUtils.tokenJaccardPercent(requestName, candidateName);
+		return Math.max(baseScore, ((baseScore * 0.7d) + (tokenScore * 0.3d)));
 	}
 	
 	private double structuredNameScore(FuzzyPatientMatchRequest request, FuzzyPatientCandidate candidate) {
 		double givenScore = 0.0d;
 		double familyScore = 0.0d;
 		int parts = 0;
-		if (request.hasGivenName() && StringUtils.isNotBlank(candidate.getGivenName())) {
-			givenScore = FuzzyTextUtils.jaroWinklerPercent(request.getGivenName(), candidate.getGivenName());
+		if (request.hasGivenName()) {
+			givenScore = StringUtils.isNotBlank(candidate.getGivenName()) ? FuzzyTextUtils.jaroWinklerPercent(
+			    request.getGivenName(), candidate.getGivenName()) : 0.0d;
 			parts++;
 		}
-		if (request.hasFamilyName() && StringUtils.isNotBlank(candidate.getFamilyName())) {
-			familyScore = FuzzyTextUtils.jaroWinklerPercent(request.getFamilyName(), candidate.getFamilyName());
+		if (request.hasFamilyName()) {
+			familyScore = StringUtils.isNotBlank(candidate.getFamilyName()) ? FuzzyTextUtils.jaroWinklerPercent(
+			    request.getFamilyName(), candidate.getFamilyName()) : 0.0d;
 			parts++;
 		}
 		if (parts == 0) {
 			return 0.0d;
 		}
 		if (parts == 1) {
-			return givenScore > 0.0d ? givenScore : familyScore;
+			return request.hasGivenName() ? givenScore : familyScore;
 		}
 		return FuzzyTextUtils.round((givenScore * 0.45d) + (familyScore * 0.55d));
 	}
 	
-	private boolean phoneticNameMatch(FuzzyPatientMatchRequest request, FuzzyPatientCandidate candidate,
+	private boolean namePartsAlignForFuzzyMerge(FuzzyPatientMatchRequest request, FuzzyPatientCandidate candidate,
+	        FuzzyPatientMatchConfig config) {
+		PhoneticAlgorithm algorithm = resolvePhoneticBoostAlgorithm(config);
+		if (request.hasGivenName() && !namePartAligns(request.getGivenName(), candidate.getGivenName(), config, algorithm)) {
+			return false;
+		}
+		return !request.hasFamilyName()
+		        || namePartAligns(request.getFamilyName(), candidate.getFamilyName(), config, algorithm);
+	}
+	
+	private boolean phoneticBoostEligible(FuzzyPatientMatchRequest request, FuzzyPatientCandidate candidate,
 	        FuzzyPatientMatchConfig config) {
 		PhoneticAlgorithm algorithm = resolvePhoneticBoostAlgorithm(config);
 		log.debug("Phonetic name-score boost using algorithm={} from config", algorithm);
+		if (request.hasGivenName() && request.hasFamilyName()) {
+			return namePartAligns(request.getGivenName(), candidate.getGivenName(), config, algorithm)
+			        && namePartAligns(request.getFamilyName(), candidate.getFamilyName(), config, algorithm);
+		}
 		if (phoneticEncodingService.phoneticMatch(request.getName(), candidate.getName(), algorithm)) {
 			return true;
 		}
-		if (request.hasGivenName() && StringUtils.isNotBlank(candidate.getGivenName())
-		        && phoneticEncodingService.phoneticMatch(request.getGivenName(), candidate.getGivenName(), algorithm)) {
+		if (request.hasGivenName() && namePartAligns(request.getGivenName(), candidate.getGivenName(), config, algorithm)) {
 			return true;
 		}
-		return request.hasFamilyName() && StringUtils.isNotBlank(candidate.getFamilyName())
-		        && phoneticEncodingService.phoneticMatch(request.getFamilyName(), candidate.getFamilyName(), algorithm);
+		return request.hasFamilyName()
+		        && namePartAligns(request.getFamilyName(), candidate.getFamilyName(), config, algorithm);
+	}
+	
+	private boolean namePartAligns(String requestPart, String candidatePart, FuzzyPatientMatchConfig config,
+	        PhoneticAlgorithm algorithm) {
+		if (StringUtils.isBlank(requestPart)) {
+			return true;
+		}
+		if (StringUtils.isBlank(candidatePart)) {
+			return false;
+		}
+		double threshold = config != null ? config.getFieldMatchThreshold() : 60.0d;
+		if (FuzzyTextUtils.jaroWinklerPercent(requestPart, candidatePart) >= threshold) {
+			return true;
+		}
+		return phoneticEncodingService.phoneticMatch(requestPart, candidatePart, algorithm);
 	}
 	
 	private PhoneticAlgorithm resolvePhoneticBoostAlgorithm(FuzzyPatientMatchConfig config) {

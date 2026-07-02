@@ -23,7 +23,7 @@ public class FuzzyPatientMatchConfigServiceTest {
 		assertEquals(95, config.getCertainMatchThreshold());
 		assertEquals(80, config.getProbableMatchThreshold());
 		assertEquals(60, config.getPossibleMatchThreshold());
-		assertEquals(0, config.getDobNearMatchDays());
+		assertEquals(1, config.getDobNearMatchDays());
 		assertEquals(DobRepositoryFilterMode.ONLY_DOB_REQUESTS, config.getDobRepositoryFilterMode());
 		assertTrue(config.isCandidateSearchParamEnabled("birthdate"));
 		assertTrue(config.isCandidateSearchParamEnabled("identifier"));
