@@ -3,6 +3,7 @@
 .settings/
 omod/target
 api/target
+.docgen-venv
 bahmnicustomutil.iml
 api/bahmnicustomutil-api.iml
 omod/bahmnicustomutil-omod.iml

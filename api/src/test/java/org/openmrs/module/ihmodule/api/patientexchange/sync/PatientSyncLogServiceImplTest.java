@@ -1,6 +1,7 @@
 package org.openmrs.module.ihmodule.api.patientexchange.sync;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 
@@ -20,7 +21,7 @@ public class PatientSyncLogServiceImplTest {
 	public void createPending_shouldAssignAttemptNumber() throws Exception {
 		PatientSyncLogServiceImpl service = new PatientSyncLogServiceImpl();
 		TrackingRepository repository = new TrackingRepository();
-		repository.nextAttemptNumber = 3;
+		repository.nextAttemptNumberOverride = 3;
 		setField(service, "repository", repository);
 		setField(service, "ihMarkerService", new NoOpMarkerService());
 		
@@ -111,6 +112,59 @@ public class PatientSyncLogServiceImplTest {
 	}
 	
 	@Test
+	public void runSyncCycle_replaysOnlyLatestFailedRowPerPatient() throws Exception {
+		PatientSyncLogServiceImpl service = new PatientSyncLogServiceImpl();
+		TrackingRepository repository = new TrackingRepository();
+		RecordingPatientSyncPush push = new RecordingPatientSyncPush();
+		setField(service, "repository", repository);
+		setField(service, "publishedConfigFhirSyncGateService", new FixedFhirSyncGate(true));
+		
+		PatientSyncLog olderFailed = failedRow(2);
+		olderFailed.setId(39L);
+		olderFailed.setPatientUuid("shared-patient");
+		PatientSyncLog newerFailed = failedRow(4);
+		newerFailed.setId(168L);
+		newerFailed.setPatientUuid("shared-patient");
+		repository.pendingRows = Collections.emptyList();
+		repository.failedRows = java.util.Arrays.asList(olderFailed, newerFailed);
+		repository.nextAttemptNumberOverride = 5;
+		
+		int processed = service.runSyncCycle(10, push);
+		
+		assertEquals(1, processed);
+		assertEquals(1, push.pushCalls);
+		assertNull(olderFailed.getNextRetryAt());
+		assertNull(newerFailed.getNextRetryAt());
+		assertEquals(PatientSyncLogStatus.SUCCESS, findSavedRetryAttempt(repository.savedRows, 5).getStatusEnum());
+	}
+	
+	@Test
+	public void runSyncCycle_reusesExistingPendingAttemptInsteadOfDuplicateInsert() throws Exception {
+		PatientSyncLogServiceImpl service = new PatientSyncLogServiceImpl();
+		TrackingRepository repository = new TrackingRepository();
+		RecordingPatientSyncPush push = new RecordingPatientSyncPush();
+		setField(service, "repository", repository);
+		setField(service, "publishedConfigFhirSyncGateService", new FixedFhirSyncGate(true));
+		
+		PatientSyncLog failed = failedRow(2);
+		failed.setId(39L);
+		failed.setPatientUuid("shared-patient");
+		PatientSyncLog pendingAttempt = pendingRow(3);
+		pendingAttempt.setId(100L);
+		pendingAttempt.setPatientUuid("shared-patient");
+		repository.pendingRows = Collections.emptyList();
+		repository.failedRows = Collections.singletonList(failed);
+		repository.latestByPatient.put("shared-patient", pendingAttempt);
+		
+		int processed = service.runSyncCycle(10, push);
+		
+		assertEquals(1, processed);
+		assertEquals(1, push.pushCalls);
+		assertEquals(PatientSyncLogStatus.SUCCESS, pendingAttempt.getStatusEnum());
+		assertFalse(repository.savedRows.stream().anyMatch(row -> row.getAttemptNumber() > 3));
+	}
+	
+	@Test
 	public void runSyncCycle_replaysDeferredPendingAndFailedRows() throws Exception {
 		PatientSyncLogServiceImpl service = new PatientSyncLogServiceImpl();
 		TrackingRepository repository = new TrackingRepository();
@@ -152,8 +206,12 @@ public class PatientSyncLogServiceImplTest {
 	}
 	
 	private static PatientSyncLog findSavedRetryAttempt(List<PatientSyncLog> savedRows) {
+		return findSavedRetryAttempt(savedRows, 2);
+	}
+	
+	private static PatientSyncLog findSavedRetryAttempt(List<PatientSyncLog> savedRows, int attemptNumber) {
 		for (PatientSyncLog row : savedRows) {
-			if (row.getAttemptNumber() == 2) {
+			if (row.getAttemptNumber() == attemptNumber) {
 				return row;
 			}
 		}
@@ -235,13 +293,15 @@ public class PatientSyncLogServiceImplTest {
 		
 		private final List<PatientSyncLog> savedRows = new ArrayList<PatientSyncLog>();
 		
+		private final java.util.Map<String, PatientSyncLog> latestByPatient = new java.util.HashMap<String, PatientSyncLog>();
+		
 		private List<PatientSyncLog> pendingRows = Collections.emptyList();
 		
 		private List<PatientSyncLog> failedRows = Collections.emptyList();
 		
 		private int findPendingCalls;
 		
-		private int nextAttemptNumber = 1;
+		private int nextAttemptNumberOverride;
 		
 		@Override
 		public void save(PatientSyncLog row) {
@@ -251,11 +311,53 @@ public class PatientSyncLogServiceImplTest {
 			if (!savedRows.contains(row)) {
 				savedRows.add(row);
 			}
+			PatientSyncLog existing = latestByPatient.get(row.getPatientUuid());
+			if (existing == null || isNewerRow(row, existing)) {
+				latestByPatient.put(row.getPatientUuid(), row);
+			}
+		}
+		
+		@Override
+		public void evict(PatientSyncLog row) {
 		}
 		
 		@Override
 		public int nextAttemptNumberForPatient(String patientUuid) {
-			return nextAttemptNumber;
+			if (nextAttemptNumberOverride > 0) {
+				return nextAttemptNumberOverride;
+			}
+			int max = 0;
+			for (PatientSyncLog row : savedRows) {
+				if (patientUuid.equals(row.getPatientUuid())) {
+					max = Math.max(max, row.getAttemptNumber());
+				}
+			}
+			for (PatientSyncLog row : latestByPatient.values()) {
+				if (patientUuid.equals(row.getPatientUuid()) && !savedRows.contains(row)) {
+					max = Math.max(max, row.getAttemptNumber());
+				}
+			}
+			return max + 1;
+		}
+		
+		@Override
+		public PatientSyncLog findLatestByPatientUuid(String patientUuid) {
+			return latestByPatient.get(patientUuid);
+		}
+		
+		private static boolean isNewerRow(PatientSyncLog candidate, PatientSyncLog current) {
+			if (candidate.getAttemptNumber() != current.getAttemptNumber()) {
+				return candidate.getAttemptNumber() > current.getAttemptNumber();
+			}
+			Long candidateId = candidate.getId();
+			Long currentId = current.getId();
+			if (candidateId == null) {
+				return false;
+			}
+			if (currentId == null) {
+				return true;
+			}
+			return candidateId > currentId;
 		}
 		
 		@Override

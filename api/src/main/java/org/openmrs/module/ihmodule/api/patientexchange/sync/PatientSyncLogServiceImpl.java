@@ -2,8 +2,10 @@ package org.openmrs.module.ihmodule.api.patientexchange.sync;
 
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.apache.commons.lang3.StringUtils;
@@ -197,6 +199,7 @@ public class PatientSyncLogServiceImpl implements PatientSyncLogService {
 				}
 			}
 		}
+		due = dedupeFailedRowsByPatient(due);
 		int processed = 0;
 		for (PatientSyncLog failed : due) {
 			PatientSyncLog attempt = null;
@@ -209,11 +212,45 @@ public class PatientSyncLogServiceImpl implements PatientSyncLogService {
 			}
 			catch (Exception ex) {
 				log.error("Patient sync retry failed for log id {}: {}", failed.getId(), ex.getMessage(), ex);
-				PatientSyncLog row = attempt != null ? attempt : failed;
-				markFailed(row, null, PatientSyncLogService.formatSyncFailureMessage(ex), false);
+				if (attempt != null && attempt.getId() == null) {
+					repository.evict(attempt);
+				}
+				markFailed(failed, null, PatientSyncLogService.formatSyncFailureMessage(ex), false);
 			}
 		}
 		return processed;
+	}
+	
+	private List<PatientSyncLog> dedupeFailedRowsByPatient(List<PatientSyncLog> due) {
+		Map<String, PatientSyncLog> latestByPatient = new LinkedHashMap<String, PatientSyncLog>();
+		for (PatientSyncLog row : due) {
+			PatientSyncLog existing = latestByPatient.get(row.getPatientUuid());
+			if (existing == null || isNewerFailedRow(row, existing)) {
+				latestByPatient.put(row.getPatientUuid(), row);
+			}
+		}
+		for (PatientSyncLog row : due) {
+			PatientSyncLog keep = latestByPatient.get(row.getPatientUuid());
+			if (keep != null && keep.getId() != null && !keep.getId().equals(row.getId())) {
+				supersedeRetrySource(row);
+			}
+		}
+		return new ArrayList<PatientSyncLog>(latestByPatient.values());
+	}
+	
+	private static boolean isNewerFailedRow(PatientSyncLog candidate, PatientSyncLog current) {
+		if (candidate.getAttemptNumber() != current.getAttemptNumber()) {
+			return candidate.getAttemptNumber() > current.getAttemptNumber();
+		}
+		Long candidateId = candidate.getId();
+		Long currentId = current.getId();
+		if (candidateId == null) {
+			return false;
+		}
+		if (currentId == null) {
+			return true;
+		}
+		return candidateId > currentId;
 	}
 	
 	private boolean pushPatientForSyncLog(PatientSyncLog pushRow, PatientSyncPushContract pushContract, String operationLabel) {
@@ -231,9 +268,13 @@ public class PatientSyncLogServiceImpl implements PatientSyncLogService {
 	}
 	
 	private PatientSyncLog startRetryAttempt(PatientSyncLog failed) {
+		PatientSyncLog latest = repository.findLatestByPatientUuid(failed.getPatientUuid());
+		if (latest != null && isAwaitingPush(latest)) {
+			return latest;
+		}
 		PatientSyncLog attempt = new PatientSyncLog();
 		attempt.setPatientUuid(failed.getPatientUuid());
-		attempt.setAttemptNumber(failed.getAttemptNumber() + 1);
+		attempt.setAttemptNumber(repository.nextAttemptNumberForPatient(failed.getPatientUuid()));
 		attempt.setStatusEnum(PatientSyncLogStatus.PENDING);
 		Date now = new Date();
 		attempt.setStartedAt(now);
@@ -241,6 +282,10 @@ public class PatientSyncLogServiceImpl implements PatientSyncLogService {
 		attempt.setUpdatedAt(now);
 		repository.save(attempt);
 		return attempt;
+	}
+	
+	private static boolean isAwaitingPush(PatientSyncLog row) {
+		return row.getStatusEnum() == PatientSyncLogStatus.PENDING && row.getCompletedAt() == null;
 	}
 	
 	private void supersedeRetrySource(PatientSyncLog source) {
