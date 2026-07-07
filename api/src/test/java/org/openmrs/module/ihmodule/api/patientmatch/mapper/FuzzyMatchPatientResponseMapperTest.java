@@ -55,10 +55,11 @@ public class FuzzyMatchPatientResponseMapperTest {
 	}
 	
 	@Test
-	public void mapPersonAddress_shouldMapStateAndPostalCodeSeparatelyFromLines() throws Exception {
+	public void mapPersonAddress_shouldMapAddress6ToSecondLineAndPostalCodeFromPostalCodeField() throws Exception {
 		PersonAddress personAddress = new PersonAddress();
 		personAddress.setAddress1("Geyr");
 		personAddress.setAddress6("656564");
+		personAddress.setPostalCode("1234");
 		personAddress.setStateProvince("Arunachal Pradesh");
 		personAddress.setCountyDistrict("NA");
 		personAddress.setCountry("India");
@@ -67,18 +68,54 @@ public class FuzzyMatchPatientResponseMapperTest {
 		
 		assertNotNull(dto);
 		assertEquals("Arunachal Pradesh", dto.getStateProvince());
-		assertEquals("656564", dto.getPostalCode());
+		assertEquals("1234", dto.getPostalCode());
 		
 		Patient patient = new Patient();
 		invokeApplyStructuredAddress(patient, dto, null);
 		
 		Address address = patient.getAddress().get(0);
-		assertEquals(1, address.getLine().size());
+		assertEquals(2, address.getLine().size());
 		assertEquals("Geyr", address.getLine().get(0).getValue());
+		assertEquals("656564", address.getLine().get(1).getValue());
 		assertEquals("Arunachal Pradesh", address.getState());
-		assertEquals("656564", address.getPostalCode());
+		assertEquals("1234", address.getPostalCode());
 		assertEquals("India", address.getCountry());
 		assertEquals("NA", address.getDistrict());
+	}
+	
+	@Test
+	public void applyStructuredAddress_shouldMapAddress6ToSecondLineWhenPresent() throws Exception {
+		AddressAPIDTO dto = new AddressAPIDTO();
+		dto.setAddress1("Test");
+		dto.setAddress6("Village Area");
+		dto.setPostalCode("1234");
+		dto.setCountry("India");
+		
+		Patient patient = new Patient();
+		invokeApplyStructuredAddress(patient, dto, null);
+		
+		Address address = patient.getAddress().get(0);
+		assertEquals(2, address.getLine().size());
+		assertEquals("Test", address.getLine().get(0).getValue());
+		assertEquals("Village Area", address.getLine().get(1).getValue());
+		assertEquals("1234", address.getPostalCode());
+		assertEquals("India", address.getCountry());
+	}
+	
+	@Test
+	public void applyStructuredAddress_shouldEmitEmptyStringForMissingAddress6() throws Exception {
+		AddressAPIDTO dto = new AddressAPIDTO();
+		dto.setAddress1("Test");
+		dto.setPostalCode("1234");
+		dto.setCountry("India");
+		
+		Patient patient = new Patient();
+		invokeApplyStructuredAddress(patient, dto, null);
+		
+		Address address = patient.getAddress().get(0);
+		assertEquals(2, address.getLine().size());
+		assertEquals("Test", address.getLine().get(0).getValue());
+		assertEquals("", address.getLine().get(1).getValue());
 	}
 	
 	@Test
@@ -96,8 +133,10 @@ public class FuzzyMatchPatientResponseMapperTest {
 		invokeApplyStructuredAddress(patient, dto, null);
 		
 		Address address = patient.getAddress().get(0);
+		assertEquals(3, address.getLine().size());
 		assertEquals("Line 1", address.getLine().get(0).getValue());
-		assertEquals("Line 2", address.getLine().get(1).getValue());
+		assertEquals("", address.getLine().get(1).getValue());
+		assertEquals("Line 2", address.getLine().get(2).getValue());
 		assertEquals("Dhaka", address.getCity());
 		assertEquals("Arunachal Pradesh", address.getState());
 		assertEquals("1207", address.getPostalCode());

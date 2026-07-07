@@ -234,11 +234,7 @@ public class FuzzyMatchPatientResponseMapper implements FuzzyMatchPatientRespons
 		if (personAddress == null) {
 			return null;
 		}
-		String postalCode = trimToNull(personAddress.getPostalCode());
-		if (postalCode != null) {
-			return postalCode;
-		}
-		return trimToNull(personAddress.getAddress6());
+		return trimToNull(personAddress.getPostalCode());
 	}
 	
 	private void applyStructuredAddress(Patient patient, AddressAPIDTO addressDto, String fallbackText) {
@@ -266,6 +262,7 @@ public class FuzzyMatchPatientResponseMapper implements FuzzyMatchPatientRespons
 	private static Address toFhirAddress(AddressAPIDTO dto) {
 		Address address = new Address();
 		addLine(address, dto.getAddress1());
+		addAddress6Line(address, dto.getAddress6());
 		addLine(address, dto.getAddress2());
 		addLine(address, dto.getAddress3());
 		address.setCity(trimToNull(dto.getCityVillage()));
@@ -280,11 +277,7 @@ public class FuzzyMatchPatientResponseMapper implements FuzzyMatchPatientRespons
 		if (dto == null) {
 			return null;
 		}
-		String postalCode = trimToNull(dto.getPostalCode());
-		if (postalCode != null) {
-			return postalCode;
-		}
-		return trimToNull(dto.getAddress6());
+		return trimToNull(dto.getPostalCode());
 	}
 	
 	private static void addLine(Address address, String value) {
@@ -292,6 +285,15 @@ public class FuzzyMatchPatientResponseMapper implements FuzzyMatchPatientRespons
 		if (line != null && !isPlaceholderAddressToken(line)) {
 			address.addLine(line);
 		}
+	}
+	
+	private static void addAddress6Line(Address address, String value) {
+		String line = trimToNull(value);
+		if (line == null || isPlaceholderAddressToken(line)) {
+			address.addLine("");
+			return;
+		}
+		address.addLine(line);
 	}
 	
 	private static AddressAPIDTO tupleToAddressDto(Tuple row) {
@@ -306,9 +308,6 @@ public class FuzzyMatchPatientResponseMapper implements FuzzyMatchPatientRespons
 		dto.setStateProvince(resolveStateProvinceFromDto(dto, row));
 		dto.setCountry(tupleString(row, "country"));
 		dto.setPostalCode(tupleString(row, "postal_code", "postalCode"));
-		if (dto.getPostalCode() == null) {
-			dto.setPostalCode(trimToNull(dto.getAddress6()));
-		}
 		dto.setCountyDistrict(tupleString(row, "county_district", "countyDistrict"));
 		return hasAnyAddressField(dto) ? dto : null;
 	}

@@ -22,6 +22,12 @@ public class PatientSyncLogRepository {
 		sessionFactory.getCurrentSession().saveOrUpdate(row);
 	}
 	
+	public void evict(PatientSyncLog row) {
+		if (row != null) {
+			sessionFactory.getCurrentSession().evict(row);
+		}
+	}
+	
 	public PatientSyncLog findById(Long id) {
 		if (id == null) {
 			return null;
