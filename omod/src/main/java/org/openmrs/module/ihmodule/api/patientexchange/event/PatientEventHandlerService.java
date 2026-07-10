@@ -8,6 +8,7 @@ import org.openmrs.module.DaemonToken;
 import org.openmrs.module.ihmodule.APIfordoctorUIActivator;
 import org.openmrs.module.ihmodule.api.patientexchange.domain.FhirResponse;
 import org.openmrs.module.ihmodule.api.patientexchange.scheduler.DataSendToFHIR;
+import org.openmrs.module.ihmodule.api.patientexchange.service.LocalPatientMpiUpdateService;
 import org.openmrs.module.ihmodule.api.patientexchange.sync.PatientSyncLogService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,6 +32,9 @@ public class PatientEventHandlerService {
 	
 	@Autowired
 	private PatientSyncLogService patientSyncLogService;
+	
+	@Autowired
+	private LocalPatientMpiUpdateService localPatientMpiUpdateService;
 	
 	@Autowired
 	@Qualifier("patientEventTaskExecutor")
@@ -134,6 +138,12 @@ public class PatientEventHandlerService {
 		try {
 			if (!Context.isSessionOpen()) {
 				Context.openSession();
+			}
+			if (localPatientMpiUpdateService.localPatientHasMpiAndSourcePatientId(patientUuid)) {
+				log.debug(
+				    "Skipping patient_sync_log daemon-unavailable record for patientUuid={} because MPI and Source Patient Id are already present",
+				    patientUuid);
+				return;
 			}
 			org.openmrs.module.ihmodule.api.patientexchange.sync.PatientSyncLog row = patientSyncLogService
 			        .createPending(patientUuid);

@@ -53,6 +53,28 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 	 * {@code DataSendToFHIR#hasMPI} semantics (null-safe; no extra heuristics) so operator
 	 * endpoints do not diverge from the scheduler.
 	 */
+	/**
+	 * {@code true} when the facility patient already has active MPI and Source Patient Id rows with
+	 * non-blank values. Used to skip {@code patient_sync_log} on routine updates after initial
+	 * central sync.
+	 */
+	public boolean localPatientHasMpiAndSourcePatientId(String patientUuid) {
+		if (StringUtils.isBlank(patientUuid)) {
+			return false;
+		}
+		try {
+			org.openmrs.Patient patient = Context.getPatientService().getPatientByUuid(patientUuid.trim());
+			return localPatientHasMpiAndSourcePatientId(patient);
+		}
+		catch (Exception ex) {
+			return false;
+		}
+	}
+	
+	public boolean localPatientHasMpiAndSourcePatientId(org.openmrs.Patient patient) {
+		return hasNonBlankMpiIdentifier(patient) && hasNonBlankSourcePatientId(patient);
+	}
+	
 	public boolean patientHasMpiPerSchedulerExportRule(Patient patient) {
 		if (patient == null || !patient.hasIdentifier()) {
 			return false;
@@ -319,7 +341,17 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 	}
 	
 	private boolean patientHasMpiOnNativePatient(org.openmrs.Patient patient) {
-		return findExistingMpiIdentifier(patient) != null;
+		return hasNonBlankMpiIdentifier(patient);
+	}
+	
+	private boolean hasNonBlankMpiIdentifier(org.openmrs.Patient patient) {
+		PatientIdentifier mpi = findExistingMpiIdentifier(patient);
+		return mpi != null && StringUtils.isNotBlank(mpi.getIdentifier());
+	}
+	
+	private boolean hasNonBlankSourcePatientId(org.openmrs.Patient patient) {
+		PatientIdentifier source = findExistingSourcePatientIdIdentifier(patient);
+		return source != null && StringUtils.isNotBlank(source.getIdentifier());
 	}
 	
 	private PatientIdentifier findExistingMpiIdentifier(org.openmrs.Patient patient) {

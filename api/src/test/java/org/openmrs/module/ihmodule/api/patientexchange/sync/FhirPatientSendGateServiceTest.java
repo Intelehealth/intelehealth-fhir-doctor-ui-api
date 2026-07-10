@@ -8,8 +8,45 @@ import java.lang.reflect.Field;
 
 import org.junit.Test;
 import org.openmrs.module.ihmodule.api.patientexchange.domain.FhirResponse;
+import org.openmrs.module.ihmodule.api.patientexchange.service.LocalPatientMpiUpdateService;
 
 public class FhirPatientSendGateServiceTest {
+	
+	@Test
+	public void handlePatientSend_shouldSkipSyncLogWhenMpiAndSourcePatientIdExist() throws Exception {
+		FhirPatientSendGateService gate = new FhirPatientSendGateService();
+		RecordingSyncLogService syncLogService = new RecordingSyncLogService();
+		setField(gate, "publishedConfigFhirSyncGateService", new FixedFhirSyncGate(true));
+		setField(gate, "patientSyncLogService", syncLogService);
+		setField(gate, "localPatientMpiUpdateService", new FixedCentralSyncIdentifiers(true));
+		
+		FhirResponse central = new FhirResponse();
+		central.setStatusCode("200");
+		central.setMessage("updated");
+		
+		FhirResponse response = gate.handlePatientSend("patient-linked", uuid -> central);
+		
+		assertEquals("200", response.getStatusCode());
+		assertEquals(0, syncLogService.createPendingCalls);
+		assertEquals(0, syncLogService.completePendingPushCalls);
+	}
+	
+	@Test
+	public void handlePatientSend_shouldDeferWithoutSyncLogWhenIdentifiersExistAndFhirSyncDisabled() throws Exception {
+		FhirPatientSendGateService gate = new FhirPatientSendGateService();
+		RecordingSyncLogService syncLogService = new RecordingSyncLogService();
+		setField(gate, "publishedConfigFhirSyncGateService", new FixedFhirSyncGate(false));
+		setField(gate, "patientSyncLogService", syncLogService);
+		setField(gate, "localPatientMpiUpdateService", new FixedCentralSyncIdentifiers(true));
+		
+		FhirResponse response = gate.handlePatientSend("patient-linked", uuid -> {
+			throw new AssertionError("executor must not run when sync disabled");
+		});
+		
+		assertEquals(FhirPatientSendGateService.SKIPPED_STATUS, response.getStatusCode());
+		assertEquals(0, syncLogService.createPendingCalls);
+		assertEquals(0, syncLogService.markDeferredCalls);
+	}
 	
 	@Test
 	public void handlePatientSend_shouldDeferWhenFhirSyncDisabled() throws Exception {
@@ -17,6 +54,7 @@ public class FhirPatientSendGateServiceTest {
 		RecordingSyncLogService syncLogService = new RecordingSyncLogService();
 		setField(gate, "publishedConfigFhirSyncGateService", new FixedFhirSyncGate(false));
 		setField(gate, "patientSyncLogService", syncLogService);
+		setField(gate, "localPatientMpiUpdateService", new FixedCentralSyncIdentifiers(false));
 		
 		FhirResponse response = gate.handlePatientSend("patient-1", uuid -> {
 			throw new AssertionError("executor must not run when sync disabled");
@@ -35,6 +73,7 @@ public class FhirPatientSendGateServiceTest {
 		RecordingSyncLogService syncLogService = new RecordingSyncLogService();
 		setField(gate, "publishedConfigFhirSyncGateService", new FixedFhirSyncGate(true));
 		setField(gate, "patientSyncLogService", syncLogService);
+		setField(gate, "localPatientMpiUpdateService", new FixedCentralSyncIdentifiers(false));
 		
 		FhirResponse central = new FhirResponse();
 		central.setStatusCode("200");
@@ -54,6 +93,7 @@ public class FhirPatientSendGateServiceTest {
 		RecordingSyncLogService syncLogService = new RecordingSyncLogService();
 		setField(gate, "publishedConfigFhirSyncGateService", new FixedFhirSyncGate(true));
 		setField(gate, "patientSyncLogService", syncLogService);
+		setField(gate, "localPatientMpiUpdateService", new FixedCentralSyncIdentifiers(false));
 		
 		FhirResponse central = new FhirResponse();
 		central.setStatusCode("500");
@@ -72,6 +112,7 @@ public class FhirPatientSendGateServiceTest {
 		RecordingSyncLogService syncLogService = new RecordingSyncLogService();
 		setField(gate, "publishedConfigFhirSyncGateService", new FixedFhirSyncGate(true));
 		setField(gate, "patientSyncLogService", syncLogService);
+		setField(gate, "localPatientMpiUpdateService", new FixedCentralSyncIdentifiers(false));
 		
 		try {
 			gate.handlePatientSend("patient-4", uuid -> {
@@ -102,6 +143,20 @@ public class FhirPatientSendGateServiceTest {
 		@Override
 		public boolean isFhirSyncEnabled() {
 			return enabled;
+		}
+	}
+	
+	static class FixedCentralSyncIdentifiers extends LocalPatientMpiUpdateService {
+		
+		private final boolean linked;
+		
+		FixedCentralSyncIdentifiers(boolean linked) {
+			this.linked = linked;
+		}
+		
+		@Override
+		public boolean localPatientHasMpiAndSourcePatientId(String patientUuid) {
+			return linked;
 		}
 	}
 	

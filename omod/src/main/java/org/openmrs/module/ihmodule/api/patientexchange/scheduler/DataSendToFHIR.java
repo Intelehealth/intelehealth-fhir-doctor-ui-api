@@ -669,6 +669,12 @@ public class DataSendToFHIR extends IHConstant implements PatientSyncPushContrac
 			return;
 		}
 		ensureDependencies();
+		if (localPatientMpiUpdateService.localPatientHasMpiAndSourcePatientId(patientUuid)) {
+			LOGGER.debug(
+			    "Skipping patient_sync_log failure record for patientUuid={} because MPI and Source Patient Id are already present",
+			    patientUuid);
+			return;
+		}
 		try {
 			PatientSyncLog row = patientSyncLogService.createPending(patientUuid.trim());
 			patientSyncLogService.markFailed(row, null, errorMessage, false);

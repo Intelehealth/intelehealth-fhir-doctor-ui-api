@@ -5,6 +5,7 @@ import java.text.ParseException;
 
 import org.apache.commons.lang3.StringUtils;
 import org.openmrs.module.ihmodule.api.patientexchange.domain.FhirResponse;
+import org.openmrs.module.ihmodule.api.patientexchange.service.LocalPatientMpiUpdateService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,12 +35,23 @@ public class FhirPatientSendGateService {
 	@Autowired
 	private PatientSyncLogService patientSyncLogService;
 	
+	@Autowired
+	private LocalPatientMpiUpdateService localPatientMpiUpdateService;
+	
 	public FhirResponse handlePatientSend(String patientUuid, FhirPatientSendExecutor executor) throws ParseException,
 	        DataFormatException, ConfigurationException, IOException {
 		if (StringUtils.isBlank(patientUuid)) {
 			throw new IllegalArgumentException("patientUuid is required");
 		}
 		String uuid = patientUuid.trim();
+		if (localPatientMpiUpdateService.localPatientHasMpiAndSourcePatientId(uuid)) {
+			log.debug("Skipping patient_sync_log for patientUuid={} because MPI and Source Patient Id are already present",
+			    uuid);
+			if (!publishedConfigFhirSyncGateService.isFhirSyncEnabled()) {
+				return buildSkippedResponse(uuid);
+			}
+			return executor.send(uuid);
+		}
 		PatientSyncLog pending = patientSyncLogService.createPending(uuid);
 		if (!publishedConfigFhirSyncGateService.isFhirSyncEnabled()) {
 			patientSyncLogService.markDeferred(pending, SKIPPED_MESSAGE);
