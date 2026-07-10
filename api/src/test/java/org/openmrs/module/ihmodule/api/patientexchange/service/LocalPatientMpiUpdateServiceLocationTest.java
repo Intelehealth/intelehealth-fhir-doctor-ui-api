@@ -7,6 +7,7 @@ import org.junit.Test;
 import org.openmrs.Location;
 import org.openmrs.PatientIdentifier;
 import org.openmrs.PatientIdentifierType;
+import org.openmrs.User;
 
 /**
  * Unit tests for preferred OpenMRS ID location alignment (no OpenMRS context required).
@@ -57,6 +58,41 @@ public class LocalPatientMpiUpdateServiceLocationTest {
 	}
 	
 	@Test
+	public void applyResolvedCreator_insert_alwaysSetsCreator() {
+		PatientIdentifier identifier = new PatientIdentifier();
+		User creator = user("creator-uuid");
+		LocalPatientMpiUpdateService.applyResolvedCreatorForTest(identifier, creator, false, true);
+		assertEquals(creator, identifier.getCreator());
+	}
+	
+	@Test
+	public void applyResolvedCreator_update_alignsWhenFromPreferredOpenMrsId() {
+		PatientIdentifier identifier = new PatientIdentifier();
+		identifier.setCreator(user("old-creator"));
+		User creator = user("openmrs-id-creator");
+		LocalPatientMpiUpdateService.applyResolvedCreatorForTest(identifier, creator, true, true);
+		assertEquals(creator, identifier.getCreator());
+	}
+	
+	@Test
+	public void applyResolvedCreator_update_keepsExistingWhenNotFromPreferredOpenMrsId() {
+		PatientIdentifier identifier = new PatientIdentifier();
+		User existing = user("existing-creator");
+		identifier.setCreator(existing);
+		User creator = user("other-creator");
+		LocalPatientMpiUpdateService.applyResolvedCreatorForTest(identifier, creator, true, false);
+		assertEquals(existing, identifier.getCreator());
+	}
+	
+	@Test
+	public void applyResolvedCreator_update_backfillsNullCreator() {
+		PatientIdentifier identifier = new PatientIdentifier();
+		User creator = user("openmrs-id-creator");
+		LocalPatientMpiUpdateService.applyResolvedCreatorForTest(identifier, creator, true, false);
+		assertEquals(creator, identifier.getCreator());
+	}
+	
+	@Test
 	public void requiresExplicitLocationUuid_falseWhenPreferredOpenMrsIdHasLocation() {
 		org.openmrs.Patient patient = new org.openmrs.Patient();
 		PatientIdentifierType type = new PatientIdentifierType();
@@ -74,5 +110,11 @@ public class LocalPatientMpiUpdateServiceLocationTest {
 		Location location = new Location();
 		location.setUuid(uuid);
 		return location;
+	}
+	
+	private static User user(String uuid) {
+		User user = new User();
+		user.setUuid(uuid);
+		return user;
 	}
 }

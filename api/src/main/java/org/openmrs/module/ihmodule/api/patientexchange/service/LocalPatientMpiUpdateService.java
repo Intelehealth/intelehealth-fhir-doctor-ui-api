@@ -11,6 +11,7 @@ import org.hl7.fhir.r4.model.Patient;
 import org.openmrs.Location;
 import org.openmrs.PatientIdentifier;
 import org.openmrs.PatientIdentifierType;
+import org.openmrs.User;
 import org.openmrs.api.context.Context;
 import org.openmrs.module.ihmodule.api.patientexchange.api.dto.PatientIdentifierSnapshot;
 import org.openmrs.module.ihmodule.api.patientexchange.api.dto.SourcePatientIdentifierUpdateResponse;
@@ -227,12 +228,13 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 	}
 	
 	private static void addSourcePatientIdentifier(org.openmrs.Patient patient, String idVal,
-	        PatientIdentifierType sourceIdType, Location location) {
+	        PatientIdentifierType sourceIdType, Location location, User creator) {
 		PatientIdentifier pid = new PatientIdentifier();
 		pid.setIdentifier(idVal);
 		pid.setIdentifierType(sourceIdType);
 		pid.setLocation(location);
 		pid.setPreferred(false);
+		applyResolvedCreator(pid, creator, false, creator != null);
 		patient.addIdentifier(pid);
 	}
 	
@@ -268,6 +270,7 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 		String mpiVal = mpiIdentifierValue.trim();
 		PatientIdentifierType mpiType = resolveMpiIdentifierType();
 		IdentifierLocationResolution locationResolution = resolveIdentifierLocationForPatient(patient, null);
+		User openMrsIdCreator = resolveCreatorFromPatientPreferredOpenMrsIdentifier(patient);
 		List<PatientIdentifier> active = collectActiveMpiIdentifiers(patient);
 		PatientIdentifier canonical = chooseCanonicalIdentifier(active);
 		voidExtraMpiIdentifiers(patient, canonical);
@@ -278,11 +281,13 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 			canonical.setIdentifier(mpiVal);
 			canonical.setIdentifierType(mpiType);
 			applyResolvedLocation(canonical, locationResolution, true);
+			applyResolvedCreator(canonical, openMrsIdCreator, true, openMrsIdCreator != null);
 		} else {
 			PatientIdentifier mpi = new PatientIdentifier();
 			mpi.setIdentifier(mpiVal);
 			mpi.setIdentifierType(mpiType);
 			applyResolvedLocation(mpi, locationResolution, false);
+			applyResolvedCreator(mpi, openMrsIdCreator, false, openMrsIdCreator != null);
 			mpi.setPreferred(false);
 			patient.addIdentifier(mpi);
 		}
@@ -297,6 +302,7 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 		String idVal = centralLogicalId.trim();
 		PatientIdentifierType sourceIdType = resolveSourcePatientIdIdentifierType();
 		IdentifierLocationResolution locationResolution = resolveIdentifierLocationForPatient(patient, locationUuid);
+		User openMrsIdCreator = resolveCreatorFromPatientPreferredOpenMrsIdentifier(patient);
 		List<PatientIdentifier> active = collectActiveCentralSourceLinkIdentifiers(patient, idVal);
 		PatientIdentifier canonical = chooseCanonicalSourceLinkIdentifier(active);
 		voidExtraCentralSourceLinkIdentifiers(patient, canonical, idVal);
@@ -304,10 +310,11 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 			canonical.setIdentifier(idVal);
 			canonical.setIdentifierType(sourceIdType);
 			applyResolvedLocation(canonical, locationResolution, true);
+			applyResolvedCreator(canonical, openMrsIdCreator, true, openMrsIdCreator != null);
 			return true;
 		}
 		addSourcePatientIdentifier(patient, idVal, sourceIdType, locationResolution != null ? locationResolution.location
-		        : null);
+		        : null, openMrsIdCreator);
 		return false;
 	}
 	
@@ -596,6 +603,14 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 		return openMrsId.getLocation();
 	}
 	
+	private User resolveCreatorFromPatientPreferredOpenMrsIdentifier(org.openmrs.Patient patient) {
+		PatientIdentifier openMrsId = findPreferredOpenMrsIdentifier(patient);
+		if (openMrsId == null || openMrsId.getCreator() == null) {
+			return null;
+		}
+		return openMrsId.getCreator();
+	}
+	
 	private PatientIdentifier findPreferredOpenMrsIdentifier(org.openmrs.Patient patient) {
 		if (patient == null || patient.getIdentifiers() == null) {
 			return null;
@@ -630,6 +645,11 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 		applyResolvedLocation(identifier, resolution, isUpdate);
 	}
 	
+	static void applyResolvedCreatorForTest(PatientIdentifier identifier, User creator, boolean isUpdate,
+	        boolean fromPreferredOpenMrsIdentifier) {
+		applyResolvedCreator(identifier, creator, isUpdate, fromPreferredOpenMrsIdentifier);
+	}
+	
 	boolean requiresExplicitLocationUuidForNewSourceIdentifierForTest(org.openmrs.Patient patient) {
 		return requiresExplicitLocationUuidForNewSourceIdentifier(patient);
 	}
@@ -647,6 +667,26 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 			identifier.setLocation(resolution.location);
 		} else if (identifier.getLocation() == null) {
 			identifier.setLocation(resolution.location);
+		}
+	}
+	
+	/**
+	 * Insert: always apply creator from preferred OpenMRS ID when present. Update: align when the
+	 * creator comes from preferred OpenMRS ID, or backfill when the row has no creator yet.
+	 */
+	private static void applyResolvedCreator(PatientIdentifier identifier, User creator, boolean isUpdate,
+	        boolean fromPreferredOpenMrsIdentifier) {
+		if (identifier == null || creator == null) {
+			return;
+		}
+		if (!isUpdate) {
+			identifier.setCreator(creator);
+			return;
+		}
+		if (fromPreferredOpenMrsIdentifier) {
+			identifier.setCreator(creator);
+		} else if (identifier.getCreator() == null) {
+			identifier.setCreator(creator);
 		}
 	}
 	
