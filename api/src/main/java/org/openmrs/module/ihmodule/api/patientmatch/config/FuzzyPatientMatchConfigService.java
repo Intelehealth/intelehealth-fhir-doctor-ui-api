@@ -85,7 +85,7 @@ public class FuzzyPatientMatchConfigService {
 		String nameAlgorithm = resolveString("intelehealth.fhir.patient.match.algorithm.name", "jaro_winkler");
 		String phoneAlgorithm = resolveString("intelehealth.fhir.patient.match.algorithm.phone", "levenshtein");
 		String addressAlgorithm = resolveString("intelehealth.fhir.patient.match.algorithm.address", "token_jaccard");
-		boolean phoneticBoostEnabled = resolveBoolean("intelehealth.fhir.patient.match.algorithm.phonetic.boost.enabled", true);
+		boolean phoneticBoostEnabled = resolveBoolean("intelehealth.fhir.patient.match.algorithm.phonetic.boost.enabled", false);
 		String phoneticBoostAlgorithm = resolveString("intelehealth.fhir.patient.match.algorithm.phonetic.boost",
 		    "DOUBLE_METAPHONE");
 		int dobNearMatchDays = Math.max(0, resolveInt("intelehealth.fhir.patient.match.dob.near.match.days", 0));
@@ -337,8 +337,7 @@ public class FuzzyPatientMatchConfigService {
 			String algorithm = normalizeAlgorithm(extractAlgorithm(rule));
 			if ("name".equals(fieldName) && algorithm != null) {
 				if (PhoneticAlgorithm.isPhonetic(algorithm)) {
-					resolved.setPhoneticBoostEnabled(true);
-					if (resolved.getPhoneticBoostAlgorithm() == null) {
+					if (resolved.isPhoneticBoostEnabled() && resolved.getPhoneticBoostAlgorithm() == null) {
 						resolved.setPhoneticBoostAlgorithm(algorithm);
 						log.info("Resolved phonetic boost algorithm from match field rule '{}': {}", rule.getName(),
 						    algorithm);

@@ -16,6 +16,7 @@ public class FuzzyPatientMatchConfigServiceTest {
 		FuzzyPatientMatchConfig config = new FuzzyPatientMatchConfigService().getConfig();
 		
 		assertTrue(config.isEnabled());
+		assertEquals(false, config.isPhoneticBoostEnabled());
 		assertTrue(config.getThreshold() > 0);
 		assertTrue(config.getMaxCandidates() >= 50);
 		assertTrue(config.isFieldEnabled("name"));
