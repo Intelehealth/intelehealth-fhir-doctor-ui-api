@@ -21,6 +21,8 @@ public class FuzzyPatientMatchConfigServiceTest {
 		assertTrue(config.getMaxCandidates() >= 50);
 		assertTrue(config.isFieldEnabled("name"));
 		assertTrue(config.getFieldWeight("name") > 0.0d);
+		assertEquals(0.45d, config.getGivenNamePartWeight(), 0.0001d);
+		assertEquals(0.45d, config.getFamilyNamePartWeight(), 0.0001d);
 		assertEquals(95, config.getCertainMatchThreshold());
 		assertEquals(80, config.getProbableMatchThreshold());
 		assertEquals(60, config.getPossibleMatchThreshold());

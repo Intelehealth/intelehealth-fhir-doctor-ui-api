@@ -2,8 +2,6 @@ package org.openmrs.module.ihmodule.api.patientexchange.service;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 
 import org.apache.commons.lang3.StringUtils;
 import org.hl7.fhir.r4.model.Identifier;
@@ -16,6 +14,7 @@ import org.openmrs.api.context.Context;
 import org.openmrs.module.ihmodule.api.patientexchange.api.dto.PatientIdentifierSnapshot;
 import org.openmrs.module.ihmodule.api.patientexchange.api.dto.SourcePatientIdentifierUpdateResponse;
 import org.openmrs.module.ihmodule.api.patientexchange.event.FhirSyncSuppressionContext;
+import org.openmrs.module.ihmodule.api.patientexchange.sync.PatientUuidLock;
 import org.openmrs.module.ihmodule.api.patientexchange.utils.IHConstant;
 import org.springframework.stereotype.Service;
 
@@ -45,8 +44,6 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 	
 	private static final String OPENMRS_DEFAULT_IDENTIFIER_LOCATION_UUID = "8d6c993e-c2cc-11de-8d13-0010c6dffd0f";
 	
-	private static final ConcurrentMap<String, Object> PATIENT_IDENTIFIER_UPSERT_LOCKS = new ConcurrentHashMap<String, Object>();
-	
 	/**
 	 * Same rule as patient export scheduling: {@code true} when any identifier's type text equals
 	 * {@code intelehealth.fhir.resource.identifier.name} ({@link #globalIdentifierName}), matching
@@ -73,6 +70,40 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 	
 	public boolean localPatientHasMpiAndSourcePatientId(org.openmrs.Patient patient) {
 		return hasNonBlankMpiIdentifier(patient) && hasNonBlankSourcePatientId(patient);
+	}
+	
+	/**
+	 * Active MPI value on the facility patient, or {@code null} when absent.
+	 */
+	public String findActiveMpiIdentifierValue(String patientUuid) {
+		if (StringUtils.isBlank(patientUuid)) {
+			return null;
+		}
+		try {
+			org.openmrs.Patient patient = Context.getPatientService().getPatientByUuid(patientUuid.trim());
+			PatientIdentifier mpi = findExistingMpiIdentifier(patient);
+			return mpi != null ? StringUtils.trimToNull(mpi.getIdentifier()) : null;
+		}
+		catch (Exception ex) {
+			return null;
+		}
+	}
+	
+	/**
+	 * Active Source Patient Id value on the facility patient, or {@code null} when absent.
+	 */
+	public String findActiveCentralSourcePatientIdValue(String patientUuid) {
+		if (StringUtils.isBlank(patientUuid)) {
+			return null;
+		}
+		try {
+			org.openmrs.Patient patient = Context.getPatientService().getPatientByUuid(patientUuid.trim());
+			PatientIdentifier source = findExistingSourcePatientIdIdentifier(patient);
+			return source != null ? StringUtils.trimToNull(source.getIdentifier()) : null;
+		}
+		catch (Exception ex) {
+			return null;
+		}
 	}
 	
 	public boolean patientHasMpiPerSchedulerExportRule(Patient patient) {
@@ -236,17 +267,7 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 	}
 	
 	private static void runWithPatientIdentifierLock(String patientUuid, Runnable work) {
-		Object lock = PATIENT_IDENTIFIER_UPSERT_LOCKS.computeIfAbsent(patientUuid,
-		    new java.util.function.Function<String, Object>() {
-			    
-			    @Override
-			    public Object apply(String key) {
-				    return new Object();
-			    }
-		    });
-		synchronized (lock) {
-			work.run();
-		}
+		PatientUuidLock.runWithLock(patientUuid, work);
 	}
 	
 	private static void addSourcePatientIdentifier(org.openmrs.Patient patient, String idVal,
@@ -266,6 +287,9 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 			@Override
 			public void run() {
 				Context.getPatientService().savePatient(patient);
+				if (Context.isSessionOpen()) {
+					Context.flushSession();
+				}
 			}
 		});
 	}

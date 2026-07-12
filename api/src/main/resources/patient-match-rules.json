@@ -104,14 +104,14 @@
     "enabled": true,
     "maxCandidates": 500,
     "fieldMatchThreshold": 60,
-    "phoneticBoostEnabled": true,
+    "phoneticBoostEnabled": false,
     "phoneticBoostAlgorithm": "DOUBLE_METAPHONE",
     "dobNearMatchDays": 1,
     "dobRepositoryFilterMode": "ONLY_DOB_REQUESTS",
     "matchGradeThresholds": {
       "certain": 0.95,
       "probable": 0.80,
-      "possible": 0.60
+      "possible": 0.50
     }
   }
 }

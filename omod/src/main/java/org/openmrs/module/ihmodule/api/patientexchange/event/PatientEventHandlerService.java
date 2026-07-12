@@ -80,7 +80,7 @@ public class PatientEventHandlerService {
 		afterCommitWork.run();
 	}
 	
-	private void processEvent(PatientEventType eventType, String patientUuid) {
+	private synchronized void processEvent(PatientEventType eventType, String patientUuid) {
 		if (!configuration.shouldProcess(eventType)) {
 			return;
 		}

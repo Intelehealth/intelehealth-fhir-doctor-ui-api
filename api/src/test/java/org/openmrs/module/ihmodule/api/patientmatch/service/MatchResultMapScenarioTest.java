@@ -143,6 +143,6 @@ public class MatchResultMapScenarioTest {
 		        base.getPhoneAlgorithm(), base.getAddressAlgorithm(), base.isPhoneticBoostEnabled(),
 		        base.getPhoneticBoostAlgorithm(), base.getDobNearMatchDays(), 95, 80, 60,
 		        DobRepositoryFilterMode.ONLY_DOB_REQUESTS, new LinkedHashSet<String>(enabled.keySet()), rules, enabled,
-		        weights);
+		        weights, base.getGivenNamePartWeight(), base.getFamilyNamePartWeight());
 	}
 }
