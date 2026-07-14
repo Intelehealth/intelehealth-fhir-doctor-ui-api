@@ -2,11 +2,13 @@ package org.openmrs.module.ihmodule.api.patientexchange.service;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 import org.openmrs.Location;
 import org.openmrs.PatientIdentifier;
 import org.openmrs.PatientIdentifierType;
+import org.openmrs.User;
 
 /**
  * Unit tests for preferred OpenMRS ID location alignment (no OpenMRS context required).
@@ -57,6 +59,76 @@ public class LocalPatientMpiUpdateServiceLocationTest {
 	}
 	
 	@Test
+	public void applyResolvedCreator_insert_alwaysSetsCreator() {
+		PatientIdentifier identifier = new PatientIdentifier();
+		User creator = user("creator-uuid");
+		LocalPatientMpiUpdateService.applyResolvedCreatorForTest(identifier, creator, false, true);
+		assertEquals(creator, identifier.getCreator());
+	}
+	
+	@Test
+	public void applyResolvedCreator_update_alignsWhenFromPreferredOpenMrsId() {
+		PatientIdentifier identifier = new PatientIdentifier();
+		identifier.setCreator(user("old-creator"));
+		User creator = user("openmrs-id-creator");
+		LocalPatientMpiUpdateService.applyResolvedCreatorForTest(identifier, creator, true, true);
+		assertEquals(creator, identifier.getCreator());
+	}
+	
+	@Test
+	public void applyResolvedCreator_update_keepsExistingWhenNotFromPreferredOpenMrsId() {
+		PatientIdentifier identifier = new PatientIdentifier();
+		User existing = user("existing-creator");
+		identifier.setCreator(existing);
+		User creator = user("other-creator");
+		LocalPatientMpiUpdateService.applyResolvedCreatorForTest(identifier, creator, true, false);
+		assertEquals(existing, identifier.getCreator());
+	}
+	
+	@Test
+	public void applyResolvedCreator_update_backfillsNullCreator() {
+		PatientIdentifier identifier = new PatientIdentifier();
+		User creator = user("openmrs-id-creator");
+		LocalPatientMpiUpdateService.applyResolvedCreatorForTest(identifier, creator, true, false);
+		assertEquals(creator, identifier.getCreator());
+	}
+	
+	@Test
+	public void localPatientHasMpiAndSourcePatientId_trueWhenBothIdentifiersPresent() {
+		org.openmrs.Patient patient = new org.openmrs.Patient();
+		PatientIdentifierType mpiType = new PatientIdentifierType();
+		mpiType.setName("MPI");
+		PatientIdentifier mpi = new PatientIdentifier();
+		mpi.setIdentifierType(mpiType);
+		mpi.setIdentifier("mpi-123");
+		patient.addIdentifier(mpi);
+		
+		PatientIdentifierType sourceType = new PatientIdentifierType();
+		sourceType.setName("Source Patient Id");
+		PatientIdentifier source = new PatientIdentifier();
+		source.setIdentifierType(sourceType);
+		source.setIdentifier("central-456");
+		patient.addIdentifier(source);
+		
+		LocalPatientMpiUpdateService service = new LocalPatientMpiUpdateService();
+		assertTrue(service.localPatientHasMpiAndSourcePatientId(patient));
+	}
+	
+	@Test
+	public void localPatientHasMpiAndSourcePatientId_falseWhenOnlyMpiPresent() {
+		org.openmrs.Patient patient = new org.openmrs.Patient();
+		PatientIdentifierType mpiType = new PatientIdentifierType();
+		mpiType.setName("MPI");
+		PatientIdentifier mpi = new PatientIdentifier();
+		mpi.setIdentifierType(mpiType);
+		mpi.setIdentifier("mpi-123");
+		patient.addIdentifier(mpi);
+		
+		LocalPatientMpiUpdateService service = new LocalPatientMpiUpdateService();
+		assertFalse(service.localPatientHasMpiAndSourcePatientId(patient));
+	}
+	
+	@Test
 	public void requiresExplicitLocationUuid_falseWhenPreferredOpenMrsIdHasLocation() {
 		org.openmrs.Patient patient = new org.openmrs.Patient();
 		PatientIdentifierType type = new PatientIdentifierType();
@@ -74,5 +146,11 @@ public class LocalPatientMpiUpdateServiceLocationTest {
 		Location location = new Location();
 		location.setUuid(uuid);
 		return location;
+	}
+	
+	private static User user(String uuid) {
+		User user = new User();
+		user.setUuid(uuid);
+		return user;
 	}
 }

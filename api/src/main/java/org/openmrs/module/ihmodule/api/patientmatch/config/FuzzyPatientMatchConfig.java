@@ -47,13 +47,46 @@ public class FuzzyPatientMatchConfig {
 	
 	private final Map<String, Double> fieldWeight;
 	
+	private final double givenNamePartWeight;
+	
+	private final double familyNamePartWeight;
+	
+	private final boolean penalizeMissingRequestFields;
+	
+	public FuzzyPatientMatchConfig(boolean enabled, int threshold, int confidenceHighThreshold,
+	    int confidenceMediumThreshold, int fieldMatchThreshold, int maxCandidates, String nameAlgorithm,
+	    String phoneAlgorithm, String addressAlgorithm, boolean phoneticBoostEnabled, String phoneticBoostAlgorithm,
+	    int dobNearMatchDays, int certainMatchThreshold, int probableMatchThreshold, int possibleMatchThreshold,
+	    DobRepositoryFilterMode dobRepositoryFilterMode, Set<String> candidateSearchParams, PatientMatchRules rules,
+	    Map<String, Boolean> fieldEnabled, Map<String, Double> fieldWeight) {
+		this(enabled, threshold, confidenceHighThreshold, confidenceMediumThreshold, fieldMatchThreshold, maxCandidates,
+		        nameAlgorithm, phoneAlgorithm, addressAlgorithm, phoneticBoostEnabled, phoneticBoostAlgorithm,
+		        dobNearMatchDays, certainMatchThreshold, probableMatchThreshold, possibleMatchThreshold,
+		        dobRepositoryFilterMode, candidateSearchParams, rules, fieldEnabled, fieldWeight, 0.45d, 0.45d, false);
+	}
+	
+	public FuzzyPatientMatchConfig(boolean enabled, int threshold, int confidenceHighThreshold,
+	    int confidenceMediumThreshold, int fieldMatchThreshold, int maxCandidates, String nameAlgorithm,
+	    String phoneAlgorithm, String addressAlgorithm, boolean phoneticBoostEnabled, String phoneticBoostAlgorithm,
+	    int dobNearMatchDays, int certainMatchThreshold, int probableMatchThreshold, int possibleMatchThreshold,
+	    DobRepositoryFilterMode dobRepositoryFilterMode, Set<String> candidateSearchParams, PatientMatchRules rules,
+	    Map<String, Boolean> fieldEnabled, Map<String, Double> fieldWeight, double givenNamePartWeight,
+	    double familyNamePartWeight) {
+		this(enabled, threshold, confidenceHighThreshold, confidenceMediumThreshold, fieldMatchThreshold, maxCandidates,
+		        nameAlgorithm, phoneAlgorithm, addressAlgorithm, phoneticBoostEnabled, phoneticBoostAlgorithm,
+		        dobNearMatchDays, certainMatchThreshold, probableMatchThreshold, possibleMatchThreshold,
+		        dobRepositoryFilterMode, candidateSearchParams, rules, fieldEnabled, fieldWeight, givenNamePartWeight,
+		        familyNamePartWeight, false);
+	}
+	
 	public FuzzyPatientMatchConfig(boolean enabled, int threshold, int confidenceHighThreshold,
 	        int confidenceMediumThreshold, int fieldMatchThreshold, int maxCandidates, String nameAlgorithm,
 	        String phoneAlgorithm, String addressAlgorithm, boolean phoneticBoostEnabled, String phoneticBoostAlgorithm,
 	        int dobNearMatchDays,
 	        int certainMatchThreshold, int probableMatchThreshold, int possibleMatchThreshold,
 	        DobRepositoryFilterMode dobRepositoryFilterMode, Set<String> candidateSearchParams,
-	        PatientMatchRules rules, Map<String, Boolean> fieldEnabled, Map<String, Double> fieldWeight) {
+	        PatientMatchRules rules, Map<String, Boolean> fieldEnabled, Map<String, Double> fieldWeight,
+	        double givenNamePartWeight, double familyNamePartWeight, boolean penalizeMissingRequestFields) {
 		this.enabled = enabled;
 		this.threshold = threshold;
 		this.confidenceHighThreshold = confidenceHighThreshold;
@@ -76,6 +109,9 @@ public class FuzzyPatientMatchConfig {
 		this.rules = rules;
 		this.fieldEnabled = new LinkedHashMap<>(fieldEnabled);
 		this.fieldWeight = new LinkedHashMap<>(fieldWeight);
+		this.givenNamePartWeight = givenNamePartWeight;
+		this.familyNamePartWeight = familyNamePartWeight;
+		this.penalizeMissingRequestFields = penalizeMissingRequestFields;
 	}
 	
 	public boolean isEnabled() {
@@ -174,6 +210,18 @@ public class FuzzyPatientMatchConfig {
 	
 	public Map<String, Double> getFieldWeight() {
 		return new LinkedHashMap<>(fieldWeight);
+	}
+	
+	public double getGivenNamePartWeight() {
+		return givenNamePartWeight;
+	}
+	
+	public double getFamilyNamePartWeight() {
+		return familyNamePartWeight;
+	}
+	
+	public boolean isPenalizeMissingRequestFields() {
+		return penalizeMissingRequestFields;
 	}
 	
 	public Set<String> getCandidateSearchParams() {

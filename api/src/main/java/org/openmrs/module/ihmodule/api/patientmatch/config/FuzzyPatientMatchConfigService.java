@@ -74,6 +74,18 @@ public class FuzzyPatientMatchConfigService {
 		fieldWeight.put("gender", resolveDouble("intelehealth.fhir.patient.match.field.gender.weight", 0.05d));
 		fieldWeight.put("identifier", resolveDouble("intelehealth.fhir.patient.match.field.identifier.weight", 0.05d));
 		
+		double givenNamePartWeight = Math.max(0.0d,
+		    resolveDouble("intelehealth.fhir.patient.match.field.name.given.weight", 0.45d));
+		double familyNamePartWeight = Math.max(0.0d,
+		    resolveDouble("intelehealth.fhir.patient.match.field.name.family.weight", 0.45d));
+		if (givenNamePartWeight <= 0.0d && familyNamePartWeight <= 0.0d) {
+			givenNamePartWeight = 0.45d;
+			familyNamePartWeight = 0.45d;
+		}
+		
+		boolean penalizeMissingRequestFields = resolveBoolean(
+		        "intelehealth.fhir.patient.match.penalize.missing.request.fields", true);
+		
 		int threshold = normalizeScore(resolveInt("intelehealth.fhir.patient.match.threshold", 70), 70);
 		int confidenceHigh = normalizeScore(resolveInt("intelehealth.fhir.patient.match.confidence.high", 85), 85);
 		int confidenceMedium = normalizeScore(resolveInt("intelehealth.fhir.patient.match.confidence.medium", 70), 70);
@@ -83,9 +95,9 @@ public class FuzzyPatientMatchConfigService {
 		int fieldMatchThreshold = normalizeScore(resolveInt("intelehealth.fhir.patient.match.field.match.threshold", 60), 60);
 		int maxCandidates = Math.max(50, resolveInt("intelehealth.fhir.patient.match.max.candidates", 500));
 		String nameAlgorithm = resolveString("intelehealth.fhir.patient.match.algorithm.name", "jaro_winkler");
-		String phoneAlgorithm = resolveString("intelehealth.fhir.patient.match.algorithm.phone", "levenshtein");
+		String phoneAlgorithm = resolveString("intelehealth.fhir.patient.match.algorithm.phone", "string");
 		String addressAlgorithm = resolveString("intelehealth.fhir.patient.match.algorithm.address", "token_jaccard");
-		boolean phoneticBoostEnabled = resolveBoolean("intelehealth.fhir.patient.match.algorithm.phonetic.boost.enabled", true);
+		boolean phoneticBoostEnabled = resolveBoolean("intelehealth.fhir.patient.match.algorithm.phonetic.boost.enabled", false);
 		String phoneticBoostAlgorithm = resolveString("intelehealth.fhir.patient.match.algorithm.phonetic.boost",
 		    "DOUBLE_METAPHONE");
 		int dobNearMatchDays = Math.max(0, resolveInt("intelehealth.fhir.patient.match.dob.near.match.days", 0));
@@ -153,7 +165,8 @@ public class FuzzyPatientMatchConfigService {
 		        maxCandidates, nameAlgorithm, phoneAlgorithm, addressAlgorithm, phoneticBoostEnabled, phoneticBoostAlgorithm,
 		        dobNearMatchDays,
 		        certainMatchThreshold, probableMatchThreshold, possibleMatchThreshold, dobRepositoryFilterMode,
-		        candidateSearchParams, rules, fieldEnabled, fieldWeight);
+		        candidateSearchParams, rules, fieldEnabled, fieldWeight, givenNamePartWeight, familyNamePartWeight,
+		        penalizeMissingRequestFields);
 	}
 	
 	private void normalizeWeights(Map<String, Double> fieldWeight, Map<String, Boolean> fieldEnabled) {
@@ -337,8 +350,7 @@ public class FuzzyPatientMatchConfigService {
 			String algorithm = normalizeAlgorithm(extractAlgorithm(rule));
 			if ("name".equals(fieldName) && algorithm != null) {
 				if (PhoneticAlgorithm.isPhonetic(algorithm)) {
-					resolved.setPhoneticBoostEnabled(true);
-					if (resolved.getPhoneticBoostAlgorithm() == null) {
+					if (resolved.isPhoneticBoostEnabled() && resolved.getPhoneticBoostAlgorithm() == null) {
 						resolved.setPhoneticBoostAlgorithm(algorithm);
 						log.info("Resolved phonetic boost algorithm from match field rule '{}': {}", rule.getName(),
 						    algorithm);

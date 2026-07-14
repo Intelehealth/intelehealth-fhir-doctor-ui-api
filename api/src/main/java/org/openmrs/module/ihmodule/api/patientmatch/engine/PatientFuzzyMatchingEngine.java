@@ -65,7 +65,7 @@ public class PatientFuzzyMatchingEngine {
 			return 0.0d;
 		}
 		double fullNameFuzzyScore = fullNameFuzzyScore(request.getName(), candidate.getName());
-		double structuredNameScore = structuredNameScore(request, candidate);
+		double structuredNameScore = structuredNameScore(request, candidate, config);
 		double combined;
 		if (request.hasGivenName() && request.hasFamilyName()) {
 			combined = structuredNameScore;
@@ -90,7 +90,8 @@ public class PatientFuzzyMatchingEngine {
 		return Math.max(baseScore, ((baseScore * 0.7d) + (tokenScore * 0.3d)));
 	}
 	
-	private double structuredNameScore(FuzzyPatientMatchRequest request, FuzzyPatientCandidate candidate) {
+	private double structuredNameScore(FuzzyPatientMatchRequest request, FuzzyPatientCandidate candidate,
+	        FuzzyPatientMatchConfig config) {
 		double givenScore = 0.0d;
 		double familyScore = 0.0d;
 		int parts = 0;
@@ -110,7 +111,9 @@ public class PatientFuzzyMatchingEngine {
 		if (parts == 1) {
 			return request.hasGivenName() ? givenScore : familyScore;
 		}
-		return FuzzyTextUtils.round((givenScore * 0.45d) + (familyScore * 0.55d));
+		double givenWeight = config != null ? config.getGivenNamePartWeight() : 0.45d;
+		double familyWeight = config != null ? config.getFamilyNamePartWeight() : 0.45d;
+		return FuzzyTextUtils.round((givenScore * givenWeight) + (familyScore * familyWeight));
 	}
 	
 	private boolean namePartsAlignForFuzzyMerge(FuzzyPatientMatchRequest request, FuzzyPatientCandidate candidate,
@@ -185,10 +188,18 @@ public class PatientFuzzyMatchingEngine {
 		if (!config.isFieldEnabled("phone") || !request.hasPhone() || StringUtils.isBlank(candidate.getPhone())) {
 			return 0.0d;
 		}
-		if ("levenshtein".equalsIgnoreCase(config.getPhoneAlgorithm())) {
-			return FuzzyPhoneUtils.similarityPercent(request.getPhone(), candidate.getPhone());
+		if (isExactPhoneAlgorithm(config.getPhoneAlgorithm())) {
+			return FuzzyPhoneUtils.exactMatchPercent(request.getPhone(), candidate.getPhone());
 		}
 		return FuzzyPhoneUtils.similarityPercent(request.getPhone(), candidate.getPhone());
+	}
+	
+	private static boolean isExactPhoneAlgorithm(String algorithm) {
+		if (StringUtils.isBlank(algorithm)) {
+			return true;
+		}
+		String normalized = algorithm.trim().toLowerCase().replace('-', '_');
+		return "string".equals(normalized) || "exact".equals(normalized);
 	}
 	
 	private double addressScore(FuzzyPatientMatchRequest request, FuzzyPatientCandidate candidate,

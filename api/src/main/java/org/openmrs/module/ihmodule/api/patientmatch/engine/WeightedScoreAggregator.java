@@ -19,13 +19,24 @@ public class WeightedScoreAggregator {
 		double scoreSum = 0.0d;
 		double weightSum = 0.0d;
 		List<String> matchedFields = new ArrayList<String>();
+		boolean penalizeMissingRequestFields = config != null && config.isPenalizeMissingRequestFields();
 		
 		for (Map.Entry<String, Double> entry : fieldScores.entrySet()) {
 			String field = entry.getKey();
-			if (!config.isFieldEnabled(field) || !isRequested(field, request)) {
+			if (!config.isFieldEnabled(field)) {
 				continue;
 			}
 			double weight = config.getFieldWeight(field);
+			if (weight <= 0.0d) {
+				continue;
+			}
+			boolean requested = isRequested(field, request);
+			if (!requested) {
+				if (penalizeMissingRequestFields) {
+					weightSum += weight;
+				}
+				continue;
+			}
 			double score = entry.getValue() != null ? entry.getValue().doubleValue() : 0.0d;
 			scoreSum += score * weight;
 			weightSum += weight;

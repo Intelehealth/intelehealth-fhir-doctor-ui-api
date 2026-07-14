@@ -133,15 +133,29 @@ public class FuzzyMatchPatientResponseMapperTest {
 		invokeApplyStructuredAddress(patient, dto, null);
 		
 		Address address = patient.getAddress().get(0);
-		assertEquals(3, address.getLine().size());
+		assertEquals(2, address.getLine().size());
 		assertEquals("Line 1", address.getLine().get(0).getValue());
 		assertEquals("", address.getLine().get(1).getValue());
-		assertEquals("Line 2", address.getLine().get(2).getValue());
 		assertEquals("Dhaka", address.getCity());
 		assertEquals("Arunachal Pradesh", address.getState());
 		assertEquals("1207", address.getPostalCode());
 		assertEquals("Bangladesh", address.getCountry());
 		assertEquals("Central", address.getDistrict());
+	}
+	
+	@Test
+	public void applyStructuredAddress_shouldEmitEmptyStringsWhenAddress1AndAddress6Missing() throws Exception {
+		AddressAPIDTO dto = new AddressAPIDTO();
+		dto.setCountry("India");
+		
+		Patient patient = new Patient();
+		invokeApplyStructuredAddress(patient, dto, null);
+		
+		Address address = patient.getAddress().get(0);
+		assertEquals(2, address.getLine().size());
+		assertEquals("", address.getLine().get(0).getValue());
+		assertEquals("", address.getLine().get(1).getValue());
+		assertEquals("India", address.getCountry());
 	}
 	
 	@Test
@@ -165,6 +179,24 @@ public class FuzzyMatchPatientResponseMapperTest {
 	}
 	
 	@Test
+	public void applyStructuredAddress_shouldTreatLiteralNullAddress1AsEmptyLine() throws Exception {
+		AddressAPIDTO dto = new AddressAPIDTO();
+		dto.setAddress1("null");
+		dto.setPostalCode("1216");
+		dto.setCountry("Bangladesh");
+		
+		Patient patient = new Patient();
+		invokeApplyStructuredAddress(patient, dto, null);
+		
+		Address address = patient.getAddress().get(0);
+		assertEquals(2, address.getLine().size());
+		assertEquals("", address.getLine().get(0).getValue());
+		assertEquals("", address.getLine().get(1).getValue());
+		assertEquals("1216", address.getPostalCode());
+		assertEquals("Bangladesh", address.getCountry());
+	}
+	
+	@Test
 	public void enrich_shouldUseFallbackTextAddressWhenStructuredAddressMissing() {
 		FuzzyPatientCandidate candidate = new FuzzyPatientCandidate();
 		candidate.setAddress("Dhaka, Bangladesh");
@@ -174,6 +206,9 @@ public class FuzzyMatchPatientResponseMapperTest {
 		
 		assertEquals(1, patient.getAddress().size());
 		assertEquals("Dhaka, Bangladesh", patient.getAddress().get(0).getText());
+		assertEquals(2, patient.getAddress().get(0).getLine().size());
+		assertEquals("", patient.getAddress().get(0).getLine().get(0).getValue());
+		assertEquals("", patient.getAddress().get(0).getLine().get(1).getValue());
 	}
 	
 	private static PersonAttribute personAttribute(String name, String value) {

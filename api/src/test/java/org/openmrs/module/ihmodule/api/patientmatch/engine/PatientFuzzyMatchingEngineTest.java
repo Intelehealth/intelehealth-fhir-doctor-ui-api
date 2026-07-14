@@ -77,6 +77,96 @@ public class PatientFuzzyMatchingEngineTest {
 	}
 	
 	@Test
+	public void score_shouldReturnExpectedOverallForNaziaWithExactPhone() throws Exception {
+		PatientFuzzyMatchingEngine engine = newEngine();
+		FuzzyPatientMatchConfig config = bundledLikeConfigWithExactPhone();
+		
+		FuzzyPatientMatchRequest request = new FuzzyPatientMatchRequest();
+		request.setGivenName("Tarek");
+		request.setFamilyName("Rahman");
+		request.setBirthDate(LocalDate.parse("2000-07-01"));
+		request.setPhone("+911212121212");
+		request.setGender("male");
+		
+		FuzzyPatientCandidate candidate = new FuzzyPatientCandidate();
+		candidate.setName("nazia rahman");
+		candidate.setGivenName("nazia");
+		candidate.setFamilyName("rahman");
+		candidate.setBirthDate(LocalDate.parse("1997-09-14"));
+		candidate.setPhone("+8801712345064");
+		candidate.setGender("female");
+		
+		FuzzyPatientMatchResult result = engine.score(request, candidate, config);
+		
+		assertEquals(0.0d, result.getFieldScores().get("phone").doubleValue(), 0.0001d);
+		assertEquals(66.0d, result.getFieldScores().get("name").doubleValue(), 0.1d);
+		assertEquals(59.4d, result.getOverallMatchScore(), 0.1d);
+		assertEquals(0.594d, result.getNormalizedMatchScore(), 0.001d);
+	}
+	
+	@Test
+	public void score_shouldReturnZeroPhoneScoreWhenPhonesDifferWithExactAlgorithm() throws Exception {
+		PatientFuzzyMatchingEngine engine = newEngine();
+		FuzzyPatientMatchConfig config = configWithPhoneAlgorithm("string");
+		
+		FuzzyPatientMatchRequest request = new FuzzyPatientMatchRequest();
+		request.setGivenName("Tarek");
+		request.setFamilyName("Rahman");
+		request.setBirthDate(LocalDate.parse("2000-07-01"));
+		request.setPhone("+911212121212");
+		request.setGender("male");
+		
+		FuzzyPatientCandidate candidate = new FuzzyPatientCandidate();
+		candidate.setName("nazia rahman");
+		candidate.setGivenName("nazia");
+		candidate.setFamilyName("rahman");
+		candidate.setBirthDate(LocalDate.parse("1997-09-14"));
+		candidate.setPhone("+8801712345064");
+		candidate.setGender("female");
+		
+		FuzzyPatientMatchResult result = engine.score(request, candidate, config);
+		
+		assertEquals(0.0d, result.getFieldScores().get("phone").doubleValue(), 0.0001d);
+	}
+	
+	@Test
+	public void score_shouldReturnFullPhoneScoreWhenNormalizedDigitsMatchWithExactAlgorithm() throws Exception {
+		PatientFuzzyMatchingEngine engine = newEngine();
+		FuzzyPatientMatchConfig config = configWithPhoneAlgorithm("string");
+		
+		FuzzyPatientMatchRequest request = new FuzzyPatientMatchRequest();
+		request.setName("Tarek Rahman");
+		request.setPhone("+91 12121 21212");
+		
+		FuzzyPatientCandidate candidate = new FuzzyPatientCandidate();
+		candidate.setName("Tarek Rahman");
+		candidate.setPhone("911212121212");
+		
+		FuzzyPatientMatchResult result = engine.score(request, candidate, config);
+		
+		assertEquals(100.0d, result.getFieldScores().get("phone").doubleValue(), 0.0001d);
+	}
+	
+	@Test
+	public void score_shouldKeepFuzzyPhoneScoringWhenLevenshteinConfigured() throws Exception {
+		PatientFuzzyMatchingEngine engine = newEngine();
+		FuzzyPatientMatchConfig config = configWithPhoneAlgorithm("levenshtein");
+		
+		FuzzyPatientMatchRequest request = new FuzzyPatientMatchRequest();
+		request.setName("Tarek Rahman");
+		request.setPhone("+911212121212");
+		
+		FuzzyPatientCandidate candidate = new FuzzyPatientCandidate();
+		candidate.setName("Tarek Rahman");
+		candidate.setPhone("+8801712345064");
+		
+		FuzzyPatientMatchResult result = engine.score(request, candidate, config);
+		
+		assertTrue(result.getFieldScores().get("phone").doubleValue() > 0.0d);
+		assertTrue(result.getFieldScores().get("phone").doubleValue() < 100.0d);
+	}
+	
+	@Test
 	public void score_shouldPenalizeMismatchedFamilyWhenBothNamePartsProvided() throws Exception {
 		PatientFuzzyMatchingEngine engine = newEngine();
 		FuzzyPatientMatchConfig config = defaultConfig();
@@ -131,6 +221,34 @@ public class PatientFuzzyMatchingEngineTest {
 	}
 	
 	@Test
+	public void score_shouldNotApplyPhoneticBoostWhenDisabled() throws Exception {
+		PatientFuzzyMatchingEngine engine = newEngine();
+		FuzzyPatientMatchConfig config = bundledLikeConfig(false);
+		
+		FuzzyPatientMatchRequest request = new FuzzyPatientMatchRequest();
+		request.setGivenName("Pardha");
+		request.setFamilyName("Saradhi");
+		request.setName("Pardha Saradhi");
+		request.setBirthDate(LocalDate.parse("2002-02-08"));
+		request.setPhone("+919398512345");
+		request.setGender("M");
+		
+		FuzzyPatientCandidate candidate = new FuzzyPatientCandidate();
+		candidate.setUuid("partha-uuid");
+		candidate.setGivenName("Partha");
+		candidate.setFamilyName("Sarathi");
+		candidate.setName("Partha Sarathi");
+		candidate.setBirthDate(LocalDate.parse("2002-03-08"));
+		candidate.setPhone("+919398512345");
+		candidate.setGender("M");
+		
+		FuzzyPatientMatchResult result = engine.score(request, candidate, config);
+		
+		assertEquals(93.3d, result.getFieldScores().get("name").doubleValue(), 0.1d);
+		assertEquals(89.0d, result.getOverallMatchScore(), 0.1d);
+	}
+	
+	@Test
 	public void score_shouldStillRewardFuzzyFamilyTyposWhenBothNamePartsProvided() throws Exception {
 		PatientFuzzyMatchingEngine engine = newEngine();
 		FuzzyPatientMatchConfig config = defaultConfig();
@@ -167,6 +285,30 @@ public class PatientFuzzyMatchingEngineTest {
 	}
 	
 	private FuzzyPatientMatchConfig defaultConfig() {
+		return configWithPhoneticBoost(true);
+	}
+	
+	private FuzzyPatientMatchConfig configWithPhoneAlgorithm(String phoneAlgorithm) {
+		Map<String, Boolean> enabled = new LinkedHashMap<String, Boolean>();
+		enabled.put("name", Boolean.TRUE);
+		enabled.put("dob", Boolean.TRUE);
+		enabled.put("phone", Boolean.TRUE);
+		enabled.put("address", Boolean.TRUE);
+		enabled.put("gender", Boolean.TRUE);
+		enabled.put("identifier", Boolean.TRUE);
+		Map<String, Double> weights = new LinkedHashMap<String, Double>();
+		weights.put("name", Double.valueOf(0.45d));
+		weights.put("dob", Double.valueOf(0.20d));
+		weights.put("phone", Double.valueOf(0.20d));
+		weights.put("address", Double.valueOf(0.10d));
+		weights.put("gender", Double.valueOf(0.05d));
+		weights.put("identifier", Double.valueOf(0.05d));
+		return new FuzzyPatientMatchConfig(true, 70, 85, 70, 60, 500, "jaro_winkler", phoneAlgorithm, "token_jaccard", true,
+		        "DOUBLE_METAPHONE", 0, 95, 80, 60, DobRepositoryFilterMode.ONLY_DOB_REQUESTS, new LinkedHashSet<String>(
+		                enabled.keySet()), null, enabled, weights);
+	}
+	
+	private FuzzyPatientMatchConfig configWithPhoneticBoost(boolean phoneticBoostEnabled) {
 		Map<String, Boolean> enabled = new LinkedHashMap<String, Boolean>();
 		enabled.put("name", Boolean.TRUE);
 		enabled.put("dob", Boolean.TRUE);
@@ -183,8 +325,50 @@ public class PatientFuzzyMatchingEngineTest {
 		weights.put("gender", Double.valueOf(0.05d));
 		weights.put("identifier", Double.valueOf(0.05d));
 		
-		return new FuzzyPatientMatchConfig(true, 70, 85, 70, 60, 500, "jaro_winkler", "levenshtein", "token_jaccard", true,
-		        "DOUBLE_METAPHONE", 0, 95, 80, 60, DobRepositoryFilterMode.ONLY_DOB_REQUESTS, new LinkedHashSet<String>(
+		return new FuzzyPatientMatchConfig(true, 70, 85, 70, 60, 500, "jaro_winkler", "levenshtein", "token_jaccard",
+		        phoneticBoostEnabled, "DOUBLE_METAPHONE", 0, 95, 80, 60, DobRepositoryFilterMode.ONLY_DOB_REQUESTS,
+		        new LinkedHashSet<String>(enabled.keySet()), null, enabled, weights);
+	}
+	
+	private FuzzyPatientMatchConfig bundledLikeConfigWithExactPhone() {
+		Map<String, Boolean> enabled = new LinkedHashMap<String, Boolean>();
+		enabled.put("name", Boolean.TRUE);
+		enabled.put("dob", Boolean.TRUE);
+		enabled.put("phone", Boolean.TRUE);
+		enabled.put("address", Boolean.FALSE);
+		enabled.put("gender", Boolean.TRUE);
+		enabled.put("identifier", Boolean.FALSE);
+		Map<String, Double> weights = new LinkedHashMap<String, Double>();
+		weights.put("name", Double.valueOf(0.90d));
+		weights.put("dob", Double.valueOf(0.05d));
+		weights.put("phone", Double.valueOf(0.05d));
+		weights.put("address", Double.valueOf(0.0d));
+		weights.put("gender", Double.valueOf(0.0d));
+		weights.put("identifier", Double.valueOf(0.0d));
+		return new FuzzyPatientMatchConfig(true, 60, 85, 70, 60, 500, "jaro_winkler", "string", "token_jaccard", false,
+		        "DOUBLE_METAPHONE", 1, 95, 80, 60, DobRepositoryFilterMode.ONLY_DOB_REQUESTS, new LinkedHashSet<String>(
 		                enabled.keySet()), null, enabled, weights);
+	}
+	
+	private FuzzyPatientMatchConfig bundledLikeConfig(boolean phoneticBoostEnabled) {
+		Map<String, Boolean> enabled = new LinkedHashMap<String, Boolean>();
+		enabled.put("name", Boolean.TRUE);
+		enabled.put("dob", Boolean.TRUE);
+		enabled.put("phone", Boolean.TRUE);
+		enabled.put("address", Boolean.FALSE);
+		enabled.put("gender", Boolean.TRUE);
+		enabled.put("identifier", Boolean.FALSE);
+		
+		Map<String, Double> weights = new LinkedHashMap<String, Double>();
+		weights.put("name", Double.valueOf(0.90d));
+		weights.put("dob", Double.valueOf(0.05d));
+		weights.put("phone", Double.valueOf(0.05d));
+		weights.put("address", Double.valueOf(0.0d));
+		weights.put("gender", Double.valueOf(0.0d));
+		weights.put("identifier", Double.valueOf(0.0d));
+		
+		return new FuzzyPatientMatchConfig(true, 60, 85, 70, 60, 500, "jaro_winkler", "levenshtein", "token_jaccard",
+		        phoneticBoostEnabled, "DOUBLE_METAPHONE", 1, 95, 80, 60, DobRepositoryFilterMode.ONLY_DOB_REQUESTS,
+		        new LinkedHashSet<String>(enabled.keySet()), null, enabled, weights);
 	}
 }

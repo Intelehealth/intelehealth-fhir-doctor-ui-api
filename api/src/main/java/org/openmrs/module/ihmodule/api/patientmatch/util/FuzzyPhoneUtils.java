@@ -17,6 +17,15 @@ public final class FuzzyPhoneUtils {
 		return value.replaceAll("[^0-9]", "");
 	}
 	
+	public static double exactMatchPercent(String left, String right) {
+		String a = normalizeDigits(left);
+		String b = normalizeDigits(right);
+		if (StringUtils.isBlank(a) || StringUtils.isBlank(b)) {
+			return 0.0d;
+		}
+		return StringUtils.equals(a, b) ? 100.0d : 0.0d;
+	}
+	
 	public static double similarityPercent(String left, String right) {
 		String a = normalizeDigits(left);
 		String b = normalizeDigits(right);

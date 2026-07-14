@@ -243,11 +243,15 @@ public class FuzzyMatchPatientResponseMapper implements FuzzyMatchPatientRespons
 		}
 		patient.getAddress().clear();
 		if (addressDto != null && hasAnyAddressField(addressDto)) {
-			patient.addAddress(toFhirAddress(addressDto));
+			Address address = toFhirAddress(addressDto);
+			FuzzyMatchAddressLineSupport.ensureTwoAddressLines(address);
+			patient.addAddress(address);
 			return;
 		}
 		if (StringUtils.isNotBlank(fallbackText)) {
-			patient.addAddress().setText(fallbackText.trim());
+			Address address = patient.addAddress();
+			address.setText(fallbackText.trim());
+			FuzzyMatchAddressLineSupport.ensureTwoAddressLines(address);
 		}
 	}
 	
@@ -256,15 +260,13 @@ public class FuzzyMatchPatientResponseMapper implements FuzzyMatchPatientRespons
 	}
 	
 	private static boolean isPlaceholderAddressToken(String value) {
-		return "NA".equalsIgnoreCase(value.trim()) || "-".equals(value.trim());
+		return FuzzyMatchAddressLineSupport.isPlaceholderAddressToken(value);
 	}
 	
 	private static Address toFhirAddress(AddressAPIDTO dto) {
 		Address address = new Address();
-		addLine(address, dto.getAddress1());
-		addAddress6Line(address, dto.getAddress6());
-		addLine(address, dto.getAddress2());
-		addLine(address, dto.getAddress3());
+		address.addLine(normalizeAddressLineValue(dto.getAddress1()));
+		address.addLine(normalizeAddressLineValue(dto.getAddress6()));
 		address.setCity(trimToNull(dto.getCityVillage()));
 		address.setState(trimToNull(dto.getStateProvince()));
 		address.setCountry(trimToNull(dto.getCountry()));
@@ -280,20 +282,8 @@ public class FuzzyMatchPatientResponseMapper implements FuzzyMatchPatientRespons
 		return trimToNull(dto.getPostalCode());
 	}
 	
-	private static void addLine(Address address, String value) {
-		String line = trimToNull(value);
-		if (line != null && !isPlaceholderAddressToken(line)) {
-			address.addLine(line);
-		}
-	}
-	
-	private static void addAddress6Line(Address address, String value) {
-		String line = trimToNull(value);
-		if (line == null || isPlaceholderAddressToken(line)) {
-			address.addLine("");
-			return;
-		}
-		address.addLine(line);
+	private static String normalizeAddressLineValue(String value) {
+		return FuzzyMatchAddressLineSupport.normalizeAddressLineValue(value);
 	}
 	
 	private static AddressAPIDTO tupleToAddressDto(Tuple row) {

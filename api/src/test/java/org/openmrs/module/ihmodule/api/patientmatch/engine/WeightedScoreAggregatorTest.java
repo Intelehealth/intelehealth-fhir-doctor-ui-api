@@ -59,4 +59,41 @@ public class WeightedScoreAggregatorTest {
 		assertTrue(result.getMatchedFields().contains("dob"));
 		assertTrue(result.getMatchedFields().contains("phone"));
 	}
+	
+	@Test
+	public void aggregate_shouldPenalizeMissingDobAndPhoneWhenOnlyNameProvided() {
+		Map<String, Boolean> enabled = new LinkedHashMap<String, Boolean>();
+		enabled.put("name", Boolean.TRUE);
+		enabled.put("dob", Boolean.TRUE);
+		enabled.put("phone", Boolean.TRUE);
+		enabled.put("address", Boolean.FALSE);
+		enabled.put("gender", Boolean.FALSE);
+		enabled.put("identifier", Boolean.FALSE);
+		
+		Map<String, Double> weights = new LinkedHashMap<String, Double>();
+		weights.put("name", Double.valueOf(0.90d));
+		weights.put("dob", Double.valueOf(0.05d));
+		weights.put("phone", Double.valueOf(0.05d));
+		weights.put("address", Double.valueOf(0.0d));
+		weights.put("gender", Double.valueOf(0.0d));
+		weights.put("identifier", Double.valueOf(0.0d));
+		
+		FuzzyPatientMatchConfig config = new FuzzyPatientMatchConfig(true, 70, 85, 70, 60, 500, "jaro_winkler", "string",
+		        "token_jaccard", false, "DOUBLE_METAPHONE", 0, 95, 80, 60, DobRepositoryFilterMode.ONLY_DOB_REQUESTS,
+		        new LinkedHashSet<String>(enabled.keySet()), null, enabled, weights, 0.45d, 0.45d, true);
+		
+		FuzzyPatientMatchRequest request = new FuzzyPatientMatchRequest();
+		request.setGivenName("Tarek");
+		request.setFamilyName("Rahman");
+		
+		Map<String, Double> fieldScores = new LinkedHashMap<String, Double>();
+		fieldScores.put("name", Double.valueOf(100.0d));
+		fieldScores.put("dob", Double.valueOf(0.0d));
+		fieldScores.put("phone", Double.valueOf(0.0d));
+		
+		FuzzyPatientMatchResult result = new WeightedScoreAggregator().aggregate(new FuzzyPatientCandidate(), request,
+		    config, fieldScores);
+		
+		assertEquals(90.0d, result.getOverallMatchScore(), 0.01d);
+	}
 }

@@ -23,6 +23,7 @@ import org.openmrs.module.ihmodule.api.patientmatch.dto.FuzzyPatientCandidate;
 import org.openmrs.module.ihmodule.api.patientmatch.dto.FuzzyPatientMatchRequest;
 import org.openmrs.module.ihmodule.api.patientmatch.dto.FuzzyPatientMatchResult;
 import org.openmrs.module.ihmodule.api.patientmatch.engine.PatientFuzzyMatchingEngine;
+import org.openmrs.module.ihmodule.api.patientmatch.mapper.FuzzyMatchBundleJsonAddressLineNormalizer;
 import org.openmrs.module.ihmodule.api.patientmatch.mapper.FuzzyMatchPatientResponseMapperPort;
 import org.openmrs.module.ihmodule.api.patientmatch.repository.PatientCandidateSource;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -124,7 +125,11 @@ public class FhirPatientMatchService implements FhirPatientMatchServicePort {
 	
 	@Override
 	public String encodeResource(FhirContext fhirContext, org.hl7.fhir.r4.model.Resource resource) {
-		return fhirContext.newJsonParser().setPrettyPrint(true).encodeResourceToString(resource);
+		String encoded = fhirContext.newJsonParser().setPrettyPrint(true).encodeResourceToString(resource);
+		if (resource instanceof Bundle) {
+			return FuzzyMatchBundleJsonAddressLineNormalizer.normalizeEncodedBundle(encoded, true);
+		}
+		return encoded;
 	}
 	
 	private Bundle toBundle(List<FuzzyPatientMatchResult> matches, int total, FuzzyPatientMatchConfig config) {

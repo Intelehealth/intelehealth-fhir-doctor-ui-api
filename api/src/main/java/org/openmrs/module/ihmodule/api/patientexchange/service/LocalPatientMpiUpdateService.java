@@ -2,8 +2,6 @@ package org.openmrs.module.ihmodule.api.patientexchange.service;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 
 import org.apache.commons.lang3.StringUtils;
 import org.hl7.fhir.r4.model.Identifier;
@@ -11,10 +9,12 @@ import org.hl7.fhir.r4.model.Patient;
 import org.openmrs.Location;
 import org.openmrs.PatientIdentifier;
 import org.openmrs.PatientIdentifierType;
+import org.openmrs.User;
 import org.openmrs.api.context.Context;
 import org.openmrs.module.ihmodule.api.patientexchange.api.dto.PatientIdentifierSnapshot;
 import org.openmrs.module.ihmodule.api.patientexchange.api.dto.SourcePatientIdentifierUpdateResponse;
 import org.openmrs.module.ihmodule.api.patientexchange.event.FhirSyncSuppressionContext;
+import org.openmrs.module.ihmodule.api.patientexchange.sync.PatientUuidLock;
 import org.openmrs.module.ihmodule.api.patientexchange.utils.IHConstant;
 import org.springframework.stereotype.Service;
 
@@ -44,14 +44,68 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 	
 	private static final String OPENMRS_DEFAULT_IDENTIFIER_LOCATION_UUID = "8d6c993e-c2cc-11de-8d13-0010c6dffd0f";
 	
-	private static final ConcurrentMap<String, Object> PATIENT_IDENTIFIER_UPSERT_LOCKS = new ConcurrentHashMap<String, Object>();
-	
 	/**
 	 * Same rule as patient export scheduling: {@code true} when any identifier's type text equals
 	 * {@code intelehealth.fhir.resource.identifier.name} ({@link #globalIdentifierName}), matching
 	 * {@code DataSendToFHIR#hasMPI} semantics (null-safe; no extra heuristics) so operator
 	 * endpoints do not diverge from the scheduler.
 	 */
+	/**
+	 * {@code true} when the facility patient already has active MPI and Source Patient Id rows with
+	 * non-blank values. Used to skip {@code patient_sync_log} on routine updates after initial
+	 * central sync.
+	 */
+	public boolean localPatientHasMpiAndSourcePatientId(String patientUuid) {
+		if (StringUtils.isBlank(patientUuid)) {
+			return false;
+		}
+		try {
+			org.openmrs.Patient patient = Context.getPatientService().getPatientByUuid(patientUuid.trim());
+			return localPatientHasMpiAndSourcePatientId(patient);
+		}
+		catch (Exception ex) {
+			return false;
+		}
+	}
+	
+	public boolean localPatientHasMpiAndSourcePatientId(org.openmrs.Patient patient) {
+		return hasNonBlankMpiIdentifier(patient) && hasNonBlankSourcePatientId(patient);
+	}
+	
+	/**
+	 * Active MPI value on the facility patient, or {@code null} when absent.
+	 */
+	public String findActiveMpiIdentifierValue(String patientUuid) {
+		if (StringUtils.isBlank(patientUuid)) {
+			return null;
+		}
+		try {
+			org.openmrs.Patient patient = Context.getPatientService().getPatientByUuid(patientUuid.trim());
+			PatientIdentifier mpi = findExistingMpiIdentifier(patient);
+			return mpi != null ? StringUtils.trimToNull(mpi.getIdentifier()) : null;
+		}
+		catch (Exception ex) {
+			return null;
+		}
+	}
+	
+	/**
+	 * Active Source Patient Id value on the facility patient, or {@code null} when absent.
+	 */
+	public String findActiveCentralSourcePatientIdValue(String patientUuid) {
+		if (StringUtils.isBlank(patientUuid)) {
+			return null;
+		}
+		try {
+			org.openmrs.Patient patient = Context.getPatientService().getPatientByUuid(patientUuid.trim());
+			PatientIdentifier source = findExistingSourcePatientIdIdentifier(patient);
+			return source != null ? StringUtils.trimToNull(source.getIdentifier()) : null;
+		}
+		catch (Exception ex) {
+			return null;
+		}
+	}
+	
 	public boolean patientHasMpiPerSchedulerExportRule(Patient patient) {
 		if (patient == null || !patient.hasIdentifier()) {
 			return false;
@@ -213,26 +267,17 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 	}
 	
 	private static void runWithPatientIdentifierLock(String patientUuid, Runnable work) {
-		Object lock = PATIENT_IDENTIFIER_UPSERT_LOCKS.computeIfAbsent(patientUuid,
-		    new java.util.function.Function<String, Object>() {
-			    
-			    @Override
-			    public Object apply(String key) {
-				    return new Object();
-			    }
-		    });
-		synchronized (lock) {
-			work.run();
-		}
+		PatientUuidLock.runWithLock(patientUuid, work);
 	}
 	
 	private static void addSourcePatientIdentifier(org.openmrs.Patient patient, String idVal,
-	        PatientIdentifierType sourceIdType, Location location) {
+	        PatientIdentifierType sourceIdType, Location location, User creator) {
 		PatientIdentifier pid = new PatientIdentifier();
 		pid.setIdentifier(idVal);
 		pid.setIdentifierType(sourceIdType);
 		pid.setLocation(location);
 		pid.setPreferred(false);
+		applyResolvedCreator(pid, creator, false, creator != null);
 		patient.addIdentifier(pid);
 	}
 	
@@ -242,6 +287,9 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 			@Override
 			public void run() {
 				Context.getPatientService().savePatient(patient);
+				if (Context.isSessionOpen()) {
+					Context.flushSession();
+				}
 			}
 		});
 	}
@@ -268,6 +316,7 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 		String mpiVal = mpiIdentifierValue.trim();
 		PatientIdentifierType mpiType = resolveMpiIdentifierType();
 		IdentifierLocationResolution locationResolution = resolveIdentifierLocationForPatient(patient, null);
+		User openMrsIdCreator = resolveCreatorFromPatientPreferredOpenMrsIdentifier(patient);
 		List<PatientIdentifier> active = collectActiveMpiIdentifiers(patient);
 		PatientIdentifier canonical = chooseCanonicalIdentifier(active);
 		voidExtraMpiIdentifiers(patient, canonical);
@@ -278,11 +327,13 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 			canonical.setIdentifier(mpiVal);
 			canonical.setIdentifierType(mpiType);
 			applyResolvedLocation(canonical, locationResolution, true);
+			applyResolvedCreator(canonical, openMrsIdCreator, true, openMrsIdCreator != null);
 		} else {
 			PatientIdentifier mpi = new PatientIdentifier();
 			mpi.setIdentifier(mpiVal);
 			mpi.setIdentifierType(mpiType);
 			applyResolvedLocation(mpi, locationResolution, false);
+			applyResolvedCreator(mpi, openMrsIdCreator, false, openMrsIdCreator != null);
 			mpi.setPreferred(false);
 			patient.addIdentifier(mpi);
 		}
@@ -297,6 +348,7 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 		String idVal = centralLogicalId.trim();
 		PatientIdentifierType sourceIdType = resolveSourcePatientIdIdentifierType();
 		IdentifierLocationResolution locationResolution = resolveIdentifierLocationForPatient(patient, locationUuid);
+		User openMrsIdCreator = resolveCreatorFromPatientPreferredOpenMrsIdentifier(patient);
 		List<PatientIdentifier> active = collectActiveCentralSourceLinkIdentifiers(patient, idVal);
 		PatientIdentifier canonical = chooseCanonicalSourceLinkIdentifier(active);
 		voidExtraCentralSourceLinkIdentifiers(patient, canonical, idVal);
@@ -304,15 +356,26 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 			canonical.setIdentifier(idVal);
 			canonical.setIdentifierType(sourceIdType);
 			applyResolvedLocation(canonical, locationResolution, true);
+			applyResolvedCreator(canonical, openMrsIdCreator, true, openMrsIdCreator != null);
 			return true;
 		}
 		addSourcePatientIdentifier(patient, idVal, sourceIdType, locationResolution != null ? locationResolution.location
-		        : null);
+		        : null, openMrsIdCreator);
 		return false;
 	}
 	
 	private boolean patientHasMpiOnNativePatient(org.openmrs.Patient patient) {
-		return findExistingMpiIdentifier(patient) != null;
+		return hasNonBlankMpiIdentifier(patient);
+	}
+	
+	private boolean hasNonBlankMpiIdentifier(org.openmrs.Patient patient) {
+		PatientIdentifier mpi = findExistingMpiIdentifier(patient);
+		return mpi != null && StringUtils.isNotBlank(mpi.getIdentifier());
+	}
+	
+	private boolean hasNonBlankSourcePatientId(org.openmrs.Patient patient) {
+		PatientIdentifier source = findExistingSourcePatientIdIdentifier(patient);
+		return source != null && StringUtils.isNotBlank(source.getIdentifier());
 	}
 	
 	private PatientIdentifier findExistingMpiIdentifier(org.openmrs.Patient patient) {
@@ -596,6 +659,14 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 		return openMrsId.getLocation();
 	}
 	
+	private User resolveCreatorFromPatientPreferredOpenMrsIdentifier(org.openmrs.Patient patient) {
+		PatientIdentifier openMrsId = findPreferredOpenMrsIdentifier(patient);
+		if (openMrsId == null || openMrsId.getCreator() == null) {
+			return null;
+		}
+		return openMrsId.getCreator();
+	}
+	
 	private PatientIdentifier findPreferredOpenMrsIdentifier(org.openmrs.Patient patient) {
 		if (patient == null || patient.getIdentifiers() == null) {
 			return null;
@@ -630,6 +701,11 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 		applyResolvedLocation(identifier, resolution, isUpdate);
 	}
 	
+	static void applyResolvedCreatorForTest(PatientIdentifier identifier, User creator, boolean isUpdate,
+	        boolean fromPreferredOpenMrsIdentifier) {
+		applyResolvedCreator(identifier, creator, isUpdate, fromPreferredOpenMrsIdentifier);
+	}
+	
 	boolean requiresExplicitLocationUuidForNewSourceIdentifierForTest(org.openmrs.Patient patient) {
 		return requiresExplicitLocationUuidForNewSourceIdentifier(patient);
 	}
@@ -647,6 +723,26 @@ public class LocalPatientMpiUpdateService extends IHConstant {
 			identifier.setLocation(resolution.location);
 		} else if (identifier.getLocation() == null) {
 			identifier.setLocation(resolution.location);
+		}
+	}
+	
+	/**
+	 * Insert: always apply creator from preferred OpenMRS ID when present. Update: align when the
+	 * creator comes from preferred OpenMRS ID, or backfill when the row has no creator yet.
+	 */
+	private static void applyResolvedCreator(PatientIdentifier identifier, User creator, boolean isUpdate,
+	        boolean fromPreferredOpenMrsIdentifier) {
+		if (identifier == null || creator == null) {
+			return;
+		}
+		if (!isUpdate) {
+			identifier.setCreator(creator);
+			return;
+		}
+		if (fromPreferredOpenMrsIdentifier) {
+			identifier.setCreator(creator);
+		} else if (identifier.getCreator() == null) {
+			identifier.setCreator(creator);
 		}
 	}
 	

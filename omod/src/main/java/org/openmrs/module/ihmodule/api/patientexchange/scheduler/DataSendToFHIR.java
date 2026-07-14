@@ -52,6 +52,7 @@ import org.openmrs.module.ihmodule.api.patientexchange.sync.PatientSyncLog;
 import org.openmrs.module.ihmodule.api.patientexchange.sync.PatientSyncLogContext;
 import org.openmrs.module.ihmodule.api.patientexchange.sync.PatientSyncLogService;
 import org.openmrs.module.ihmodule.api.patientexchange.sync.PatientSyncPushContract;
+import org.openmrs.module.ihmodule.api.patientexchange.sync.PatientUuidLock;
 import org.openmrs.module.ihmodule.api.patientexchange.telecom.PatientTelecomMappingUtil;
 import org.openmrs.module.ihmodule.api.patientexchange.utils.DateUtils;
 import org.openmrs.module.ihmodule.api.patientexchange.utils.HttpTimeoutSupport;
@@ -221,24 +222,46 @@ public class DataSendToFHIR extends IHConstant implements PatientSyncPushContrac
 			return false;
 		}
 		String patientUuid = pushRow.getPatientUuid().trim();
-		try {
-			FhirResponse result = executeCentralSend("Patient", patientUuid);
-			patientSyncLogService.completePendingPush(pushRow, result);
-			if (PatientSyncLogService.isSuccessfulCentralWrite(result)) {
-				LOGGER.info("Patient sync {} succeeded: logId={} patientUuid={}", operationLabel, pushRow.getId(),
-				    patientUuid);
-				return true;
+		return PatientUuidLock.callWithLock(patientUuid, new java.util.concurrent.Callable<Boolean>() {
+			
+			@Override
+			public Boolean call() {
+				if (localPatientMpiUpdateService.localPatientHasMpiAndSourcePatientId(patientUuid)) {
+					LOGGER.debug(
+					    "Patient sync {} skipped central create for patientUuid={} because MPI and Source Patient Id are already present",
+					    operationLabel, patientUuid);
+					patientSyncLogService.markSuccess(pushRow, buildAlreadyLinkedSyncResponse(patientUuid));
+					return true;
+				}
+				try {
+					FhirResponse result = executeCentralSend("Patient", patientUuid);
+					patientSyncLogService.completePendingPush(pushRow, result);
+					if (PatientSyncLogService.isSuccessfulCentralWrite(result)) {
+						LOGGER.info("Patient sync {} succeeded: logId={} patientUuid={}", operationLabel, pushRow.getId(),
+						    patientUuid);
+						return true;
+					}
+					LOGGER.warn("Patient sync {} failed: logId={} patientUuid={} {}", operationLabel, pushRow.getId(),
+					    patientUuid, PatientSyncLogService.formatSyncFailureMessage(result));
+					return false;
+				}
+				catch (Exception ex) {
+					patientSyncLogService.markFailed(pushRow, null, PatientSyncLogService.formatSyncFailureMessage(ex),
+					    false);
+					LOGGER.error("Patient sync {} error: logId={} patientUuid={}: {}", operationLabel, pushRow.getId(),
+					    patientUuid, PatientSyncLogService.formatSyncFailureMessage(ex), ex);
+					return false;
+				}
 			}
-			LOGGER.warn("Patient sync {} failed: logId={} patientUuid={} {}", operationLabel, pushRow.getId(), patientUuid,
-			    PatientSyncLogService.formatSyncFailureMessage(result));
-			return false;
-		}
-		catch (Exception ex) {
-			patientSyncLogService.markFailed(pushRow, null, PatientSyncLogService.formatSyncFailureMessage(ex), false);
-			LOGGER.error("Patient sync {} error: logId={} patientUuid={}: {}", operationLabel, pushRow.getId(), patientUuid,
-			    PatientSyncLogService.formatSyncFailureMessage(ex), ex);
-			return false;
-		}
+		});
+	}
+	
+	private static FhirResponse buildAlreadyLinkedSyncResponse(String patientUuid) {
+		FhirResponse response = new FhirResponse();
+		response.setStatusCode("200");
+		response.setMessage("Patient already linked to central MPI and Source Patient Id");
+		response.setResponse(patientUuid);
+		return response;
 	}
 	
 	public FhirResponse send(String resourceType, String uuid) throws ParseException, DataFormatException, JSONException,
@@ -595,7 +618,7 @@ public class DataSendToFHIR extends IHConstant implements PatientSyncPushContrac
 			normalizeIdentifierStandards(patient);
 			PatientTelecomMappingUtil.removeInvalidPhoneTelecom(patient);
 			
-			String sourcePatientId = trimToNull(getSourcePatientIdentifier(patient));
+			String sourcePatientId = resolveSourcePatientIdForCentralRouting(patient, localPatientUuid);
 			if (sourcePatientId != null) {
 				String mpiGolden = trimToNull(getMpiGoldenValueForOutboundUpdate(patient));
 				if (mpiGolden != null) {
@@ -620,6 +643,16 @@ public class DataSendToFHIR extends IHConstant implements PatientSyncPushContrac
 			}
 			
 			appendOutboundLocalPatientUuidIdentifier(patient, localPatientUuid);
+			if (StringUtils.isNotBlank(localPatientUuid)
+			        && StringUtils.isNotBlank(localPatientMpiUpdateService.findActiveMpiIdentifierValue(localPatientUuid))) {
+				String mpiMessage = "Central patient create skipped: facility patient already has an MPI identifier";
+				LOGGER.warn("{} for local uuid={}", mpiMessage, localPatientUuid);
+				recordPatientSyncFailure(localPatientUuid, mpiMessage);
+				response.setStatusCode("409");
+				response.setMessage(mpiMessage);
+				response.setResponse("");
+				return response;
+			}
 			CentralPatientWriteOutcome createOutcome = postCreatePatient(patient);
 			String mpiForLocalSync = trimToNull(createOutcome.getCentralMpiIdentifierValue());
 			if (mpiForLocalSync == null || mpiForLocalSync.isEmpty()) {
@@ -669,6 +702,12 @@ public class DataSendToFHIR extends IHConstant implements PatientSyncPushContrac
 			return;
 		}
 		ensureDependencies();
+		if (localPatientMpiUpdateService.localPatientHasMpiAndSourcePatientId(patientUuid)) {
+			LOGGER.debug(
+			    "Skipping patient_sync_log failure record for patientUuid={} because MPI and Source Patient Id are already present",
+			    patientUuid);
+			return;
+		}
 		try {
 			PatientSyncLog row = patientSyncLogService.createPending(patientUuid.trim());
 			patientSyncLogService.markFailed(row, null, errorMessage, false);
@@ -1028,6 +1067,22 @@ public class DataSendToFHIR extends IHConstant implements PatientSyncPushContrac
 			}
 		}
 		return null;
+	}
+	
+	/**
+	 * Prefer the FHIR export value; when the local FHIR server lags behind OpenMRS, fall back to
+	 * the native patient row so a second sync uses PUT instead of POST create.
+	 */
+	private String resolveSourcePatientIdForCentralRouting(Patient fhirPatient, String localPatientUuid) {
+		String fromFhir = trimToNull(getSourcePatientIdentifier(fhirPatient));
+		if (fromFhir != null) {
+			return fromFhir;
+		}
+		if (StringUtils.isBlank(localPatientUuid)) {
+			return null;
+		}
+		ensureDependencies();
+		return trimToNull(localPatientMpiUpdateService.findActiveCentralSourcePatientIdValue(localPatientUuid));
 	}
 	
 	private Bundle buildMirroredCreatedPatientBundle(Patient patient, String mpiIdentifierValue,
