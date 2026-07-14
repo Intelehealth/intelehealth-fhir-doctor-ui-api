@@ -83,6 +83,9 @@ public class FuzzyPatientMatchConfigService {
 			familyNamePartWeight = 0.45d;
 		}
 		
+		boolean penalizeMissingRequestFields = resolveBoolean(
+		        "intelehealth.fhir.patient.match.penalize.missing.request.fields", true);
+		
 		int threshold = normalizeScore(resolveInt("intelehealth.fhir.patient.match.threshold", 70), 70);
 		int confidenceHigh = normalizeScore(resolveInt("intelehealth.fhir.patient.match.confidence.high", 85), 85);
 		int confidenceMedium = normalizeScore(resolveInt("intelehealth.fhir.patient.match.confidence.medium", 70), 70);
@@ -162,7 +165,8 @@ public class FuzzyPatientMatchConfigService {
 		        maxCandidates, nameAlgorithm, phoneAlgorithm, addressAlgorithm, phoneticBoostEnabled, phoneticBoostAlgorithm,
 		        dobNearMatchDays,
 		        certainMatchThreshold, probableMatchThreshold, possibleMatchThreshold, dobRepositoryFilterMode,
-		        candidateSearchParams, rules, fieldEnabled, fieldWeight, givenNamePartWeight, familyNamePartWeight);
+		        candidateSearchParams, rules, fieldEnabled, fieldWeight, givenNamePartWeight, familyNamePartWeight,
+		        penalizeMissingRequestFields);
 	}
 	
 	private void normalizeWeights(Map<String, Double> fieldWeight, Map<String, Boolean> fieldEnabled) {
